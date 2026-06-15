@@ -1,0 +1,219 @@
+{
+  "_comment": "생성 에이전트 출력 레퍼런스 — landing #13 세무회계 / contract_13_tax_landing.json 입력 기준",
+  "schema_version": "1.0.0",
+  "site_id": "site_tax_13_001",
+  "template_id": "landing_tax",
+  "site_type": "landing",
+
+  "pages": [
+    {
+      "path": "/",
+      "seo": {
+        "title": "해조세무회계 | 서울 강남 세무사 사무소 — 정확한 신고",
+        "description": "개인사업자, 소상공인, 초기 법인 대표를 위한 해조세무회계. 기장 대행, 부가세 신고, 종합소득세 신고 전문. 정확한 신고, 빠른 상담.",
+        "canonical": "https://tax.hezo.io/",
+        "target_keywords": ["정확한 신고", "빠른 상담", "절세 전략", "사업자 맞춤 관리", "서울 강남 세무사 사무소"],
+        "og": {
+          "title": "해조세무회계 — 서울 강남 세무사 사무소",
+          "description": "개인사업자·소상공인을 위한 세무 상담. 기장 대행·부가세·종합소득세 전문.",
+          "image": "og-thumb.jpg",
+          "type": "website",
+          "locale": "ko_KR"
+        },
+        "twitter_card": "summary_large_image"
+      },
+
+      "jsonld": [
+        {
+          "@context": "https://schema.org",
+          "@type": "Accountant",
+          "name": "해조세무회계",
+          "description": "서울 강남 세무사 사무소. 기장 대행, 부가세 신고, 종합소득세 신고, 법인세 신고, 창업 세무 상담 전문.",
+          "telephone": "02-1234-5678",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "서울 강남",
+            "addressCountry": "KR"
+          },
+          "openingHours": "Mo-Fr 09:00-18:00",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "telephone": "02-1234-5678",
+            "contactType": "customer service",
+            "availableLanguage": "Korean"
+          }
+        },
+        {
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "해조세무회계에서는 신고 일정을 어떻게 관리하나요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "부가세(1월, 7월), 종합소득세(5월), 법인세(3월) 등 주요 신고 일정을 사전에 공유하고, 담당자가 직접 연락하여 누락 없이 진행합니다."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "해조세무회계를 통해 절세가 가능한가요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "비용 증빙 검토, 공제 항목 최적화, 법인 전환 가능성 진단을 통해 합법적 절세 방법을 안내드립니다. 초기 상담에서 현재 세금 구조를 분석합니다."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "사업 초기 세무 구조는 어떻게 잡나요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "사업자등록 유형 선택, 과세/면세 구분, 장부 기장 방식, 세금계산서 발행 기준 등 초기에 반드시 결정해야 할 항목들을 단계별로 안내합니다."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "기장 대행 서비스는 어떤 업체에 적합한가요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "개인사업자, 소상공인, 법인을 운영하며 매월 장부 관리와 신고를 외부에 맡기고 싶은 분께 적합합니다. 매출 규모에 따라 기장 비용이 결정됩니다."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "부가세 신고는 얼마나 자주 해야 하나요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "일반과세자는 1년에 2회(1월, 7월), 간이과세자는 1년에 1회(1월) 신고합니다. 해조세무회계가 일정 관리와 신고 대행을 담당합니다."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "무료 세무 상담은 어떻게 신청하나요?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "전화(02-1234-5678), 카카오채널(@hezo-tax), 또는 홈페이지 상담 신청 폼으로 접수하시면 담당 세무사가 1영업일 내 연락드립니다."
+              }
+            }
+          ]
+        }
+      ],
+
+      "blocks": [
+        {
+          "type": "Hero",
+          "h1": "숫자를 정리하면 사업의 다음 결정이 보입니다",
+          "subheadline": "개인사업자·소상공인·초기 법인을 위한 해조세무회계. 신고 업무를 넘어 비용 구조, 절세 포인트, 현금 흐름까지 한 번에 정리합니다.",
+          "cta_primary": "무료 세무 상담 신청",
+          "cta_secondary": "서비스 보기",
+          "quick_answer": "해조세무회계는 서울 강남에 위치한 세무사 사무소로 기장 대행, 부가세 신고, 종합소득세 신고를 전문으로 합니다. 개인사업자부터 초기 법인까지 맞춤 세무 관리를 제공합니다."
+        },
+        {
+          "type": "Services",
+          "section_label": "SERVICE LEDGER",
+          "section_title": "상황별 세무 업무를 행 단위로 정리합니다",
+          "items": [
+            {
+              "name": "신규 사업자 세팅",
+              "desc": "사업자등록, 세금계산서, 초기 장부 구조를 단계별로 안내합니다. 처음부터 올바른 세무 구조를 잡아 불필요한 세금을 방지합니다.",
+              "label": "STARTER"
+            },
+            {
+              "name": "월 정기 기장 대행",
+              "desc": "매월 매출·비용·인건비를 정리하고 신고 리스크를 사전에 점검합니다. 담당 세무사가 직접 관리합니다.",
+              "label": "MONTHLY"
+            },
+            {
+              "name": "절세 구조 진단",
+              "desc": "현재 비용 처리와 신고 구조를 분석하여 합법적 절세 포인트를 제안합니다. 불필요한 세금을 줄이는 맞춤 전략을 제공합니다.",
+              "label": "REVIEW"
+            },
+            {
+              "name": "부가세·소득세 신고",
+              "desc": "부가세(연 2회), 종합소득세(연 1회) 신고를 대행합니다. 누락 없는 신고와 최대 공제를 보장합니다.",
+              "label": "FILING"
+            },
+            {
+              "name": "창업 세무 상담",
+              "desc": "법인 vs 개인사업자 선택부터 세금계산서 발행, 비용 처리 기준까지 창업 초기에 필요한 세무 지식을 안내합니다.",
+              "label": "STARTUP"
+            }
+          ]
+        },
+        {
+          "type": "FAQ",
+          "section_title": "자주 묻는 세무 질문",
+          "items": [
+            {
+              "q": "해조세무회계에서는 신고 일정을 어떻게 관리하나요?",
+              "a": "부가세(1월, 7월), 종합소득세(5월), 법인세(3월) 등 주요 신고 일정을 사전에 공유하고, 담당자가 직접 연락하여 누락 없이 진행합니다."
+            },
+            {
+              "q": "해조세무회계를 통해 절세가 가능한가요?",
+              "a": "비용 증빙 검토, 공제 항목 최적화, 법인 전환 가능성 진단을 통해 합법적 절세 방법을 안내드립니다."
+            },
+            {
+              "q": "사업 초기 세무 구조는 어떻게 잡나요?",
+              "a": "사업자등록 유형 선택, 과세/면세 구분, 장부 기장 방식, 세금계산서 발행 기준 등을 단계별로 안내합니다."
+            },
+            {
+              "q": "기장 대행 서비스는 어떤 업체에 적합한가요?",
+              "a": "개인사업자, 소상공인, 법인을 운영하며 매월 장부 관리와 신고를 외부에 맡기고 싶은 분께 적합합니다."
+            },
+            {
+              "q": "부가세 신고는 얼마나 자주 해야 하나요?",
+              "a": "일반과세자는 연 2회(1월, 7월), 간이과세자는 연 1회(1월) 신고합니다. 해조세무회계가 일정 관리와 신고 대행을 담당합니다."
+            },
+            {
+              "q": "무료 세무 상담은 어떻게 신청하나요?",
+              "a": "전화(02-1234-5678), 카카오채널(@hezo-tax), 또는 홈페이지 상담 신청 폼으로 접수하시면 1영업일 내 연락드립니다."
+            }
+          ]
+        },
+        {
+          "type": "Contact",
+          "section_title": "세무 상담을 시작하세요",
+          "phone": "02-1234-5678",
+          "kakao_channel": "@hezo-tax",
+          "business_hours": "평일 09:00-18:00",
+          "form_fields": ["name", "phone", "consult_type"],
+          "form_cta": "문의 남기기"
+        }
+      ]
+    }
+  ],
+
+  "supplementary_files": {
+    "llms_txt": "# 해조세무회계\n> 세무사 사무소 | 서울 강남\n\n## 서비스\n- 기장 대행\n- 부가세 신고\n- 종합소득세 신고\n- 법인세 신고\n- 창업 세무 상담\n\n## 연락처\n- 전화: 02-1234-5678\n- 카카오: @hezo-tax\n- 영업시간: 평일 09:00-18:00\n\n## 타겟 고객\n- 개인사업자\n- 소상공인\n- 초기 법인 대표",
+
+    "llms_full_txt": "# 해조세무회계\n> 세무사 사무소 | 서울 강남\n\n해조세무회계는 서울 강남에 위치한 세무사 사무소로 개인사업자, 소상공인, 초기 법인 대표를 위한 세무 서비스를 제공합니다.\n\n## 핵심 서비스\n- **기장 대행**: 매월 매출·비용·인건비 정리 및 신고 리스크 점검\n- **부가세 신고**: 연 2회(일반과세자) 신고 대행\n- **종합소득세 신고**: 연 1회 종합소득세 신고 및 절세 최적화\n- **법인세 신고**: 법인 결산 및 법인세 신고 대행\n- **창업 세무 상담**: 사업자등록부터 초기 세무 구조 설계까지\n\n## 고객 고통점 해결\n- 세금 신고 일정 관리: 담당자가 사전 연락하여 일정 누락 방지\n- 절세: 비용 증빙 검토, 공제 항목 최적화, 법인 전환 진단\n- 창업 초기 세무 구조: 단계별 안내로 불필요한 세금 방지\n\n## 연락처\n- 전화: 02-1234-5678\n- 카카오채널: @hezo-tax\n- 영업시간: 평일 09:00-18:00\n\n## 타겟 고객\n- 개인사업자\n- 소상공인\n- 초기 법인 대표",
+
+    "sitemap_pages": [
+      { "path": "/",        "priority": "1.0", "changefreq": "monthly" },
+      { "path": "/llms.txt","priority": "0.5", "changefreq": "monthly" }
+    ],
+
+    "robots_rules": [
+      "User-agent: GPTBot",
+      "Allow: /",
+      "",
+      "User-agent: ClaudeBot",
+      "Allow: /",
+      "",
+      "User-agent: PerplexityBot",
+      "Allow: /",
+      "",
+      "User-agent: *",
+      "Allow: /",
+      "",
+      "Sitemap: https://tax.hezo.io/sitemap.xml"
+    ]
+  },
+
+  "build_manifest": {
+    "s3_artifact_bucket": "hezo-artifacts",
+    "s3_site_bucket": "hezo-sites",
+    "s3_key_prefix": "sites/site_tax_13_001/",
+    "cloudfront_distribution_id": "PLACEHOLDER_REPLACE_AT_DEPLOY"
+  }
+}

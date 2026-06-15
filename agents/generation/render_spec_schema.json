@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12",
+  "$id": "https://hezo.ai/schemas/render_spec/v1.0",
+  "title": "HEZO Render Spec",
+  "description": "Generation Agent가 생성하는 렌더 스펙. Build Worker가 이 스펙을 읽어 정적 HTML/CSS/JS를 생성한다.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "site_id",
+    "template_id",
+    "site_type",
+    "module_key",
+    "pages",
+    "supplementary_files",
+    "build_manifest"
+  ],
+  "additionalProperties": false,
+  "properties": {
+
+    "schema_version": {
+      "type": "string",
+      "description": "렌더 스펙 스키마 버전",
+      "const": "1.0"
+    },
+
+    "site_id": {
+      "type": "string",
+      "description": "사이트 고유 ID (UUID 또는 slug 형식)",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+
+    "template_id": {
+      "type": "string",
+      "description": "사용된 템플릿 ID (예: dental-clinic-v1, saas-landing-v2)",
+      "minLength": 1
+    },
+
+    "site_type": {
+      "type": "string",
+      "description": "사이트 카테고리",
+      "enum": ["landing", "blog", "store"]
+    },
+
+    "module_key": {
+      "type": "string",
+      "description": "세부 업종 모듈 키 (예: dental, saas, bootcamp, restaurant-franchise)",
+      "minLength": 1
+    },
+
+    "brand": {
+      "type": "object",
+      "description": "브랜드 기본 정보",
+      "properties": {
+        "name": { "type": "string", "description": "브랜드/사업체명" },
+        "tagline": { "type": "string", "description": "한 줄 태그라인" },
+        "logo_url": { "type": "string", "format": "uri", "description": "로고 이미지 URL (S3)" },
+        "favicon_url": { "type": "string", "format": "uri", "description": "파비콘 URL" },
+        "primary_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "주 색상 (HEX)" },
+        "secondary_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "font_family": { "type": "string", "description": "Google Fonts 폰트명 (예: Noto Sans KR)" }
+      }
+    },
+
+    "pages": {
+      "type": "array",
+      "description": "생성할 페이지 목록",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "title_h1", "seo", "jsonld", "blocks"],
+        "additionalProperties": false,
+        "properties": {
+
+          "path": {
+            "type": "string",
+            "description": "페이지 경로 (예: /, /about, /services, /faq)",
+            "pattern": "^/"
+          },
+
+          "title_h1": {
+            "type": "string",
+            "description": "페이지의 유일한 H1 태그 텍스트. 페이지당 정확히 1개.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+
+          "h2_list": {
+            "type": "array",
+            "description": "페이지의 H2 제목 목록 (섹션 제목, FAQ H2 포함)",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+
+          "seo": {
+            "type": "object",
+            "description": "SEO 메타데이터",
+            "required": ["title", "description", "canonical"],
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "페이지 <title> 태그 (50-60자 권장)",
+                "minLength": 1,
+                "maxLength": 70
+              },
+              "description": {
+                "type": "string",
+                "description": "메타 디스크립션 (120-155자 권장)",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "canonical": {
+                "type": "string",
+                "format": "uri",
+                "description": "정규 URL"
+              },
+              "keywords": {
+                "type": "array",
+                "items": { "type": "string" },
+                "maxItems": 10,
+                "description": "키워드 목록 (참고용, meta keywords는 SEO 효과 미미)"
+              },
+              "og": {
+                "type": "object",
+                "description": "Open Graph 메타태그",
+                "required": ["title", "description", "type"],
+                "properties": {
+                  "title": { "type": "string", "maxLength": 95 },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "image": { "type": "string", "format": "uri", "description": "OG 이미지 URL (1200x630px 권장)" },
+                  "image_alt": { "type": "string" },
+                  "type": { "type": "string", "enum": ["website", "article", "product"] },
+                  "locale": { "type": "string", "default": "ko_KR" },
+                  "site_name": { "type": "string" }
+                }
+              },
+              "twitter": {
+                "type": "object",
+                "description": "Twitter/X 카드 메타태그",
+                "properties": {
+                  "card": { "type": "string", "enum": ["summary", "summary_large_image"] },
+                  "title": { "type": "string", "maxLength": 70 },
+                  "description": { "type": "string", "maxLength": 200 },
+                  "image": { "type": "string", "format": "uri" },
+                  "image_alt": { "type": "string" }
+                }
+              }
+            }
+          },
+
+          "jsonld": {
+            "type": "array",
+            "description": "Schema.org JSON-LD 오브젝트 배열 (여러 타입 동시 선언 가능)",
+            "items": {
+              "type": "object",
+              "required": ["@context", "@type"],
+              "properties": {
+                "@context": {
+                  "type": "string",
+                  "const": "https://schema.org"
+                },
+                "@type": {
+                  "description": "Schema.org 타입 (단일 문자열 또는 배열)",
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "array", "items": { "type": "string" } }
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+
+          "blocks": {
+            "type": "array",
+            "description": "페이지를 구성하는 UI 블록 목록 (Build Worker가 렌더링)",
+            "items": {
+              "type": "object",
+              "required": ["block_type"],
+              "properties": {
+                "block_type": {
+                  "type": "string",
+                  "description": "블록 종류",
+                  "enum": [
+                    "Hero",
+                    "Services",
+                    "FAQ",
+                    "QuickAnswer",
+                    "Values",
+                    "Reviews",
+                    "Contact",
+                    "Gallery",
+                    "Pricing",
+                    "Team",
+                    "CTA",
+                    "BlogList",
+                    "ProductGrid",
+                    "Map",
+                    "Custom"
+                  ]
+                },
+                "order": {
+                  "type": "integer",
+                  "description": "페이지 내 블록 순서 (0부터 시작)",
+                  "minimum": 0
+                },
+                "data": {
+                  "type": "object",
+                  "description": "블록별 데이터 (block_type에 따라 구조 다름)",
+                  "additionalProperties": true
+                }
+              },
+              "$defs": {
+                "HeroBlock": {
+                  "properties": {
+                    "block_type": { "const": "Hero" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "headline": { "type": "string", "description": "메인 헤드라인 (H1과 동일)" },
+                        "subheadline": { "type": "string" },
+                        "cta_text": { "type": "string" },
+                        "cta_url": { "type": "string", "format": "uri" },
+                        "background_image_url": { "type": "string", "format": "uri" },
+                        "background_image_alt": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                "ServicesBlock": {
+                  "properties": {
+                    "block_type": { "const": "Services" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "section_title": { "type": "string" },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": { "type": "string" },
+                              "description": { "type": "string" },
+                              "icon_url": { "type": "string" },
+                              "image_url": { "type": "string" },
+                              "image_alt": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "FAQBlock": {
+                  "properties": {
+                    "block_type": { "const": "FAQ" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "section_title": { "type": "string", "default": "자주 묻는 질문" },
+                        "items": {
+                          "type": "array",
+                          "minItems": 5,
+                          "maxItems": 7,
+                          "items": {
+                            "type": "object",
+                            "required": ["question", "answer"],
+                            "properties": {
+                              "question": {
+                                "type": "string",
+                                "description": "AEO 최적화 자연어 질문 (H2 태그로 렌더링)"
+                              },
+                              "answer": {
+                                "type": "string",
+                                "description": "간결한 직접 답변 (50-150자 권장)"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "QuickAnswerBlock": {
+                  "properties": {
+                    "block_type": { "const": "QuickAnswer" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string",
+                          "description": "AI 검색 스니펫 인용용 QuickAnswer 텍스트 (2-3문장)"
+                        },
+                        "label": {
+                          "type": "string",
+                          "description": "블록 레이블 (예: '한줄 소개')",
+                          "default": "한줄 소개"
+                        }
+                      }
+                    }
+                  }
+                },
+                "ReviewsBlock": {
+                  "properties": {
+                    "block_type": { "const": "Reviews" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "section_title": { "type": "string", "default": "고객 후기" },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reviewer_name": { "type": "string" },
+                              "rating": { "type": "number", "minimum": 1, "maximum": 5 },
+                              "review_text": { "type": "string" },
+                              "date": { "type": "string", "format": "date" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "ContactBlock": {
+                  "properties": {
+                    "block_type": { "const": "Contact" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "section_title": { "type": "string", "default": "오시는 길 / 연락처" },
+                        "address": { "type": "string" },
+                        "phone": { "type": "string" },
+                        "email": { "type": "string", "format": "email" },
+                        "business_hours": { "type": "string" },
+                        "kakao_channel_url": { "type": "string", "format": "uri" },
+                        "naver_place_url": { "type": "string", "format": "uri" },
+                        "google_maps_embed_url": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "supplementary_files": {
+      "type": "object",
+      "description": "사이트에 포함될 보조 파일 (AI 크롤러 최적화)",
+      "required": ["llms_txt", "llms_full_txt", "sitemap_pages", "robots_rules"],
+      "additionalProperties": false,
+      "properties": {
+
+        "llms_txt": {
+          "type": "string",
+          "description": "llms.txt 파일 내용 (# BrandName > tagline 형식의 AI 크롤러용 브랜드 카드)",
+          "minLength": 1
+        },
+
+        "llms_full_txt": {
+          "type": "string",
+          "description": "llms-full.txt 파일 내용 (더 상세한 브랜드 및 서비스 정보)",
+          "minLength": 1
+        },
+
+        "sitemap_pages": {
+          "type": "array",
+          "description": "sitemap.xml에 포함될 페이지 목록",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "priority", "changefreq"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/",
+                "description": "페이지 경로"
+              },
+              "priority": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "사이트맵 우선순위 (/ 는 1.0 권장)"
+              },
+              "changefreq": {
+                "type": "string",
+                "enum": ["always", "hourly", "daily", "weekly", "monthly", "yearly", "never"],
+                "description": "변경 빈도"
+              },
+              "lastmod": {
+                "type": "string",
+                "format": "date",
+                "description": "마지막 수정일 (YYYY-MM-DD)"
+              }
+            }
+          }
+        },
+
+        "robots_rules": {
+          "type": "string",
+          "description": "robots.txt 파일 전체 내용 (AI 크롤러 GPTBot/ClaudeBot/PerplexityBot 허용 포함)",
+          "minLength": 1
+        }
+      }
+    },
+
+    "build_manifest": {
+      "type": "object",
+      "description": "Build Worker가 사용할 빌드 매니페스트",
+      "required": ["s3_artifact_bucket", "s3_site_bucket", "s3_key_prefix"],
+      "additionalProperties": false,
+      "properties": {
+
+        "s3_artifact_bucket": {
+          "type": "string",
+          "description": "아티팩트 S3 버킷명 (render_spec.json, contract_final.json 등)",
+          "default": "hezo-artifacts"
+        },
+
+        "s3_site_bucket": {
+          "type": "string",
+          "description": "사이트 파일 S3 버킷명 (생성된 HTML/CSS/JS 업로드 대상)",
+          "default": "hezo-sites"
+        },
+
+        "s3_key_prefix": {
+          "type": "string",
+          "description": "사이트 파일 S3 키 접두사 (예: sites/abc123/)",
+          "pattern": "^sites/[a-zA-Z0-9_-]+/$"
+        },
+
+        "cloudfront_distribution_id": {
+          "type": ["string", "null"],
+          "description": "CloudFront 배포 ID (캐시 무효화용). 첫 배포 전에는 null.",
+          "default": null
+        },
+
+        "custom_domain": {
+          "type": ["string", "null"],
+          "description": "사용자 커스텀 도메인 (예: www.my-clinic.co.kr)",
+          "format": "hostname",
+          "default": null
+        },
+
+        "temp_domain": {
+          "type": ["string", "null"],
+          "description": "임시 프리뷰 도메인 (예: abc123.preview.hezo.ai)",
+          "default": null
+        },
+
+        "node_version": {
+          "type": "string",
+          "description": "Build Worker가 사용할 Node.js 버전",
+          "default": "20"
+        },
+
+        "build_command": {
+          "type": "string",
+          "description": "빌드 명령어 (Build Worker ECS 태스크에서 실행)",
+          "default": "npm run build"
+        }
+      }
+    },
+
+    "_saved_at": {
+      "type": "string",
+      "description": "render_spec_saver Lambda가 저장 시 자동 추가하는 타임스탬프 (ISO 8601)",
+      "format": "date-time"
+    },
+
+    "_schema_version": {
+      "type": "string",
+      "description": "render_spec_saver Lambda가 저장 시 자동 복사하는 schema_version"
+    }
+  },
+
+  "$defs": {
+    "SchemaOrgLocalBusiness": {
+      "type": "object",
+      "description": "Schema.org LocalBusiness JSON-LD 예시",
+      "properties": {
+        "@context": { "const": "https://schema.org" },
+        "@type": { "const": "LocalBusiness" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "telephone": { "type": "string" },
+        "address": {
+          "type": "object",
+          "properties": {
+            "@type": { "const": "PostalAddress" },
+            "streetAddress": { "type": "string" },
+            "addressLocality": { "type": "string" },
+            "addressRegion": { "type": "string" },
+            "postalCode": { "type": "string" },
+            "addressCountry": { "const": "KR" }
+          }
+        },
+        "openingHoursSpecification": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "@type": { "const": "OpeningHoursSpecification" },
+              "dayOfWeek": { "type": "array", "items": { "type": "string" } },
+              "opens": { "type": "string" },
+              "closes": { "type": "string" }
+            }
+          }
+        },
+        "geo": {
+          "type": "object",
+          "properties": {
+            "@type": { "const": "GeoCoordinates" },
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
+        "aggregateRating": {
+          "type": "object",
+          "properties": {
+            "@type": { "const": "AggregateRating" },
+            "ratingValue": { "type": "number" },
+            "reviewCount": { "type": "integer" }
+          }
+        }
+      }
+    },
+
+    "SchemaOrgFAQPage": {
+      "type": "object",
+      "description": "Schema.org FAQPage JSON-LD 예시",
+      "properties": {
+        "@context": { "const": "https://schema.org" },
+        "@type": { "const": "FAQPage" },
+        "mainEntity": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "@type": { "const": "Question" },
+              "name": { "type": "string", "description": "질문 텍스트" },
+              "acceptedAnswer": {
+                "type": "object",
+                "properties": {
+                  "@type": { "const": "Answer" },
+                  "text": { "type": "string", "description": "답변 텍스트" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

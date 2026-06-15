@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockInvokeModelSonnet",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-2::foundation-model/anthropic.claude-sonnet-4-5-20251001",
+        "arn:aws:bedrock:ap-northeast-2::foundation-model/anthropic.claude-haiku-4-5-20251001"
+      ]
+    },
+    {
+      "Sid": "BedrockAgentActionGroupLambdaInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:ap-northeast-2:*:function:hezo-p4-contract-loader",
+        "arn:aws:lambda:ap-northeast-2:*:function:hezo-p4-contract-loader:*",
+        "arn:aws:lambda:ap-northeast-2:*:function:hezo-p4-render-spec-saver",
+        "arn:aws:lambda:ap-northeast-2:*:function:hezo-p4-render-spec-saver:*"
+      ]
+    },
+    {
+      "Sid": "BedrockAgentS3ArtifactsRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::hezo-artifacts",
+        "arn:aws:s3:::hezo-artifacts/*"
+      ]
+    },
+    {
+      "Sid": "BedrockAgentCloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-northeast-2:*:log-group:/aws/bedrock/agents/*"
+      ]
+    },
+    {
+      "Sid": "BedrockKnowledgeBaseQuery",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:Retrieve",
+        "bedrock:RetrieveAndGenerate"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-2:*:knowledge-base/*"
+      ]
+    }
+  ]
+}
