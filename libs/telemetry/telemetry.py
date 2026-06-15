@@ -3,8 +3,9 @@ HEZO 관측 키트 (P5)
 
 - 모든 에이전트가 import 해서 쓰는 공용 텔레메트리.
 - 에이전트가 추가하는 코드는 딱 2줄: init 1번 + AI 호출마다 record 1번.
-- 지금은 출력을 "콘솔(화면)"로 보냄 → AWS 없이 테스트 가능.
-  나중에 출력만 OTLP(ADOT)로 한 줄 바꾸면 됨. (아래 # TODO 표시 위치)
+- 출력 2갈래:
+    ① 콘솔(화면)  : 항상 찍음. 디버깅용.
+    ② OTLP(4317)  : ADOT로 쏨 → CloudWatch. (otlp=True일 때)
 """
 
 from __future__ import annotations
@@ -19,17 +20,27 @@ _PRICE_PER_1K = {
     "haiku": {"in": 0.0008, "out": 0.004},
 }
 
-# init_telemetry()로 한 번 세팅되는 현재 에이전트 이름.
+# init_telemetry()로 세팅되는 상태.
 _agent_name: str | None = None
+_meter_provider = None          # OTLP 끌 때 flush 하려고 들고 있음
+_instruments: dict = {}         # 토큰/비용/지연 측정 도구들
+_logger_provider = None         # 로그 장치 (끌 때 flush 하려고 들고 있음)
+_py_logger = None               # _emit 이 로그 쏠 때 쓰는 파이썬 로거
 
 
-def init_telemetry(agent_name: str) -> None:
-    """에이전트가 켜질 때 1번 호출. 기록 도구를 세팅한다."""
+def init_telemetry(agent_name: str, otlp: bool = True,
+                   endpoint: str = "localhost:4317") -> None:
+    """에이전트가 켜질 때 1번 호출. 기록 도구를 세팅한다.
+
+    otlp=True 면 측정값을 4317(ADOT)로도 보낸다. False면 콘솔만.
+    """
     global _agent_name
     _agent_name = agent_name
 
-    # TODO: 나중에 여기서 OTel meter/logger 세팅 (OTLP -> ADOT -> CloudWatch)
-    _emit("telemetry.init", {"agent": agent_name})
+    if otlp:
+        _setup_otlp(endpoint)
+
+    _emit("telemetry.init", {"agent": agent_name, "otlp": otlp})
 
 
 def record_llm_usage(
@@ -52,9 +63,116 @@ def record_llm_usage(
         "cost_usd": cost,
     }
 
-    # TODO: 나중에 여기서 OTel 메트릭/로그로 내보내기 (지금은 콘솔)
+    # ① 콘솔
     _emit("llm.usage", record)
+
+    # ② OTLP(메트릭) — 도구가 세팅돼 있으면 4317로 쏨
+    if _instruments:
+        attrs = {"agent": agent_name, "model": model}
+        _instruments["input_tokens"].add(input_tokens, attrs)
+        _instruments["output_tokens"].add(output_tokens, attrs)
+        _instruments["cost_usd"].add(cost, attrs)
+        if ms is not None:
+            _instruments["latency_ms"].record(ms, attrs)
+
     return record
+
+
+def shutdown_telemetry() -> None:
+    """프로그램 끝날 때 호출. 아직 안 보낸 메트릭을 강제로 밀어낸다(flush).
+
+    test_run 처럼 금방 끝나는 스크립트는 이걸 안 부르면 데이터가
+    미처 안 나가고 종료될 수 있다.
+    """
+    if _meter_provider is not None:
+        _meter_provider.force_flush()
+        _meter_provider.shutdown()
+    if _logger_provider is not None:
+        _logger_provider.force_flush()
+        _logger_provider.shutdown()
+
+
+def _setup_otlp(endpoint: str) -> None:
+    """OTLP 송신 세팅: 4317로 보내는 메트릭 장치 + 로그 장치 만들기."""
+    _setup_otlp_metrics(endpoint)
+    _setup_otlp_logs(endpoint)
+
+
+def _setup_otlp_metrics(endpoint: str) -> None:
+    """메트릭 장치: 4317로 보내는 미터 + 측정 도구."""
+    global _meter_provider, _instruments
+
+    from opentelemetry import metrics
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+        OTLPMetricExporter,
+    )
+    from opentelemetry.sdk.metrics import (
+        Counter,
+        Histogram,
+        ObservableCounter,
+        ObservableGauge,
+        ObservableUpDownCounter,
+        UpDownCounter,
+    )
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import (
+        AggregationTemporality,
+        PeriodicExportingMetricReader,
+    )
+
+    # awsemf(CloudWatch)는 델타(변화량) 방식을 권장.
+    # 누적(cumulative)이면 첫 데이터가 비교 대상이 없어 0으로 기록되는 문제가 있음.
+    _delta = AggregationTemporality.DELTA
+    _cumulative = AggregationTemporality.CUMULATIVE
+    exporter = OTLPMetricExporter(
+        endpoint=endpoint,
+        insecure=True,
+        preferred_temporality={
+            Counter: _delta,
+            UpDownCounter: _cumulative,
+            Histogram: _delta,
+            ObservableCounter: _delta,
+            ObservableUpDownCounter: _cumulative,
+            ObservableGauge: _cumulative,
+        },
+    )
+    reader = PeriodicExportingMetricReader(exporter, export_interval_millis=5000)
+    _meter_provider = MeterProvider(metric_readers=[reader])
+    metrics.set_meter_provider(_meter_provider)
+
+    meter = metrics.get_meter("hezo.telemetry")
+    _instruments = {
+        "input_tokens": meter.create_counter("llm.input_tokens"),
+        "output_tokens": meter.create_counter("llm.output_tokens"),
+        "cost_usd": meter.create_counter("llm.cost_usd"),
+        "latency_ms": meter.create_histogram("llm.latency_ms"),
+    }
+
+
+def _setup_otlp_logs(endpoint: str) -> None:
+    """로그 장치: 4317로 보내는 로거 + 파이썬 logging 연결."""
+    global _logger_provider, _py_logger
+
+    import logging
+
+    from opentelemetry._logs import set_logger_provider
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+        OTLPLogExporter,
+    )
+    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+    _logger_provider = LoggerProvider()
+    set_logger_provider(_logger_provider)
+    _logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint, insecure=True))
+    )
+
+    # 파이썬 기본 logging 에 OTel 핸들러를 달아서, 이 로거로 찍으면 4317로 감.
+    handler = LoggingHandler(level=logging.INFO, logger_provider=_logger_provider)
+    _py_logger = logging.getLogger("hezo.telemetry")
+    _py_logger.setLevel(logging.INFO)
+    _py_logger.addHandler(handler)
 
 
 def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -67,6 +185,13 @@ def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
 
 def _emit(event: str, payload: dict) -> None:
-    """지금은 구조화 JSON 로그를 콘솔로 찍는다. (나중에 OTLP 전송으로 교체)"""
+    """구조화 JSON 로그를 ① 콘솔 ② OTLP(4317)로 보낸다."""
     line = {"event": event, "ts": time.time(), **payload}
-    print(json.dumps(line, ensure_ascii=False))
+    text = json.dumps(line, ensure_ascii=False)
+
+    # ① 콘솔
+    print(text)
+
+    # ② OTLP 로그 — 로거가 세팅돼 있으면 4317로도 (→ ADOT → CloudWatch Logs)
+    if _py_logger is not None:
+        _py_logger.info(text)

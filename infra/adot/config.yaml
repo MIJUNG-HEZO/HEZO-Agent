@@ -1,0 +1,39 @@
+# ADOT Collector 설정 = "배송 지시서"
+# 한 줄 요약: otlp(4317)로 받아서 → 메트릭은 awsemf로, 로그는 awscloudwatchlogs로 CloudWatch에 보낸다.
+
+receivers:
+  # ── 받는 창구: 텔레메트리가 4317 포트로 데이터를 여기로 보냄 ──
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # 모아서 한 번에 보내기 (네트워크 효율)
+  batch:
+    timeout: 10s
+
+exporters:
+  # ── 숫자(메트릭) → CloudWatch Metrics ──
+  awsemf:
+    namespace: HEZO/Agents
+    region: ap-northeast-2
+    log_group_name: /hezo/agents/metrics
+
+  # ── 글자(로그) → CloudWatch Logs ──
+  awscloudwatchlogs:
+    log_group_name: /hezo/agents
+    log_stream_name: adot
+    region: ap-northeast-2
+
+service:
+  # ── 받기 → 처리 → 보내기 배선 ──
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awsemf]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awscloudwatchlogs]
