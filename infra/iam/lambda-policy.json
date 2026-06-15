@@ -1,0 +1,107 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3ArtifactsBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObjectVersion",
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:aws:s3:::hezo-artifacts",
+        "arn:aws:s3:::hezo-artifacts/*"
+      ]
+    },
+    {
+      "Sid": "S3SitesBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::hezo-sites",
+        "arn:aws:s3:::hezo-sites/*"
+      ]
+    },
+    {
+      "Sid": "SSMParameterReadAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": [
+        "arn:aws:ssm:ap-northeast-2:*:parameter/hezo/*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-northeast-2:*:log-group:/hezo/*",
+        "arn:aws:logs:ap-northeast-2:*:log-group:/aws/lambda/hezo-*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchMetricsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": [
+            "hezo/agent",
+            "hezo/pipeline",
+            "hezo/lambda"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DynamoDBPipelineStateAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-2:*:table/hezo_pipeline_state",
+        "arn:aws:dynamodb:ap-northeast-2:*:table/hezo_pipeline_state/index/*"
+      ]
+    },
+    {
+      "Sid": "XRayTracingAccess",
+      "Effect": "Allow",
+      "Action": [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
