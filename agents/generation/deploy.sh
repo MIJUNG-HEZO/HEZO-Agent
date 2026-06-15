@@ -123,13 +123,17 @@ package_and_deploy_lambda() {
     # 메인 소스 파일 복사
     cp "$source_file" "${package_dir}/$(basename "$source_file")"
 
-    # 공유 모듈 복사 (agents/shared/)
-    if [ -d "$SHARED_DIR" ]; then
-        mkdir -p "${package_dir}/agents/shared"
-        cp "${SHARED_DIR}"/*.py "${package_dir}/agents/shared/" 2>/dev/null || true
-        # agents/__init__.py 생성 (패키지 인식용)
-        touch "${package_dir}/agents/__init__.py"
-        touch "${package_dir}/agents/shared/__init__.py"
+    # libs/telemetry 복사 (init_telemetry, record_llm_usage 의존성)
+    # otlp=False 사용 시 opentelemetry 패키지 불필요 (import가 _setup_otlp 내부에서만 발생)
+    local LIBS_DIR="${REPO_ROOT}/libs"
+    if [ -d "$LIBS_DIR" ]; then
+        mkdir -p "${package_dir}/libs/telemetry"
+        cp "${LIBS_DIR}/telemetry/"*.py "${package_dir}/libs/telemetry/" 2>/dev/null || true
+        touch "${package_dir}/libs/__init__.py"
+        touch "${package_dir}/libs/telemetry/__init__.py"
+        success "  libs/telemetry 포함 완료"
+    else
+        warn "  libs/telemetry 없음 (${LIBS_DIR}) — 텔레메트리 비활성화"
     fi
 
     # boto3는 Lambda 런타임에 포함되어 있으므로 별도 설치 불필요
