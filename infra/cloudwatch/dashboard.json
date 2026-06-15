@@ -1,0 +1,74 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0, "y": 0, "width": 12, "height": 7,
+      "properties": {
+        "title": "💰 에이전트별 비용 ($)",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "cost", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 0, "width": 12, "height": 7,
+      "properties": {
+        "title": "⏱️ 에이전트별 지연 (ms)",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.latency_ms\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 7, "width": 12, "height": 7,
+      "properties": {
+        "title": "🔢 입력 토큰",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.input_tokens\"', 'Sum', 300)", "id": "tin", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 7, "width": 12, "height": 7,
+      "properties": {
+        "title": "🔢 출력 토큰",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.output_tokens\"', 'Sum', 300)", "id": "tout", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 14, "width": 12, "height": 7,
+      "properties": {
+        "title": "💰 에이전트별 비용 ($) — 막대 비교",
+        "region": "ap-northeast-2",
+        "view": "bar",
+        "period": 300,
+        "stat": "Sum",
+        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "csum", "region": "ap-northeast-2" } ]
+        ]
+      }
+    }
+  ]
+}
