@@ -26,9 +26,14 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from libs.telemetry import init_telemetry
+
 # ─── 로거 설정 ──────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# ─── 텔레메트리 초기화 (Lambda 콜드스타트 시 1회) ────────────────────────────
+init_telemetry("generation", otlp=False)
 
 # ─── AWS 클라이언트 (Lambda 실행 환경에서 재사용) ────────────────────────────
 _s3_client = None
@@ -51,16 +56,6 @@ def _get_cloudwatch() -> Any:
 
 # ─── 환경변수 ────────────────────────────────────────────────────────────────
 ARTIFACTS_BUCKET = os.environ.get("ARTIFACTS_BUCKET", "hezo-artifacts")
-
-
-# =============================================================================
-# P5 텔레메트리 (2-line usage pattern)
-# =============================================================================
-
-def _emit_metric(metric_name: str, value: float = 1.0, unit: str = "Count", dimensions: list[dict] | None = None) -> None:
-    """CloudWatch 메트릭 발행 (fire-and-forget, 실패해도 예외 미전파)"""
-    from agents.shared.telemetry import record_metric  # 공유 텔레메트리 모듈
-    record_metric("hezo/agent", metric_name, value, unit, dimensions or [])
 
 
 # =============================================================================

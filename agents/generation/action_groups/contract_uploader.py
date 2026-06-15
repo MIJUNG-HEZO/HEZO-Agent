@@ -34,9 +34,14 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from libs.telemetry import init_telemetry
+
 # ─── 로거 설정 ──────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# ─── 텔레메트리 초기화 (Lambda 콜드스타트 시 1회) ────────────────────────────
+init_telemetry("generation", otlp=False)
 
 # ─── AWS 클라이언트 ──────────────────────────────────────────────────────────
 _s3_client = None

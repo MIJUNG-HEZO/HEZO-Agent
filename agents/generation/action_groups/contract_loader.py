@@ -22,9 +22,15 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
+from libs.telemetry import init_telemetry
+
 # ─── 로거 설정 ──────────────────────────────────────────────────────────────
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# ─── 텔레메트리 초기화 (Lambda 콜드스타트 시 1회) ────────────────────────────
+# otlp=False: Lambda 환경에서는 ADOT 사이드카 없음 → CloudWatch Logs로만 출력
+init_telemetry("generation", otlp=False)
 
 # ─── AWS 클라이언트 (Lambda 실행 환경에서 재사용) ────────────────────────────
 _s3_client = None
