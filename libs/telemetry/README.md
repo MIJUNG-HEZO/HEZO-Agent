@@ -3,13 +3,20 @@
 모든 에이전트가 공용으로 import 하는 텔레메트리. 에이전트가 넣는 코드는 딱 2줄.
 
 ```python
-from telemetry import init_telemetry, record_llm_usage
+# 파일 맨 위
+from libs.telemetry import init_telemetry, record_llm_usage
 
-init_telemetry("generation")                 # 에이전트 켜질 때 1번
-res = bedrock.invoke_model(...)              # AI 호출
-record_llm_usage("generation", "sonnet",
-                 res.usage.input_tokens,
-                 res.usage.output_tokens, ms=120)   # 호출마다 1번
+# 에이전트(Lambda) 시작 시 1번
+init_telemetry("generation")
+
+# AI(Bedrock) 호출하고 나서, 호출마다 1번
+record_llm_usage(
+    "generation",          # 에이전트 이름
+    "sonnet",              # 모델
+    input_tokens,          # ← 응답에서 꺼낸 입력 토큰 (P4가 자기 구조로)
+    output_tokens,         # ← 출력 토큰
+    ms=elapsed_ms,         # ← 걸린 시간 (선택)
+)  # 호출마다 1번
 ```
 
 ## 지금 상태 (틀만)
