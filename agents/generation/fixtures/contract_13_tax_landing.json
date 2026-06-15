@@ -1,0 +1,89 @@
+{
+  "_comment": "P1 확정 Contract JSON — G slot-based schema v0.1.0 / landing template #13 (13-tax-accounting)",
+  "schema_version": "0.1.0",
+  "ids": {
+    "project_id": "project_tax_13_001",
+    "site_id": "site_tax_13_001",
+    "tenant_id": "tenant_hezo_test"
+  },
+  "template": {
+    "category": "landing",
+    "template_id": "landing_tax",
+    "slug": "tax"
+  },
+  "slots": {
+    "business_name": "해조세무회계",
+    "industry": "tax_accounting",
+    "business_type": "세무사 사무소",
+    "business_region": "서울 강남",
+    "site_goal": "lead_capture",
+    "target_audience": ["개인사업자", "소상공인", "초기 법인 대표"],
+    "core_services": [
+      "기장 대행",
+      "부가세 신고",
+      "종합소득세 신고",
+      "법인세 신고",
+      "창업 세무 상담"
+    ],
+    "pain_points": [
+      "세금 신고 일정 관리가 어렵다",
+      "절세 가능 여부를 알고 싶다",
+      "사업 초기 세무 구조를 잡고 싶다"
+    ],
+    "required_sections": ["hero", "services", "process", "faq", "contact_form", "footer"],
+    "tone_style": ["professional", "trustworthy", "clear"],
+    "brand_keywords": ["정확한 신고", "빠른 상담", "절세 전략", "사업자 맞춤 관리"],
+    "cta": ["무료 세무 상담 신청", "카카오톡 상담"],
+    "contact_method": ["phone", "kakao", "contact_form"],
+    "phone": "02-1234-5678",
+    "kakao_channel": "@hezo-tax",
+    "business_hours": "평일 09:00-18:00",
+    "business_number": null,
+    "reference_site_exists": false,
+    "reference_sites": []
+  },
+  "slot_status": {
+    "business_name":    { "status": "filled",   "confidence": 1.0,  "source": "user",  "ask_count": 1 },
+    "industry":         { "status": "filled",   "confidence": 0.95, "source": "user",  "ask_count": 1 },
+    "business_region":  { "status": "filled",   "confidence": 1.0,  "source": "user",  "ask_count": 1 },
+    "site_goal":        { "status": "filled",   "confidence": 0.9,  "source": "user",  "ask_count": 1 },
+    "target_audience":  { "status": "filled",   "confidence": 0.85, "source": "user",  "ask_count": 1 },
+    "core_services":    { "status": "filled",   "confidence": 0.78, "source": "wiki",  "ask_count": 1 },
+    "required_sections":{ "status": "filled",   "confidence": 0.82, "source": "wiki",  "ask_count": 0 },
+    "cta":              { "status": "filled",   "confidence": 0.9,  "source": "user",  "ask_count": 1 },
+    "phone":            { "status": "filled",   "confidence": 1.0,  "source": "user",  "ask_count": 1 },
+    "kakao_channel":    { "status": "filled",   "confidence": 1.0,  "source": "user",  "ask_count": 1 },
+    "business_hours":   { "status": "filled",   "confidence": 1.0,  "source": "user",  "ask_count": 1 },
+    "contact_method":   { "status": "filled",   "confidence": 0.88, "source": "user",  "ask_count": 1 },
+    "business_number":  { "status": "missing",  "confidence": 0,    "source": null,    "ask_count": 0 }
+  },
+  "evidence": {
+    "wiki_refs": [
+      {
+        "doc_id": "industries/tax_accounting.md",
+        "reason": "세무/회계 업종의 추천 섹션 및 CTA 근거"
+      },
+      {
+        "doc_id": "templates/landing_tax.md",
+        "reason": "13-tax-accounting 템플릿 지원 섹션 및 레이아웃 근거"
+      },
+      {
+        "doc_id": "api_profiles/lead_form_basic.md",
+        "reason": "상담 신청 폼 지원 여부 근거"
+      }
+    ],
+    "research_refs": []
+  },
+  "gates": {
+    "completeness_score": 0.92,
+    "preview_ready": true,
+    "generation_ready": true,
+    "missing_items": [
+      {
+        "slot_key": "business_number",
+        "reason": "generation 단계 사업자등록번호 표시에 필요. 없어도 generation 진행 가능."
+      }
+    ],
+    "unresolved_items": []
+  }
+}
