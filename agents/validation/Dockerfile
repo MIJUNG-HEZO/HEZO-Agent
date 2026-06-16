@@ -1,4 +1,4 @@
-FROM public.ecr.aws/lambda/python:3.12 AS base
+FROM python:3.12-slim
 
 WORKDIR /app
 
