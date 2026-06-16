@@ -108,6 +108,16 @@ Stages:
       - usage
       - latency_ms
 
+  - name: bedrock_guardrails_apply
+    description: Bedrock Guardrails ApplyGuardrail 입력/출력 경계를 정의한다.
+    required_fields:
+      - guardrail_id
+      - guardrail_version
+      - guardrail_source
+      - guardrail_action
+      - guardrail_status
+      - assessments
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -248,11 +258,27 @@ MockState:
     latency_ms: 25
     reasons:
       - mock_invocation_succeeded
+  bedrock_guardrails_apply:
+    guardrail_id: hezo-dev-guardrail
+    guardrail_version: DRAFT
+    guardrail_target: llm_output
+    guardrail_source: OUTPUT
+    guardrail_status: succeeded
+    guardrail_action: NONE
+    store_allowed: true
+    masked_output:
+    latency_ms: 18
+    reasons:
+      - guardrail_passed
+    assessments:
+      - policy: mock_guardrail
+        reason: guardrail_passed
+        blocked: false
 
 OutOfScope:
   - LangGraph graph implementation
   - Real Bedrock invocation
-  - Bedrock Guardrails ApplyGuardrail integration
+  - Real Bedrock Guardrails ApplyGuardrail integration
   - Real DynamoDB custom checkpointer
   - Real S3 physical bucket integration
   - AgentCore Runtime deployment
