@@ -1,248 +1,76 @@
 # ============================================================
-# HEZO Generation Agent — Bedrock AgentCore 설정
+# HEZO Generation Agent — AgentCore Runtime 설정 (v2.0)
+# 런타임: Amazon Bedrock AgentCore Runtime (커스텀 Python 컨테이너)
 # 입력: P1이 생성한 G slot-based Contract JSON (schema_version 0.1.0)
-# 출력: render_spec.json (P3 Build Worker용)
+# 출력: render_spec.json + GEO 파일 4종 (S3 직접 저장)
 # ============================================================
 
 AgentName: hezo-generation-agent
+RuntimeType: AgentCoreRuntime          # v1.2의 ManagedBedrockAgent에서 전환
 Description: >
   P1 챗봇이 생성한 G slot-based Contract JSON을 받아
   P3 빌드 워커가 실행할 수 있는 render_spec.json을 생성하는 에이전트.
   SEO 메타데이터, Schema.org JSON-LD, FAQ, QuickAnswer, llms.txt를 포함한
   AI-friendly 정적 사이트 명세를 조립한다.
 
-FoundationModel: anthropic.claude-sonnet-4-5-20251001
+# AgentCore Runtime 컨테이너 설정
+Container:
+  Image: "{ACCOUNT_ID}.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-generation-agent:latest"
+  Port: 8080
+  HealthCheck: GET /health
+  InvokeEndpoint: POST /invoke
+
+# 실행 모델 (에이전트 코드가 직접 boto3로 호출)
+FoundationModel: global.anthropic.claude-sonnet-4-6
+
+# 환경변수 (컨테이너 실행 환경)
+EnvironmentVariables:
+  ARTIFACTS_BUCKET: hezo-artifacts
+  SITE_BUCKET: hezo-sites
+  MODEL_ID: global.anthropic.claude-sonnet-4-6
+  QUALITY_THRESHOLD: "50"
+  MAX_RETRIES: "2"
+  AWS_DEFAULT_REGION: ap-northeast-2
+
+# 실행 역할
+ExecutionRoleArn: "arn:aws:iam::{ACCOUNT_ID}:role/hezo-agentcore-execution-role"
+
+# Step Functions 연동 (변경 없음 — bedrock:invokeAgent 동일 사용)
+StepFunctionsIntegration:
+  Resource: "arn:aws:states:::bedrock:invokeAgent"
+  Parameters:
+    AgentId: "${SSM:hezo-generation-agent-id}"
+    AgentAliasId: "${SSM:hezo-generation-agent-alias-id}"
+    SessionId: "$.site_id"
+    InputText: "States.Format('site_id={} contract_ref={}', $.site_id, $.approved_contract_ref)"
+
+# 도구 계층 (v2.0: Lambda Action Group → 에이전트 내부 Python 모듈)
+# v1.2에서 별도 Lambda 함수였던 것들이 agents/generation/tools/에 내장됨
+InternalTools:
+  - name: contract_loader
+    module: agents.generation.tools.contract_loader
+    function: load_contract
+  - name: render_spec_saver
+    module: agents.generation.tools.render_spec_saver
+    function: save_render_spec
+
+# 확장 포인트 (Python 함수 추가만으로 보강)
+Evaluators:
+  - module: agents.generation.evaluators.render_spec_evaluator
+    function: evaluate_render_spec
+    threshold: 50       # 이 점수 미달 시 재생성 (최대 MAX_RETRIES회)
+
+Guardrails:
+  - module: agents.generation.guardrails.content_guardrail
+    function: check_guardrails
+
 IdleSessionTTLInSeconds: 600
 
 # ============================================================
-# 에이전트 Instructions (시스템 프롬프트)
+# 시스템 프롬프트 (에이전트 코드 agent.py의 _SYSTEM_PROMPT와 동일 내용 참조)
 # ============================================================
 AgentInstructions: |
   당신은 HEZO의 AI 친화 홈페이지 생성 전문가입니다.
-
-  ## 역할
-  P1 챗봇이 사용자와 대화하여 완성한 Contract JSON을 받아,
-  P3 Build Worker가 실제 정적 파일을 생성하는 데 필요한 render_spec.json을 만드세요.
-
-  ## 입력 포맷 (G slot-based, schema_version: 0.1.0)
-  Contract JSON에는 다음 필드가 있습니다:
-
-  - `ids.site_id`         : 사이트 고유 ID (S3 경로에 사용)
-  - `template.category`   : "landing" | "blog" | "store"
-  - `template.template_id`: 템플릿 slug (예: "landing_tax", "landing_dental")
-  - `slots`               : 사용자가 대화에서 제공한 실제 데이터
-    - `slots.business_name`   : 업체명
-    - `slots.industry`        : 업종 코드 (예: "tax_accounting", "medical_clinic")
-    - `slots.business_type`   : 업체 유형 (예: "세무사 사무소")
-    - `slots.business_region` : 지역 (예: "서울 강남")
-    - `slots.site_goal`       : 사이트 목표 ("lead_capture" | "commerce" | ...)
-    - `slots.target_audience` : 타겟 고객 배열
-    - `slots.core_services`   : 핵심 서비스 배열
-    - `slots.pain_points`     : 고객 고통점 배열 (FAQ 생성에 활용)
-    - `slots.required_sections`: 필요 섹션 배열
-    - `slots.tone_style`      : 톤앤매너 배열 ("professional", "trustworthy" 등)
-    - `slots.brand_keywords`  : 브랜드 키워드 배열
-    - `slots.cta`             : CTA 문구 배열 (첫 번째가 primary)
-    - `slots.phone`           : 전화번호
-    - `slots.kakao_channel`   : 카카오 채널명
-    - `slots.business_hours`  : 영업시간
-  - `gates.generation_ready`: true여야 진행 가능
-  - `evidence.wiki_refs`   : 업종별 참고 문서 목록
-
-  ## 슬롯 → render_spec 매핑 규칙
-
-  ### 1. industry → Schema.org 타입
-  - tax_accounting     → "Accountant"
-  - medical_clinic     → "MedicalClinic"
-  - dental_clinic      → "Dentist"
-  - law_firm           → "LegalService"
-  - restaurant         → "FoodEstablishment"
-  - fitness            → "SportsActivityLocation"
-  - salon / nail       → "BeautySalon"
-  - real_estate        → "RealEstateAgent"
-  - education          → "EducationalOrganization"
-  - (기타)             → "LocalBusiness"
-
-  ### 2. slots → SEO 메타
-  - title: "{business_name} | {business_region} {business_type} — {brand_keywords[0]}"
-  - description: "{target_audience[0~2]}를 위한 {business_name}. {core_services[0~2]} 전문. {brand_keywords[0]}, {brand_keywords[1]}."
-  - target_keywords: brand_keywords + [business_region + " " + business_type]
-  - canonical: "https://{template.slug}.hezo.io/"
-
-  ### 3. slots.pain_points → FAQ
-  pain_points를 질문형 H2로 변환하고 전문적인 답변을 생성하세요.
-  반드시 5~7개 FAQ를 만들되, pain_points가 부족하면 업종 상식으로 보완하세요.
-  예: "세금 신고 일정 관리가 어렵다" → Q: "{business_name}에서는 신고 일정을 어떻게 관리하나요?"
-
-  ### 4. QuickAnswer 블록
-  "{business_name}은 {business_region}에 위치한 {business_type}으로 {core_services[0]}, {core_services[1]} 등을 전문으로 합니다."
-  (2~3문장, 50~120자, data-hezo="quick-answer" 블록에 삽입됨)
-
-  ### 5. H1 규칙
-  - 페이지당 정확히 1개 (BLOCKING — 어기면 P4 검증에서 FAIL)
-  - business_name과 핵심 가치를 담아 작성
-  - tone_style을 반영
-
-  ### 6. slots.core_services → 서비스 블록
-  각 서비스에 대해:
-  - name: 서비스명
-  - desc: 고객 관점 효익 중심 1~2문장
-  - label: 서비스 유형 약어 (예: "MONTHLY", "REVIEW", "STARTER")
-
-  ### 7. llms.txt 형식 (AI 크롤러용 — 반드시 생성)
-  ```
-  # {business_name}
-  > {business_type} | {business_region}
-
-  ## 서비스
-  {core_services를 "- " 항목으로}
-
-  ## 연락처
-  - 전화: {phone}
-  - 카카오: {kakao_channel}
-  - 영업시간: {business_hours}
-
-  ## 타겟 고객
-  {target_audience를 "- " 항목으로}
-  ```
-
-  ### 8. robots.txt — AI 크롤러 Allow 필수
-  ```
-  User-agent: GPTBot
-  Allow: /
-
-  User-agent: ClaudeBot
-  Allow: /
-
-  User-agent: PerplexityBot
-  Allow: /
-
-  User-agent: *
-  Allow: /
-
-  Sitemap: https://{slug}.hezo.io/sitemap.xml
-  ```
-
-  ## 작업 절차
-
-  1. `load_contract` 도구를 호출하여 S3에서 contract.json 읽기
-     - 파라미터: site_id (Step Functions이 SessionAttributes로 전달)
-  2. `gates.generation_ready`가 false면 즉시 중단하고 이유를 반환
-  3. 위 매핑 규칙에 따라 render_spec 조립:
-     - schema_version, site_id, template_id 설정
-     - pages[0] (루트 페이지) 구성:
-       - seo: title, description, canonical, og, twitter_card
-       - jsonld: Schema.org LocalBusiness 계열 + FAQPage
-       - blocks: Hero(h1 1개), Services(core_services 기반), FAQ(5~7개), QuickAnswer, Contact
-     - supplementary_files: llms_txt, llms_full_txt, sitemap_pages, robots_rules
-     - build_manifest: s3 버킷/경로 정보
-  4. `save_render_spec` 도구를 호출하여 S3에 저장
-  5. 저장 완료 후 반드시 다음 문자열을 포함하여 응답:
-     "render_spec_saved — site_id: {site_id}"
-
-  ## BLOCKING 조건 (어기면 P4 검증에서 FAIL_BLOCKING)
-  - H1은 페이지당 정확히 1개
-  - FAQ는 최소 5개
-  - llms.txt 반드시 생성
-  - Schema.org JSON-LD에 FAQPage 포함
-  - robots.txt에 GPTBot/ClaudeBot/PerplexityBot Allow 포함
-
-  ## 언어
-  - 모든 콘텐츠는 한국어 생성
-  - Schema.org 타입명, label 약어(MONTHLY 등), 필드명은 영어 유지
-  - slots.business_number가 null이어도 진행 가능 (missing_items에 있어도 generation_ready=true면 통과)
-
-# ============================================================
-# Action Groups
-# ============================================================
-ActionGroups:
-
-  - ActionGroupName: ContractLoader
-    Description: >
-      S3 hezo-artifacts 버킷의 sites/{site_id}/contract_final.json을 읽어
-      G slot-based Contract JSON(schema_version 0.1.0)을 반환한다.
-    LambdaFunction: hezo-p4-contract-loader
-    ApiSchema:
-      openapi: "3.0.0"
-      info:
-        title: ContractLoader API
-        version: "1.0"
-      paths:
-        /get-contract:
-          post:
-            operationId: load_contract
-            summary: S3에서 G slot-based Contract JSON 로드
-            requestBody:
-              required: true
-              content:
-                application/json:
-                  schema:
-                    type: object
-                    required: [site_id]
-                    properties:
-                      site_id:
-                        type: string
-                        description: "사이트 고유 ID — S3 경로 sites/{site_id}/contract_final.json"
-            responses:
-              "200":
-                description: Contract JSON (schema_version 0.1.0, G slot-based)
-                content:
-                  application/json:
-                    schema:
-                      type: object
-                      properties:
-                        schema_version: { type: string }
-                        ids:            { type: object }
-                        template:       { type: object }
-                        slots:          { type: object }
-                        slot_status:    { type: object }
-                        evidence:       { type: object }
-                        gates:          { type: object }
-              "404":
-                description: contract_final.json이 S3에 없음
-
-  - ActionGroupName: RenderSpecSaver
-    Description: >
-      완성된 render_spec.json을 S3 hezo-artifacts 버킷에 저장한다.
-      저장 경로: sites/{site_id}/render_spec.json
-    LambdaFunction: hezo-p4-render-spec-saver
-    ApiSchema:
-      openapi: "3.0.0"
-      info:
-        title: RenderSpecSaver API
-        version: "1.0"
-      paths:
-        /save-render-spec:
-          post:
-            operationId: save_render_spec
-            summary: render_spec.json을 S3에 저장
-            requestBody:
-              required: true
-              content:
-                application/json:
-                  schema:
-                    type: object
-                    required: [site_id, render_spec]
-                    properties:
-                      site_id:
-                        type: string
-                      render_spec:
-                        type: object
-                        description: "render_spec_schema.json 형식의 완성된 명세"
-            responses:
-              "200":
-                description: 저장 완료
-                content:
-                  application/json:
-                    schema:
-                      type: object
-                      properties:
-                        s3_key:  { type: string }
-                        status:  { type: string }
-
-# ============================================================
-# 에이전트 Alias
-# ============================================================
-Aliases:
-  - AliasName: stable
-    Description: "운영 배포용 stable alias"
+  Contract JSON을 받아 render_spec.json을 생성하세요.
+  출력: 순수 JSON만 (마크다운 없음).
+  [상세 매핑 규칙은 agent.py _SYSTEM_PROMPT 참조]

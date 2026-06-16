@@ -20,7 +20,7 @@
     "schema_version": {
       "type": "string",
       "description": "렌더 스펙 스키마 버전",
-      "const": "1.0"
+      "const": "1.0.0"
     },
 
     "site_id": {
@@ -180,9 +180,9 @@
             "description": "페이지를 구성하는 UI 블록 목록 (Build Worker가 렌더링)",
             "items": {
               "type": "object",
-              "required": ["block_type"],
+              "required": ["type"],
               "properties": {
-                "block_type": {
+                "type": {
                   "type": "string",
                   "description": "블록 종류",
                   "enum": [
@@ -405,9 +405,10 @@
         },
 
         "robots_rules": {
-          "type": "string",
-          "description": "robots.txt 파일 전체 내용 (AI 크롤러 GPTBot/ClaudeBot/PerplexityBot 허용 포함)",
-          "minLength": 1
+          "type": "array",
+          "description": "robots.txt 파일 내용을 줄 단위 배열로 표현 (RenderSpecSaver가 '\\n'.join으로 파일 생성)",
+          "items": { "type": "string" },
+          "minItems": 1
         }
       }
     },

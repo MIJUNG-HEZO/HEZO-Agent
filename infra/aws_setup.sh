@@ -7,10 +7,16 @@
 
 set -euo pipefail
 
+# Git Bash(MSYS/MinGW)에서 /로 시작하는 인자를 Windows 경로로 변환하는 것을 방지
+export MSYS_NO_PATHCONV=1
+
 # ─── .env 로드 (HEZO-Agent 레포 루트 기준) ──────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "${REPO_ROOT}/.env" ]; then
-    set -a; source "${REPO_ROOT}/.env"; set +a
+    set -a
+    # CRLF → LF 변환 후 소싱 (Windows 환경 대응)
+    source <(sed 's/\r//' "${REPO_ROOT}/.env")
+    set +a
     echo "[ENV] .env 로드 완료: ${REPO_ROOT}/.env"
 else
     echo "[ENV] .env 없음 — 환경변수 또는 ~/.aws/config 사용"
@@ -29,6 +35,14 @@ warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()     { error "$*"; exit 1; }
 
+# ─── 플래그 파싱 ────────────────────────────────────────────────────────────
+SKIP_IAM=false
+for arg in "$@"; do
+    case "$arg" in
+        --skip-iam) SKIP_IAM=true ;;
+    esac
+done
+
 # ─── 설정값 (.env 값 우선, 없으면 기본값) ──────────────────────────────────
 REGION="${AWS_REGION:-ap-northeast-2}"
 ARTIFACTS_BUCKET="${ARTIFACTS_BUCKET:-hezo-artifacts}"
@@ -43,7 +57,7 @@ if [ -n "${AWS_PROFILE:-}" ]; then
 fi
 
 # Bedrock 모델 ID (ap-northeast-2 지원 여부 확인용)
-SONNET_MODEL="anthropic.claude-sonnet-4-5-20251001"
+SONNET_MODEL="anthropic.claude-sonnet-4-5-20250929-v1:0"
 HAIKU_MODEL="anthropic.claude-haiku-4-5-20251001"
 
 # IAM 역할명
@@ -168,6 +182,11 @@ echo ""
 # 4. IAM 역할 생성
 # =============================================================================
 
+if [ "$SKIP_IAM" = true ]; then
+    warn "IAM 역할 생성 건너뜀 (--skip-iam 플래그). 관리자가 역할을 직접 생성해야 합니다."
+    warn "  필요 역할: hezo-lambda-execution-role, hezo-step-functions-role, hezo-bedrock-agent-role"
+else
+
 # IAM 역할 존재 여부 확인 후 생성 또는 업데이트
 create_or_update_role() {
     local role_name="$1"
@@ -176,16 +195,20 @@ create_or_update_role() {
 
     info "IAM 역할 처리: ${role_name}"
 
+    # ${AWS_ACCOUNT_ID} 플레이스홀더를 실제 계정 ID로 치환 (파일 없이 변수로 전달)
+    local trust_doc
+    trust_doc=$(sed "s/\${AWS_ACCOUNT_ID}/${ACCOUNT_ID}/g" "${trust_policy_file}")
+
     if aws iam get-role --role-name "$role_name" --output text > /dev/null 2>&1; then
         warn "  역할 ${role_name} 이미 존재합니다. 신뢰 정책만 업데이트합니다."
         aws iam update-assume-role-policy \
             --role-name "$role_name" \
-            --policy-document "file://${trust_policy_file}" > /dev/null
+            --policy-document "$trust_doc" > /dev/null
         success "  신뢰 정책 업데이트 완료"
     else
         aws iam create-role \
             --role-name "$role_name" \
-            --assume-role-policy-document "file://${trust_policy_file}" \
+            --assume-role-policy-document "$trust_doc" \
             --description "$description" \
             --tags "Key=Project,Value=HEZO" "Key=ManagedBy,Value=aws_setup.sh" \
             --output text > /dev/null
@@ -198,7 +221,7 @@ create_or_update_role() {
 create_or_update_role \
     "$LAMBDA_ROLE" \
     "${IAM_DIR}/lambda-trust.json" \
-    "HEZO Lambda 함수 실행 역할"
+    "HEZO Lambda execution role"
 
 info "  Lambda 역할 인라인 정책 연결 중..."
 aws iam put-role-policy \
@@ -218,7 +241,7 @@ echo ""
 create_or_update_role \
     "$STEP_FUNCTIONS_ROLE" \
     "${IAM_DIR}/step-functions-trust.json" \
-    "HEZO Step Functions 파이프라인 실행 역할"
+    "HEZO Step Functions pipeline execution role"
 
 info "  Step Functions 역할 인라인 정책 연결 중..."
 aws iam put-role-policy \
@@ -232,13 +255,15 @@ echo ""
 create_or_update_role \
     "$BEDROCK_AGENT_ROLE" \
     "${IAM_DIR}/bedrock-agent-trust.json" \
-    "HEZO Bedrock Agent 실행 역할"
+    "HEZO Bedrock Agent execution role"
 
 info "  Bedrock Agent 역할 인라인 정책 연결 중..."
+# ${AWS_ACCOUNT_ID} 플레이스홀더 치환 (파일 없이 변수로 전달)
+bedrock_policy_doc=$(sed "s/\${AWS_ACCOUNT_ID}/${ACCOUNT_ID}/g" "${IAM_DIR}/bedrock-agent-policy.json")
 aws iam put-role-policy \
     --role-name "$BEDROCK_AGENT_ROLE" \
     --policy-name "hezo-bedrock-agent-inline-policy" \
-    --policy-document "file://${IAM_DIR}/bedrock-agent-policy.json"
+    --policy-document "$bedrock_policy_doc"
 success "  Bedrock Agent 인라인 정책 연결 완료"
 echo ""
 
@@ -248,33 +273,41 @@ sleep 10
 success "IAM 역할 전파 완료"
 echo ""
 
+fi # end of SKIP_IAM check
+
 # =============================================================================
 # 5. SSM Parameter Store 파라미터 생성
 # =============================================================================
 info "SSM Parameter Store 파라미터 생성 중..."
 
 put_ssm_param() {
-    local name="$1"
-    local value="$2"
-    local description="$3"
+    local name="${1//$'\r'/}"
+    local value="${2//$'\r'/}"
+    local region="${REGION//$'\r'/}"
 
     aws ssm put-parameter \
         --name "$name" \
         --value "$value" \
         --type "String" \
-        --description "$description" \
         --overwrite \
-        --region "$REGION" \
-        --tags "Key=Project,Value=HEZO" \
+        --region "$region" \
+        ${AWS_PROFILE_OPT} \
         --output text > /dev/null
     success "  SSM 파라미터 설정: ${name} = ${value}"
     CREATED_RESOURCES+=("SSM Parameter: ${name}")
 }
 
-put_ssm_param "/hezo/artifacts-bucket" "$ARTIFACTS_BUCKET"  "HEZO 아티팩트 S3 버킷명"
-put_ssm_param "/hezo/sites-bucket"     "$SITES_BUCKET"      "HEZO 사이트 S3 버킷명"
-put_ssm_param "/hezo/region"           "$REGION"            "HEZO 서비스 AWS 리전"
-put_ssm_param "/hezo/account-id"       "$ACCOUNT_ID"        "AWS 계정 ID"
+# CRLF 방어: 변수에서 \r 제거
+ARTIFACTS_BUCKET="${ARTIFACTS_BUCKET//$'\r'/}"
+SITES_BUCKET="${SITES_BUCKET//$'\r'/}"
+REGION="${REGION//$'\r'/}"
+ACCOUNT_ID="${ACCOUNT_ID//$'\r'/}"
+
+# 플랫 이름 사용 (조직 SCP가 계층형 /hezo/... 경로를 차단함)
+put_ssm_param "hezo-artifacts-bucket" "$ARTIFACTS_BUCKET"
+put_ssm_param "hezo-sites-bucket"     "$SITES_BUCKET"
+put_ssm_param "hezo-region"           "$REGION"
+put_ssm_param "hezo-account-id"       "$ACCOUNT_ID"
 echo ""
 
 # =============================================================================
