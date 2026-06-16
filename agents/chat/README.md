@@ -24,6 +24,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - P2 markdown 수신 검수 필드
 - P2 markdown 수신 검수 순수 로직
 - 적극적 질의 후보 생성 순수 로직
+- 사용자 답변 slot state 반영 순수 로직
 - 로컬 smoke test
 
 제외:
@@ -43,6 +44,7 @@ domain_selection
 -> p2_markdown_request
 -> p2_markdown_review
 -> proactive_questioning
+-> slot_answer_state
 -> contract_compile
 -> contract_quality_check
 ```
@@ -159,6 +161,44 @@ domain_selection
 - `max_questions`를 초과하지 않음
 
 이번 범위에서는 실제 LangGraph node 연결, Bedrock/LLM 질문 보완, 사용자 답변 저장, Contract JSON 반영을 포함하지 않습니다.
+
+## Slot Answer State
+
+`slot_answer_state.py`는 적극적 질의에 대한 사용자 답변을 현재 slot state에 반영합니다.
+
+입력 기준:
+
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `answered_slot`
+- `answer`
+
+출력 기준:
+
+```json
+{
+  "answered_slot": "core_services",
+  "answer_status": "accepted",
+  "known_answers": {
+    "business_name": "한빛 세무회계",
+    "core_services": "기장 대리, 종합소득세 신고, 법인세 신고"
+  },
+  "missing_slots": ["contact_method"],
+  "reasons": ["answer_applied"]
+}
+```
+
+반영 기준:
+
+- 유효한 slot 답변은 `known_answers`에 반영
+- 답변된 slot은 `missing_slots`에서 제거
+- 빈 문자열/공백 답변은 거부
+- 존재하지 않는 slot은 거부
+- 이미 답변된 slot도 유효한 새 답변이면 업데이트 가능
+- 비어 있지 않은 list/dict 구조화 답변은 허용
+
+이번 범위에서는 실제 사용자 대화 API 라우터, LangGraph node 연결, DynamoDB checkpoint 저장, Contract JSON 반영을 포함하지 않습니다.
 
 ## Local Smoke Test
 
