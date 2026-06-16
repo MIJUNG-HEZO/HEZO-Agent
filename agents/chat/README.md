@@ -29,6 +29,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Contract draft quality check 순수 로직
 - 저장 전 Guardrails adapter 스켈레톤
 - DynamoDB chat state/checkpoint 저장소 스켈레톤
+- S3 artifact storage adapter 스켈레톤
 - 로컬 smoke test
 
 제외:
@@ -39,7 +40,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 실제 사용자 대화 API 라우터
 - 실제 Bedrock Guardrails 호출
 - 실제 DynamoDB custom checkpointer
-- S3 3개 물리 버킷 연동
+- 실제 S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
 
 ## Stage 흐름
@@ -54,6 +55,7 @@ domain_selection
 -> contract_quality_check
 -> storage_guardrails
 -> chat_state_checkpoint
+-> s3_artifact_storage
 ```
 
 ## Rule-based Logic and Guardrails
@@ -378,6 +380,58 @@ SK = GUARDRAIL#{created_at}#{target}
 - LangGraph custom checkpointer 연결은 후속 이슈에서 처리
 
 이번 범위에서는 실제 AWS DynamoDB 호출, table 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## S3 Artifact Storage
+
+`s3_artifact_store.py`는 S3 bucket/key 설계를 기준으로 원문/대용량 artifact 저장 경계를 정의하는 adapter 스켈레톤입니다.
+
+저장 대상:
+
+- chat transcript
+- P2 markdown
+- Contract draft
+- Contract final
+- guardrail report
+
+물리 bucket 기준:
+
+```text
+dev-hezo-chat-transcripts
+dev-hezo-p2-markdowns
+dev-hezo-p4-contracts
+```
+
+key 설계:
+
+```text
+sessions/{session_id}/transcripts/{version}.json
+domains/{domain}/question_guides/{version}.md
+sites/{site_id}/contracts/draft/{version}.json
+sites/{site_id}/contract_final.json
+sessions/{session_id}/guardrails/{target}/{timestamp}.json
+```
+
+출력 기준:
+
+```json
+{
+  "bucket": "dev-hezo-p4-contracts",
+  "key": "sites/site_001/contracts/draft/000001.json",
+  "uri": "s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json",
+  "artifact_kind": "contract_draft",
+  "content_type": "application/json"
+}
+```
+
+저장 기준:
+
+- bucket/key 생성 규칙을 코드 상수로 고정
+- `build_artifact_ref`, `put_artifact`, `get_artifact` repository 경계 제공
+- 로컬 smoke test에서는 `InMemoryS3ArtifactStore`로 저장/조회 검증
+- `store_allowed=false` 또는 `guardrail_action != NONE`이면 저장을 거부
+- 실제 S3 bucket, boto3 client, IAM, KMS/SSE, lifecycle policy는 후속 infra 이슈에서 처리
+
+이번 범위에서는 실제 AWS S3 호출, bucket 생성, AgentCore Runtime 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 
