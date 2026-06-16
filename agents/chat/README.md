@@ -32,11 +32,12 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - S3 artifact storage adapter 스켈레톤
 - Bedrock Claude invocation adapter 스켈레톤
 - Bedrock Guardrails ApplyGuardrail adapter 스켈레톤
+- LangGraph chat graph 스켈레톤
 - 로컬 smoke test
 
 제외:
 
-- 실제 LangGraph graph 구현
+- 실제 LangGraph `StateGraph` 구현
 - 실제 Bedrock 호출
 - 실제 P2 API 호출
 - 실제 사용자 대화 API 라우터
@@ -60,6 +61,7 @@ domain_selection
 -> s3_artifact_storage
 -> bedrock_claude_invocation
 -> bedrock_guardrails_apply
+-> chat_graph
 ```
 
 ## Rule-based Logic and Guardrails
@@ -535,6 +537,69 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 - 기존 `storage_guardrails.py`와 호환되도록 `action`, `store_allowed`, `reasons` 구조 유지
 
 이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail 생성/정책 설정, boto3 client 연결을 포함하지 않습니다.
+
+## Chat Graph Skeleton
+
+`chat_graph.py`는 P1 채팅 에이전트 stage들을 deterministic graph 순서로 연결하는 스켈레톤입니다.
+
+이번 범위에서는 실제 `langgraph` package 의존이나 `StateGraph` 런타임 연결을 포함하지 않고, 후속 전환을 위한 state shape와 node boundary를 먼저 고정합니다.
+
+graph node 순서:
+
+```text
+p2_markdown_request
+-> p2_markdown_review
+-> proactive_questioning
+-> slot_answer_state
+-> contract_compile
+-> contract_quality_check
+-> bedrock_guardrails
+-> chat_state_checkpoint
+-> s3_artifact_storage
+```
+
+state 기준:
+
+- `session_id`
+- `domain`
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `contract_draft`
+- `quality_check`
+- `guardrail_result`
+- `checkpoint_ref`
+- `artifact_refs`
+
+출력 기준:
+
+```json
+{
+  "stage": "s3_artifact_storage",
+  "contract_draft": {
+    "site_id": "site_001",
+    "domain": "tax_accounting"
+  },
+  "quality_check": {
+    "quality_status": "needs_enrichment"
+  },
+  "guardrail_result": {
+    "action": "NONE",
+    "store_allowed": true
+  },
+  "checkpoint_ref": {
+    "pk": "SESSION#session_001",
+    "sk": "CHECKPOINT#bedrock_guardrails#000001"
+  },
+  "artifact_refs": [
+    {
+      "uri": "s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json"
+    }
+  ]
+}
+```
+
+이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB/S3/Boto3 호출, Bedrock 호출, AgentCore Runtime 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 

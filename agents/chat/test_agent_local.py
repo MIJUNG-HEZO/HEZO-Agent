@@ -19,6 +19,7 @@ from bedrock_guardrails_adapter import (
     GuardrailsApplyInput,
     MockBedrockGuardrailsClient,
 )
+from chat_graph import CHAT_GRAPH_NODE_ORDER, ChatGraphState, run_chat_graph
 from chat_state_store import (
     ChatCheckpoint,
     ChatMessage,
@@ -67,6 +68,7 @@ REQUIRED_STAGES = [
     "s3_artifact_storage",
     "bedrock_claude_invocation",
     "bedrock_guardrails_apply",
+    "chat_graph",
 ]
 
 REQUIRED_REVIEW_FIELDS = [
@@ -156,6 +158,13 @@ REQUIRED_BEDROCK_GUARDRAILS_FIELDS = [
     "guardrail_action",
     "guardrail_status",
     "assessments",
+]
+
+REQUIRED_CHAT_GRAPH_FIELDS = [
+    "graph_node_order",
+    "graph_final_stage",
+    "graph_checkpoint_ref",
+    "graph_artifact_refs",
 ]
 
 
@@ -974,6 +983,76 @@ def _validate_bedrock_guardrails_cases() -> list[str]:
     return errors
 
 
+def _sample_chat_graph_state(**overrides: object) -> ChatGraphState:
+    request_input = _sample_request_input()
+    data = {
+        "session_id": "session_001",
+        "site_id": request_input.site_id,
+        "user_id": request_input.user_id,
+        "stage": "domain_selection",
+        "domain": request_input.domain,
+        "domain_label": request_input.domain_label,
+        "selected_template": request_input.selected_template,
+        "slot_registry": request_input.slot_registry,
+        "known_answers": request_input.known_answers,
+        "missing_slots": request_input.missing_slots,
+    }
+    data.update(overrides)
+    return ChatGraphState(**data)
+
+
+def _validate_chat_graph_cases() -> list[str]:
+    errors: list[str] = []
+
+    if CHAT_GRAPH_NODE_ORDER != (
+        "p2_markdown_request",
+        "p2_markdown_review",
+        "proactive_questioning",
+        "slot_answer_state",
+        "contract_compile",
+        "contract_quality_check",
+        "bedrock_guardrails",
+        "chat_state_checkpoint",
+        "s3_artifact_storage",
+    ):
+        errors.append("chat graph node order가 기대 순서와 다릅니다.")
+
+    final_state = run_chat_graph(_sample_chat_graph_state())
+    final_dict = final_state.to_dict()
+
+    if final_dict["stage"] != "s3_artifact_storage":
+        errors.append("chat graph 최종 stage는 s3_artifact_storage여야 합니다.")
+    if not final_dict["p2_markdown_request"]:
+        errors.append("chat graph는 p2_markdown_request payload를 포함해야 합니다.")
+    if not final_dict["question_candidates"]:
+        errors.append("chat graph는 question candidates를 생성해야 합니다.")
+    if final_dict["missing_slots"] != ["contact_method"]:
+        errors.append("chat graph는 첫 질문 답변 후 남은 missing_slots를 유지해야 합니다.")
+    if not final_dict["contract_draft"].get("slots"):
+        errors.append("chat graph는 contract_draft slots를 포함해야 합니다.")
+    if not final_dict["quality_check"].get("quality_status"):
+        errors.append("chat graph는 quality_check 결과를 포함해야 합니다.")
+    if final_dict["guardrail_result"].get("action") != "NONE":
+        errors.append("안전한 contract draft는 graph Guardrails를 통과해야 합니다.")
+    if not final_dict["checkpoint_ref"].get("pk") or not final_dict["checkpoint_ref"].get("sk"):
+        errors.append("chat graph는 checkpoint_ref를 포함해야 합니다.")
+    if not final_dict["artifact_refs"] or "uri" not in final_dict["artifact_refs"][0]:
+        errors.append("chat graph는 artifact_refs uri를 포함해야 합니다.")
+    if "contract_draft_artifact_saved" not in final_state.reasons:
+        errors.append("chat graph 완료 사유에는 artifact 저장 결과가 포함되어야 합니다.")
+
+    invalid_state = _sample_chat_graph_state(slot_registry={})
+    try:
+        run_chat_graph(invalid_state)
+    except ValueError as error:
+        if str(error) != "slot_registry_empty":
+            errors.append(f"invalid graph state error={error!s}, expected=slot_registry_empty")
+    else:
+        errors.append("slot_registry가 비어 있으면 chat graph 실행이 실패해야 합니다.")
+
+    return errors
+
+
 def _validate_slot_answer_cases() -> list[str]:
     errors: list[str] = []
 
@@ -1300,7 +1379,20 @@ def main() -> None:
     else:
         print("  [OK] Bedrock Guardrails ApplyGuardrail 필드 확인")
 
-    print("\n[13] P2 markdown request 케이스 검증")
+    print("\n[13] chat graph 필드 검증")
+    chat_graph_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_CHAT_GRAPH_FIELDS,
+        "chat graph field",
+    )
+    if chat_graph_field_errors:
+        errors.extend(chat_graph_field_errors)
+        for error in chat_graph_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] chat graph 필드 확인")
+
+    print("\n[14] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -1309,7 +1401,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[14] proactive questioning 케이스 검증")
+    print("\n[15] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -1318,7 +1410,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[15] slot answer state 케이스 검증")
+    print("\n[16] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -1327,7 +1419,7 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[16] contract compile 케이스 검증")
+    print("\n[17] contract compile 케이스 검증")
     contract_case_errors = _validate_contract_cases()
     if contract_case_errors:
         errors.extend(contract_case_errors)
@@ -1336,7 +1428,7 @@ def main() -> None:
     else:
         print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
 
-    print("\n[17] contract quality check 케이스 검증")
+    print("\n[18] contract quality check 케이스 검증")
     quality_case_errors = _validate_quality_cases()
     if quality_case_errors:
         errors.extend(quality_case_errors)
@@ -1345,7 +1437,7 @@ def main() -> None:
     else:
         print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
 
-    print("\n[18] storage guardrails 케이스 검증")
+    print("\n[19] storage guardrails 케이스 검증")
     guardrail_case_errors = _validate_guardrail_cases()
     if guardrail_case_errors:
         errors.extend(guardrail_case_errors)
@@ -1354,7 +1446,7 @@ def main() -> None:
     else:
         print("  [OK] 저장 허용 / injection 차단 / PII 차단 / dict 직렬화 케이스 확인")
 
-    print("\n[19] chat state checkpoint 케이스 검증")
+    print("\n[20] chat state checkpoint 케이스 검증")
     checkpoint_case_errors = _validate_chat_state_store_cases()
     if checkpoint_case_errors:
         errors.extend(checkpoint_case_errors)
@@ -1363,7 +1455,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / metadata / message / checkpoint / guardrail 저장 조회 확인")
 
-    print("\n[20] S3 artifact storage 케이스 검증")
+    print("\n[21] S3 artifact storage 케이스 검증")
     s3_artifact_case_errors = _validate_s3_artifact_store_cases()
     if s3_artifact_case_errors:
         errors.extend(s3_artifact_case_errors)
@@ -1372,7 +1464,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / transcript / P2 markdown / contract / guardrail 저장 조회 확인")
 
-    print("\n[21] Bedrock Claude invocation 케이스 검증")
+    print("\n[22] Bedrock Claude invocation 케이스 검증")
     claude_case_errors = _validate_claude_invocation_cases()
     if claude_case_errors:
         errors.extend(claude_case_errors)
@@ -1381,7 +1473,7 @@ def main() -> None:
     else:
         print("  [OK] use case / 실패 정규화 / usage / latency metadata 확인")
 
-    print("\n[22] Bedrock Guardrails ApplyGuardrail 케이스 검증")
+    print("\n[23] Bedrock Guardrails ApplyGuardrail 케이스 검증")
     bedrock_guardrails_case_errors = _validate_bedrock_guardrails_cases()
     if bedrock_guardrails_case_errors:
         errors.extend(bedrock_guardrails_case_errors)
@@ -1390,7 +1482,16 @@ def main() -> None:
     else:
         print("  [OK] safe / injection / PII / 실패 정규화 / assessment 확인")
 
-    print("\n[23] review policy mock 값 검증")
+    print("\n[24] chat graph 케이스 검증")
+    chat_graph_case_errors = _validate_chat_graph_cases()
+    if chat_graph_case_errors:
+        errors.extend(chat_graph_case_errors)
+        for error in chat_graph_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] graph run / 최종 state / checkpoint / artifact ref 확인")
+
+    print("\n[25] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -1399,7 +1500,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[24] P2 markdown review 케이스 검증")
+    print("\n[26] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

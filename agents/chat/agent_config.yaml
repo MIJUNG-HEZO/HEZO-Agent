@@ -118,6 +118,14 @@ Stages:
       - guardrail_status
       - assessments
 
+  - name: chat_graph
+    description: P1 채팅 에이전트 stage들을 deterministic graph 순서로 연결한다.
+    required_fields:
+      - graph_node_order
+      - graph_final_stage
+      - graph_checkpoint_ref
+      - graph_artifact_refs
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -274,9 +282,26 @@ MockState:
       - policy: mock_guardrail
         reason: guardrail_passed
         blocked: false
+  chat_graph:
+    graph_node_order:
+      - p2_markdown_request
+      - p2_markdown_review
+      - proactive_questioning
+      - slot_answer_state
+      - contract_compile
+      - contract_quality_check
+      - bedrock_guardrails
+      - chat_state_checkpoint
+      - s3_artifact_storage
+    graph_final_stage: s3_artifact_storage
+    graph_checkpoint_ref:
+      pk: SESSION#session_001
+      sk: CHECKPOINT#bedrock_guardrails#000001
+    graph_artifact_refs:
+      - uri: s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json
 
 OutOfScope:
-  - LangGraph graph implementation
+  - Real LangGraph StateGraph implementation
   - Real Bedrock invocation
   - Real Bedrock Guardrails ApplyGuardrail integration
   - Real DynamoDB custom checkpointer
