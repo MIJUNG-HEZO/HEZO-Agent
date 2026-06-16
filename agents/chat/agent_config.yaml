@@ -98,6 +98,16 @@ Stages:
       - contract_draft_key
       - contract_final_key
 
+  - name: bedrock_claude_invocation
+    description: Bedrock Claude 호출 입력/출력 경계를 정의하고 LLM 보완 결과를 정규화한다.
+    required_fields:
+      - use_case
+      - model_id
+      - invocation_status
+      - output_text
+      - usage
+      - latency_ms
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -226,10 +236,22 @@ MockState:
     contract_draft_key: sites/site_001/contracts/draft/000001.json
     contract_final_key: sites/site_001/contract_final.json
     guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
+  bedrock_claude_invocation:
+    use_case: question_enrichment
+    model_id: anthropic.claude-sonnet-4-5-20251001
+    invocation_status: succeeded
+    output_text: 부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.
+    usage:
+      input_tokens: 12
+      output_tokens: 7
+      total_tokens: 19
+    latency_ms: 25
+    reasons:
+      - mock_invocation_succeeded
 
 OutOfScope:
   - LangGraph graph implementation
-  - Bedrock invocation
+  - Real Bedrock invocation
   - Bedrock Guardrails ApplyGuardrail integration
   - Real DynamoDB custom checkpointer
   - Real S3 physical bucket integration

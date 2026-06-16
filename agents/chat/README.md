@@ -30,12 +30,13 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 저장 전 Guardrails adapter 스켈레톤
 - DynamoDB chat state/checkpoint 저장소 스켈레톤
 - S3 artifact storage adapter 스켈레톤
+- Bedrock Claude invocation adapter 스켈레톤
 - 로컬 smoke test
 
 제외:
 
 - 실제 LangGraph graph 구현
-- Bedrock 호출
+- 실제 Bedrock 호출
 - 실제 P2 API 호출
 - 실제 사용자 대화 API 라우터
 - 실제 Bedrock Guardrails 호출
@@ -56,6 +57,7 @@ domain_selection
 -> storage_guardrails
 -> chat_state_checkpoint
 -> s3_artifact_storage
+-> bedrock_claude_invocation
 ```
 
 ## Rule-based Logic and Guardrails
@@ -432,6 +434,53 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 - 실제 S3 bucket, boto3 client, IAM, KMS/SSE, lifecycle policy는 후속 infra 이슈에서 처리
 
 이번 범위에서는 실제 AWS S3 호출, bucket 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## Bedrock Claude Invocation
+
+`bedrock_claude_adapter.py`는 Bedrock Claude 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+
+호출 대상:
+
+- `question_enrichment`
+- `contract_enrichment`
+- `assistant_reply`
+
+입력 기준:
+
+- `use_case`
+- `system_prompt`
+- `messages`
+- `context`
+- `model_id`
+- `max_tokens`
+- `temperature`
+
+출력 기준:
+
+```json
+{
+  "status": "succeeded",
+  "text": "부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.",
+  "model_id": "anthropic.claude-sonnet-4-5-20251001",
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 7,
+    "total_tokens": 19
+  },
+  "latency_ms": 25,
+  "reasons": ["mock_invocation_succeeded", "question_enrichment"]
+}
+```
+
+호출 기준:
+
+- Claude는 HEZO 비즈니스 규칙의 source of truth가 아니라 Rule Engine 결과를 보완하는 역할로 제한
+- 빈 메시지, 빈 system prompt, 잘못된 use case는 실패 결과로 정규화
+- prompt injection 의심 문구가 포함된 입력은 mock 단계에서도 실패 처리
+- LLM 출력은 저장 전 Guardrails adapter의 검사 대상
+- 실제 Bedrock Runtime, boto3 client, retry/backoff, streaming은 후속 이슈에서 처리
+
+이번 범위에서는 실제 AWS Bedrock 호출, model permission 설정, AgentCore Runtime 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 
