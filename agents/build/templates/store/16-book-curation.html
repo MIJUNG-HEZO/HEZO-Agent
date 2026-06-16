@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Page & Pencil</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: #fbf7ef;
+      color: #1f1712;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      border: 0;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .offline {
+      height: 42px;
+      background: #1f1712;
+      color: #f1d28f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      letter-spacing: 2.4px;
+      font-weight: 950;
+    }
+
+    .nav {
+      height: 88px;
+      padding: 0 42px;
+      display: grid;
+      grid-template-columns: 260px 1fr 360px;
+      align-items: center;
+      border-bottom: 1px solid #1f1712;
+      background: #fbf7ef;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .brand {
+      font-family: Georgia, serif;
+      font-size: 31px;
+      font-weight: 900;
+      letter-spacing: -1px;
+    }
+
+    .menu,
+    .tools {
+      display: flex;
+      gap: 30px;
+      font-size: 14px;
+      font-weight: 850;
+      color: #55483f;
+    }
+
+    .menu {
+      justify-content: center;
+    }
+
+    .tools {
+      justify-content: flex-end;
+    }
+
+    .bag {
+      color: #d84e2f;
+    }
+
+    .intro {
+      padding: 42px 42px 34px;
+      border-bottom: 1px solid #1f1712;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 40px;
+      align-items: end;
+    }
+
+    .breadcrumb {
+      color: #6f6158;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 1px;
+      margin-bottom: 38px;
+    }
+
+    h1 {
+      font-family: Georgia, serif;
+      font-size: clamp(76px, 9vw, 156px);
+      line-height: .82;
+      letter-spacing: -7px;
+    }
+
+    .intro-copy {
+      color: #6f6158;
+      font-size: 19px;
+      line-height: 1.7;
+      font-weight: 760;
+      border-left: 1px solid #c9bcae;
+      padding-left: 28px;
+    }
+
+    .shelf {
+      height: 190px;
+      padding: 22px 42px;
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      overflow: hidden;
+      border-bottom: 1px solid #1f1712;
+      background: #efe4d5;
+    }
+
+    .spine {
+      min-width: 62px;
+      border-radius: 8px 8px 0 0;
+      writing-mode: vertical-rl;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 0;
+      font-weight: 950;
+      letter-spacing: 1px;
+      color: #fff;
+      box-shadow: 0 18px 35px rgba(63, 45, 32, .16);
+    }
+
+    .spine:nth-child(1) { background: #1f1712; height: 160px; }
+    .spine:nth-child(2) { background: #c8482d; height: 132px; }
+    .spine:nth-child(3) { background: #315f7d; height: 172px; }
+    .spine:nth-child(4) { background: #855d39; height: 145px; }
+    .spine:nth-child(5) { background: #416f4b; height: 168px; }
+    .spine:nth-child(6) { background: #d89f42; height: 138px; color: #211711; }
+    .spine:nth-child(7) { background: #2b2f42; height: 176px; }
+    .spine:nth-child(8) { background: #7b3542; height: 128px; }
+    .spine:nth-child(9) { background: #244b3a; height: 154px; }
+    .spine:nth-child(10) { background: #efe7d8; color: #1f1712; height: 170px; }
+
+    .shop-layout {
+      display: grid;
+      grid-template-columns: 310px 1fr 360px;
+      min-height: 900px;
+    }
+
+    .category {
+      padding: 34px 28px;
+      border-right: 1px solid #1f1712;
+      background: #fbf7ef;
+    }
+
+    .category h3 {
+      font-family: Georgia, serif;
+      font-size: 28px;
+      margin-bottom: 22px;
+    }
+
+    .category-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .category-list a {
+      min-height: 46px;
+      border-bottom: 1px solid #d8cabb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #55483f;
+      font-weight: 850;
+    }
+
+    .category-list a.active {
+      color: #d84e2f;
+    }
+
+    .store-note {
+      margin-top: 30px;
+      min-height: 230px;
+      padding: 22px;
+      border-radius: 24px;
+      background:
+        linear-gradient(rgba(31,23,18,.08), rgba(31,23,18,.62)),
+        url("https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=700&q=85") center/cover;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+
+    .store-note strong {
+      font-size: 26px;
+      line-height: 1.05;
+    }
+
+    .inventory {
+      padding: 34px 34px 80px;
+      background: #fffaf2;
+    }
+
+    .inventory-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+
+    .inventory-head h2 {
+      font-family: Georgia, serif;
+      font-size: 52px;
+      letter-spacing: -2px;
+    }
+
+    .inventory-head span {
+      color: #6f6158;
+      font-weight: 850;
+    }
+
+    .product-table {
+      border-top: 2px solid #1f1712;
+    }
+
+    .row {
+      min-height: 132px;
+      display: grid;
+      grid-template-columns: 100px 1.4fr 180px 130px;
+      gap: 22px;
+      align-items: center;
+      border-bottom: 1px solid #d8cabb;
+      padding: 18px 0;
+    }
+
+    .cover {
+      width: 82px;
+      height: 104px;
+      border-radius: 8px;
+      background-size: cover;
+      background-position: center;
+      box-shadow: 0 18px 35px rgba(63, 45, 32, .16);
+    }
+
+    .row:nth-child(1) .cover { background-image: url("https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=300&q=85"); }
+    .row:nth-child(2) .cover { background-image: url("https://images.unsplash.com/photo-1495446815901-a7297e633e8d?auto=format&fit=crop&w=300&q=85"); }
+    .row:nth-child(3) .cover { background-image: url("https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=300&q=85"); }
+    .row:nth-child(4) .cover { background-image: url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=300&q=85"); }
+
+    .row h3 {
+      font-size: 25px;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+
+    .row p {
+      color: #6f6158;
+      line-height: 1.55;
+      font-weight: 740;
+    }
+
+    .tag {
+      width: fit-content;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: #efe4d5;
+      color: #6f6158;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    .row strong {
+      font-size: 24px;
+      color: #d84e2f;
+    }
+
+    .row button {
+      height: 46px;
+      border-radius: 999px;
+      background: #1f1712;
+      color: #fff;
+      font-weight: 950;
+    }
+
+    .desk-products {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .desk-card {
+      min-height: 260px;
+      padding: 20px;
+      border-radius: 24px;
+      background: #efe4d5;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .desk-card .symbol {
+      font-size: 52px;
+      line-height: 1;
+    }
+
+    .desk-card h3 {
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .desk-card p {
+      color: #6f6158;
+      line-height: 1.5;
+      font-weight: 740;
+    }
+
+    .receipt {
+      position: sticky;
+      top: 88px;
+      height: calc(100vh - 88px);
+      padding: 34px 28px;
+      border-left: 1px solid #1f1712;
+      background: #1f1712;
+      color: #fbf7ef;
+      overflow-y: auto;
+    }
+
+    .receipt h2 {
+      font-family: Georgia, serif;
+      font-size: 36px;
+      margin-bottom: 20px;
+    }
+
+    .pick {
+      padding: 18px 0;
+      border-bottom: 1px solid rgba(251,247,239,.18);
+    }
+
+    .pick small {
+      color: #f1d28f;
+      font-weight: 950;
+      letter-spacing: 1.5px;
+    }
+
+    .pick h3 {
+      margin: 9px 0;
+      font-size: 22px;
+    }
+
+    .pick p {
+      color: #d2c0ad;
+      line-height: 1.55;
+      font-weight: 740;
+    }
+
+    .summary {
+      margin-top: 26px;
+      padding: 22px;
+      border-radius: 24px;
+      background: #fbf7ef;
+      color: #1f1712;
+    }
+
+    .summary div {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      color: #55483f;
+      font-weight: 800;
+    }
+
+    .summary .total {
+      padding-top: 16px;
+      border-top: 1px solid #d8cabb;
+      color: #1f1712;
+      font-size: 24px;
+      font-weight: 950;
+    }
+
+    .summary button {
+      width: 100%;
+      height: 56px;
+      border-radius: 999px;
+      background: #d84e2f;
+      color: #fff;
+      font-weight: 950;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 1180px) {
+      .nav,
+      .intro,
+      .shop-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .menu,
+      .tools a:not(.bag) {
+        display: none;
+      }
+
+      .category,
+      .receipt {
+        position: static;
+        height: auto;
+        border-left: 0;
+        border-right: 0;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .nav,
+      .intro,
+      .inventory {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+
+      h1 {
+        font-size: 58px;
+        letter-spacing: -3px;
+      }
+
+      .row,
+      .inventory-head,
+      .desk-products {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="offline">BOOKSTORE / STATIONERY / GIFT WRAP / SAME DAY PICKUP</div>
+
+  <header class="nav">
+    <a class="brand">Page & Pencil</a>
+    <nav class="menu">
+      <a>ONLINE STORE</a>
+      <a>BOOKS</a>
+      <a>STATIONERY</a>
+      <a>EVENT</a>
+    </nav>
+    <div class="tools">
+      <a>SEARCH</a>
+      <a>LOGIN</a>
+      <a class="bag">BAG 4</a>
+    </div>
+  </header>
+
+  <section class="intro">
+    <div>
+      <div class="breadcrumb">ONLINE STORE / CURATION / DESK GOODS</div>
+      <h1>Books, notes, and quiet tools.</h1>
+    </div>
+    <p class="intro-copy">
+      서점/문구 템플릿은 랜딩페이지처럼 큰 이미지 하나로 끝내지 않고,
+      책장, 카테고리, 상품 행, 문구 카드, 주문 영수증까지 실제 판매 구조를 보여주게 만들었습니다.
+    </p>
+  </section>
+
+  <section class="shelf">
+    <div class="spine">ESSAY</div>
+    <div class="spine">NOVEL</div>
+    <div class="spine">DESIGN</div>
+    <div class="spine">NOTE</div>
+    <div class="spine">TOOLS</div>
+    <div class="spine">GIFT</div>
+    <div class="spine">PENCIL</div>
+    <div class="spine">ARCHIVE</div>
+    <div class="spine">DIARY</div>
+    <div class="spine">PAPER</div>
+  </section>
+
+  <main class="shop-layout">
+    <aside class="category">
+      <h3>Category</h3>
+      <nav class="category-list">
+        <a class="active">이번 주 추천 <span>18</span></a>
+        <a>소설·에세이 <span>42</span></a>
+        <a>디자인북 <span>16</span></a>
+        <a>노트·플래너 <span>24</span></a>
+        <a>펜·필기구 <span>31</span></a>
+        <a>선물 세트 <span>9</span></a>
+      </nav>
+
+      <div class="store-note">
+        <strong>Weekend reading club</strong>
+        <p>토요일 오후 3시 오프라인 북토크</p>
+      </div>
+    </aside>
+
+    <section class="inventory">
+      <div class="inventory-head">
+        <div>
+          <h2>New shelf</h2>
+          <span>42 items · curated by editor</span>
+        </div>
+        <span>+ FILTER</span>
+      </div>
+
+      <div class="product-table">
+        <article class="row">
+          <div class="cover"></div>
+          <div><h3>Quiet Essay</h3><p>퇴근 후 30분씩 읽기 좋은 짧은 에세이</p></div>
+          <span class="tag">ESSAY</span>
+          <strong>₩16,000</strong>
+          <button>담기</button>
+        </article>
+        <article class="row">
+          <div class="cover"></div>
+          <div><h3>Classic Fiction Set</h3><p>처음 읽는 고전 소설 2권 세트</p></div>
+          <span class="tag">BOOK SET</span>
+          <strong>₩29,000</strong>
+          <button>담기</button>
+        </article>
+        <article class="row">
+          <div class="cover"></div>
+          <div><h3>Design Archive 03</h3><p>작업자를 위한 그래픽 레퍼런스 북</p></div>
+          <span class="tag">DESIGN</span>
+          <strong>₩38,000</strong>
+          <button>담기</button>
+        </article>
+        <article class="row">
+          <div class="cover"></div>
+          <div><h3>Weekly Planner</h3><p>그리드 내지와 투두 페이지가 있는 6개월 플래너</p></div>
+          <span class="tag">STATIONERY</span>
+          <strong>₩12,000</strong>
+          <button>담기</button>
+        </article>
+      </div>
+
+      <section class="desk-products">
+        <article class="desk-card"><div class="symbol">✎</div><div><h3>Pencil Set</h3><p>연필 6본과 미니 지우개 구성</p></div></article>
+        <article class="desk-card"><div class="symbol">□</div><div><h3>Grid Memo Pad</h3><p>책갈피처럼 끼워 쓰는 메모 패드</p></div></article>
+        <article class="desk-card"><div class="symbol">⌁</div><div><h3>Bookmark Pack</h3><p>계절 컬러 북마크 12종</p></div></article>
+      </section>
+    </section>
+
+    <aside class="receipt">
+      <h2>Today picks</h2>
+      <article class="pick">
+        <small>01 / BOOK</small>
+        <h3>Classic Fiction Set</h3>
+        <p>고전 소설 2권과 인덱스 탭</p>
+      </article>
+      <article class="pick">
+        <small>02 / NOTE</small>
+        <h3>Weekly Planner</h3>
+        <p>6개월 분량의 작업 플래너</p>
+      </article>
+      <article class="pick">
+        <small>03 / GIFT</small>
+        <h3>Bookmark Pack</h3>
+        <p>선물 포장 옵션 포함</p>
+      </article>
+
+      <div class="summary">
+        <div><span>상품 3개</span><strong>₩46,000</strong></div>
+        <div><span>선물 포장</span><strong>₩2,000</strong></div>
+        <div class="total"><span>Total</span><strong>₩48,000</strong></div>
+        <button>픽업 주문하기</button>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>

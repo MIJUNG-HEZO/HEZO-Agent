@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NOVA DEVICE LAB</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: #070a12;
+      color: #f8fafc;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      border: 0;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 96px 1fr 420px;
+      background:
+        radial-gradient(circle at 50% 22%, rgba(80, 120, 255, .34), transparent 32%),
+        linear-gradient(135deg, #070a12 0%, #121827 58%, #090c14 100%);
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 26px 18px;
+      border-right: 1px solid rgba(255,255,255,.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255,255,255,.03);
+      backdrop-filter: blur(22px);
+    }
+
+    .mark {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #7dd3fc, #2563eb 70%);
+      color: #fff;
+      font-size: 26px;
+      font-weight: 950;
+      box-shadow: 0 22px 55px rgba(37,99,235,.32);
+    }
+
+    .rail-nav {
+      display: grid;
+      gap: 18px;
+    }
+
+    .rail-nav a {
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      color: #94a3b8;
+      font-size: 23px;
+      background: rgba(255,255,255,.04);
+    }
+
+    .rail-nav a.active {
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    .rail small {
+      writing-mode: vertical-rl;
+      color: #64748b;
+      letter-spacing: 2px;
+      font-weight: 950;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 28px 38px 38px;
+    }
+
+    .top {
+      height: 62px;
+      display: grid;
+      grid-template-columns: 280px 1fr 260px;
+      align-items: center;
+      gap: 22px;
+      margin-bottom: 34px;
+    }
+
+    .brand {
+      font-size: 28px;
+      font-weight: 950;
+      letter-spacing: -1px;
+    }
+
+    .brand span {
+      color: #7dd3fc;
+    }
+
+    .search {
+      height: 52px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.12);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      color: #94a3b8;
+      font-weight: 800;
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .top-actions a {
+      height: 46px;
+      padding: 0 18px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      background: rgba(255,255,255,.08);
+      color: #cbd5e1;
+      font-weight: 900;
+    }
+
+    .top-actions a:last-child {
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    .product-stage {
+      min-height: 610px;
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .copy {
+      padding: 16px 0 16px 6px;
+    }
+
+    .drop {
+      display: inline-flex;
+      padding: 10px 13px;
+      border-radius: 999px;
+      background: rgba(125,211,252,.12);
+      border: 1px solid rgba(125,211,252,.25);
+      color: #7dd3fc;
+      font-size: 12px;
+      letter-spacing: 1.8px;
+      font-weight: 950;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      font-size: clamp(72px, 8vw, 132px);
+      line-height: .82;
+      letter-spacing: -7px;
+      margin-bottom: 26px;
+    }
+
+    .copy p {
+      max-width: 650px;
+      color: #cbd5e1;
+      font-size: 21px;
+      line-height: 1.7;
+      font-weight: 760;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      max-width: 650px;
+      margin-top: 34px;
+    }
+
+    .meta {
+      min-height: 112px;
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.11);
+    }
+
+    .meta strong {
+      display: block;
+      font-size: 29px;
+      margin-bottom: 9px;
+    }
+
+    .meta span {
+      color: #94a3b8;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .device-zone {
+      min-height: 610px;
+      position: relative;
+      display: grid;
+      place-items: center;
+      perspective: 1100px;
+      overflow: hidden;
+    }
+
+    .orb {
+      position: absolute;
+      width: 520px;
+      height: 520px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,.48), transparent 24%),
+        radial-gradient(circle, rgba(37,99,235,.6), rgba(125,211,252,.12) 52%, transparent 70%);
+      filter: blur(2px);
+      opacity: .9;
+    }
+
+    .device {
+      position: relative;
+      width: min(430px, 80vw);
+      height: 570px;
+      border-radius: 48px;
+      transform: rotateY(-18deg) rotateX(8deg);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.34), rgba(255,255,255,.05)),
+        url("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1100&q=85") center/cover;
+      border: 1px solid rgba(255,255,255,.42);
+      box-shadow:
+        34px 48px 110px rgba(0,0,0,.46),
+        inset 0 0 0 10px rgba(255,255,255,.08);
+      transition: transform .35s ease;
+    }
+
+    .device-zone:hover .device {
+      transform: rotateY(-10deg) rotateX(4deg) translateY(-12px);
+    }
+
+    .device::before {
+      content: "";
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 22px;
+      border-radius: 999px;
+      background: rgba(7,10,18,.72);
+    }
+
+    .price-chip,
+    .stock-chip {
+      position: absolute;
+      z-index: 2;
+      padding: 18px 20px;
+      border-radius: 24px;
+      background: rgba(248,250,252,.92);
+      color: #0f172a;
+      box-shadow: 0 28px 70px rgba(0,0,0,.22);
+    }
+
+    .price-chip {
+      right: 18px;
+      bottom: 42px;
+    }
+
+    .stock-chip {
+      left: 10px;
+      top: 80px;
+    }
+
+    .price-chip small,
+    .stock-chip small {
+      display: block;
+      color: #2563eb;
+      font-weight: 950;
+      letter-spacing: 1.3px;
+      margin-bottom: 7px;
+      font-size: 11px;
+    }
+
+    .price-chip strong {
+      font-size: 30px;
+    }
+
+    .stock-chip strong {
+      font-size: 22px;
+    }
+
+    .panel {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px;
+      background: #f8fafc;
+      color: #0f172a;
+      overflow-y: auto;
+    }
+
+    .panel h2 {
+      font-size: 30px;
+      letter-spacing: -1px;
+      margin-bottom: 7px;
+    }
+
+    .panel > p {
+      color: #64748b;
+      font-weight: 760;
+      line-height: 1.55;
+      margin-bottom: 24px;
+    }
+
+    .option-block {
+      padding: 20px;
+      border-radius: 24px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      margin-bottom: 14px;
+    }
+
+    .option-block header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      font-weight: 950;
+    }
+
+    .option-block header span {
+      color: #2563eb;
+      font-size: 13px;
+    }
+
+    .colors,
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .color {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 4px solid #f1f5f9;
+      box-shadow: 0 0 0 1px #dbe3ef;
+    }
+
+    .black { background: #111827; }
+    .silver { background: #d8dee9; }
+    .blue { background: #2563eb; }
+    .green { background: #10b981; }
+
+    .chips button {
+      min-width: 92px;
+      height: 42px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 900;
+    }
+
+    .chips button.active {
+      background: #111827;
+      color: #fff;
+    }
+
+    .checkout {
+      margin-top: 20px;
+      padding: 24px;
+      border-radius: 28px;
+      background: #111827;
+      color: #fff;
+    }
+
+    .checkout-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 0;
+      color: #cbd5e1;
+      font-weight: 760;
+    }
+
+    .checkout-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      margin: 18px 0 20px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255,255,255,.14);
+    }
+
+    .checkout-total strong {
+      font-size: 34px;
+    }
+
+    .checkout button {
+      width: 100%;
+      height: 58px;
+      border-radius: 18px;
+      background: #7dd3fc;
+      color: #0f172a;
+      font-weight: 950;
+    }
+
+    .accessory-strip {
+      margin-top: 34px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(190px, 1fr));
+      gap: 14px;
+    }
+
+    .accessory {
+      min-height: 180px;
+      border-radius: 26px;
+      padding: 18px;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.1);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+
+    .accessory .image {
+      height: 88px;
+      border-radius: 18px;
+      background-size: cover;
+      background-position: center;
+      margin-bottom: 12px;
+    }
+
+    .accessory:nth-child(1) .image { background-image: url("https://images.unsplash.com/photo-1580418827493-f2b22c0a76cb?auto=format&fit=crop&w=500&q=85"); }
+    .accessory:nth-child(2) .image { background-image: url("https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=500&q=85"); }
+    .accessory:nth-child(3) .image { background-image: url("https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=85"); }
+    .accessory:nth-child(4) .image { background-image: url("https://images.unsplash.com/photo-1580894908361-967195033215?auto=format&fit=crop&w=500&q=85"); }
+
+    .accessory h3 {
+      font-size: 17px;
+    }
+
+    .accessory p {
+      color: #94a3b8;
+      margin-top: 5px;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .accessory strong {
+      color: #7dd3fc;
+      margin-top: 12px;
+      display: block;
+    }
+
+    @media (max-width: 1180px) {
+      .shell {
+        grid-template-columns: 74px 1fr;
+      }
+
+      .panel {
+        grid-column: 1 / -1;
+        position: static;
+        height: auto;
+      }
+
+      .top {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .top-actions {
+        justify-content: flex-start;
+      }
+
+      .product-stage,
+      .accessory-strip {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        position: static;
+        height: auto;
+        flex-direction: row;
+      }
+
+      .rail small {
+        display: none;
+      }
+
+      .rail-nav {
+        display: flex;
+      }
+
+      .main {
+        padding: 22px;
+      }
+
+      h1 {
+        font-size: 56px;
+        letter-spacing: -3px;
+      }
+
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="mark">N</div>
+      <nav class="rail-nav">
+        <a class="active">⌘</a>
+        <a>◌</a>
+        <a>▣</a>
+        <a>◎</a>
+      </nav>
+      <small>NOVA DEVICE LAB</small>
+    </aside>
+
+    <main class="main">
+      <header class="top">
+        <a class="brand">NOVA<span>LAB</span></a>
+        <div class="search">MacBook, headset, watch, hub 검색</div>
+        <div class="top-actions">
+          <a>Compare</a>
+          <a>Cart 3</a>
+        </div>
+      </header>
+
+      <section class="product-stage">
+        <div class="copy">
+          <span class="drop">2026 WORKSTATION DROP</span>
+          <h1>Configure the device before checkout.</h1>
+          <p>
+            전자기기 스토어는 단순히 예쁜 히어로보다 옵션 선택, 구성품 비교, 가격 계산이 중요합니다.
+            그래서 오른쪽에는 구매 콘솔을 고정하고, 가운데에는 제품 프리뷰가 움직이는 구조로 만들었습니다.
+          </p>
+          <div class="meta-grid">
+            <div class="meta"><strong>18h</strong><span>배터리 지속 시간</span></div>
+            <div class="meta"><strong>2TB</strong><span>최대 저장 공간</span></div>
+            <div class="meta"><strong>24M</strong><span>보증 연장 옵션</span></div>
+          </div>
+        </div>
+
+        <div class="device-zone">
+          <div class="orb"></div>
+          <div class="device"></div>
+          <div class="stock-chip"><small>STOCK</small><strong>12 units left</strong></div>
+          <div class="price-chip"><small>START FROM</small><strong>₩2,190,000</strong></div>
+        </div>
+      </section>
+
+      <section class="accessory-strip">
+        <article class="accessory"><div class="image"></div><div><h3>Low Profile Keyboard</h3><p>멀티 페어링 키보드</p><strong>₩129,000</strong></div></article>
+        <article class="accessory"><div class="image"></div><div><h3>Noise Fit Headset</h3><p>업무용 노이즈 캔슬링</p><strong>₩189,000</strong></div></article>
+        <article class="accessory"><div class="image"></div><div><h3>Orbit Watch 4</h3><p>건강 체크 웨어러블</p><strong>₩249,000</strong></div></article>
+        <article class="accessory"><div class="image"></div><div><h3>USB-C Dock</h3><p>8포트 확장 허브</p><strong>₩79,000</strong></div></article>
+      </section>
+    </main>
+
+    <aside class="panel">
+      <h2>Build summary</h2>
+      <p>상품 옵션을 선택하면 장바구니 금액이 갱신되는 전자기기 구매 패널입니다.</p>
+
+      <section class="option-block">
+        <header>Color <span>Required</span></header>
+        <div class="colors">
+          <span class="color black"></span>
+          <span class="color silver"></span>
+          <span class="color blue"></span>
+          <span class="color green"></span>
+        </div>
+      </section>
+
+      <section class="option-block">
+        <header>Storage <span>Upgrade</span></header>
+        <div class="chips">
+          <button>512GB</button>
+          <button class="active">1TB</button>
+          <button>2TB</button>
+        </div>
+      </section>
+
+      <section class="option-block">
+        <header>Warranty <span>Optional</span></header>
+        <div class="chips">
+          <button>Basic</button>
+          <button class="active">24 Month</button>
+        </div>
+      </section>
+
+      <section class="checkout">
+        <div class="checkout-row"><span>Device Pro</span><strong>₩1,890,000</strong></div>
+        <div class="checkout-row"><span>1TB Upgrade</span><strong>₩210,000</strong></div>
+        <div class="checkout-row"><span>Warranty</span><strong>₩90,000</strong></div>
+        <div class="checkout-total"><span>Total</span><strong>₩2,190,000</strong></div>
+        <button>바로 구매하기</button>
+      </section>
+    </aside>
+  </div>
+</body>
+</html>

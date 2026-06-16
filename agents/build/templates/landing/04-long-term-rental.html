@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>장기렌트 비교상담</title>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,"Noto Sans KR",sans-serif;background:#fff;color:#111}
+a{text-decoration:none;color:inherit}
+
+.header{
+  height:115px;background:#fff;display:flex;align-items:center;justify-content:space-between;
+  padding:0 120px;border-bottom:1px solid #eef2f7
+}
+.logo{display:flex;align-items:center;gap:16px}
+.logo-icon{
+  width:48px;height:48px;border-radius:16px;background:#17348a;color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px
+}
+.logo h1{font-size:20px;font-weight:900;margin-bottom:8px}
+.logo p{font-size:13px;color:#6b7280}
+.top-tags{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.tag{
+  padding:14px 24px;border:1px solid #d8e1ee;border-radius:14px;
+  background:#fff;font-weight:800;color:#0f172a
+}
+.header-cta{display:flex;flex-direction:column;gap:12px}
+.phone{
+  background:#f4f8ff;padding:16px 28px;border-radius:16px;font-weight:900;color:#0f172a
+}
+.cta{
+  background:#3f8df4;color:#fff;border:none;border-radius:16px;
+  padding:17px 32px;font-weight:900;font-size:16px
+}
+
+.hero{
+  min-height:690px;background:
+  linear-gradient(rgba(2,8,23,.82),rgba(2,8,23,.82)),
+  url("https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=1800&q=80");
+  background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;
+  text-align:center;color:#fff;padding:80px 24px 120px;position:relative
+}
+.badge{
+  display:inline-block;background:#102b57;color:#8cc4ff;border-radius:14px;
+  padding:12px 24px;font-weight:900;margin-bottom:34px
+}
+.hero h2{
+  font-size:64px;line-height:1.22;font-weight:900;letter-spacing:-3px;margin-bottom:34px
+}
+.hero p{
+  font-size:20px;line-height:1.9;color:rgba(255,255,255,.86);margin-bottom:38px
+}
+.hero-buttons{display:flex;justify-content:center;gap:14px}
+.hero-buttons button{
+  height:62px;padding:0 32px;border-radius:18px;font-size:17px;font-weight:900;cursor:pointer
+}
+.primary{background:#3f8df4;color:#fff;border:none}
+.glass{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25)}
+
+.stats{
+  max-width:930px;width:70%;position:absolute;bottom:-60px;left:50%;transform:translateX(-50%);
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  background:rgba(10,20,40,.55);border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(10px);border-radius:22px;padding:26px;color:#fff
+}
+.stat h3{font-size:28px;margin-bottom:8px}
+.stat p{font-size:14px;color:rgba(255,255,255,.72)}
+
+.section{padding:120px 24px}
+.container{max-width:1180px;margin:0 auto}
+.title{text-align:center;margin-bottom:54px}
+.title span{color:#3f8df4;font-weight:900;letter-spacing:4px;font-size:13px}
+.title h2{font-size:42px;margin-top:14px;letter-spacing:-1px}
+.title p{margin-top:14px;color:#6b7280;line-height:1.7}
+
+.car-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.car-card{
+  border:1px solid #e5eaf2;border-radius:24px;overflow:hidden;background:#fff;
+  box-shadow:0 12px 30px rgba(15,23,42,.06)
+}
+.car-img{
+  height:220px;background:#eef4ff;display:flex;align-items:center;justify-content:center;
+  font-size:54px
+}
+.car-info{padding:28px}
+.car-info h3{font-size:24px;margin-bottom:12px}
+.car-info p{color:#6b7280;line-height:1.7;margin-bottom:18px}
+.price{font-size:26px;color:#2563eb;font-weight:900}
+
+.dark-section{background:#07111f;color:#fff}
+.check-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+.check-card{
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
+  border-radius:22px;padding:34px
+}
+.check-card h3{font-size:24px;margin-bottom:14px}
+.check-card p{color:rgba(255,255,255,.72);line-height:1.8}
+
+.process{background:#f5f8fc}
+.process-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.step{background:#fff;border-radius:22px;padding:34px;text-align:center;border:1px solid #e5eaf2}
+.step b{font-size:38px;color:#3f8df4;display:block;margin-bottom:16px}
+.step h3{font-size:21px;margin-bottom:12px}
+.step p{color:#6b7280;line-height:1.6}
+
+.form-section{background:#eef6ff}
+.form-box{
+  max-width:760px;margin:0 auto;background:#fff;border-radius:28px;padding:42px;
+  border:1px solid #dce8f7;box-shadow:0 18px 45px rgba(15,23,42,.08)
+}
+.form-box label{display:block;margin-bottom:8px;font-weight:900}
+.form-box input,.form-box select,.form-box textarea{
+  width:100%;border:1px solid #d1d8e4;border-radius:14px;padding:16px;
+  margin-bottom:18px;font-size:15px
+}
+.form-box textarea{height:130px;resize:none}
+.submit{
+  width:100%;height:60px;border:none;border-radius:16px;background:#3f8df4;
+  color:#fff;font-size:18px;font-weight:900
+}
+
+.floating{
+  position:fixed;right:34px;bottom:30px;border:none;border-radius:999px;
+  background:#3f8df4;color:#fff;padding:18px 28px;font-weight:900;
+  box-shadow:0 12px 30px rgba(0,0,0,.22)
+}
+.footer{background:#07111f;color:#94a3b8;text-align:center;padding:48px 20px;line-height:1.8}
+
+@media(max-width:900px){
+  .header{padding:0 20px;height:auto;gap:20px;flex-direction:column;padding-top:24px;padding-bottom:24px}
+  .hero h2{font-size:40px}
+  .stats{position:static;transform:none;width:100%;margin-top:60px;grid-template-columns:1fr}
+  .car-grid,.check-grid,.process-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">L</div>
+    <div>
+      <h1>장기렌트 비교상담</h1>
+      <p>월 납입료 비교 · 무료 견적 상담</p>
+    </div>
+  </div>
+
+  <div class="top-tags">
+    <div class="tag">국산차</div>
+    <div class="tag">SUV</div>
+    <div class="tag">즉시출고</div>
+    <div class="tag">법인 견적</div>
+  </div>
+
+  <div class="header-cta">
+    <div class="phone">전화 상담 1800-2458</div>
+    <button class="cta">무료 견적 상담</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div>
+    <div class="badge">장기렌트 맞춤 상담 랜딩</div>
+    <h2>월 납입료 비교부터<br>내 조건에 맞는 자동차<br>장기렌트까지</h2>
+    <p>
+      인기 차종 견적을 한 번에 비교하고, 보증금·기간·출고 일정까지 맞춤으로 안내받으세요.<br>
+      첫 상담은 무료로 진행되며, 개인·사업자 모두 조건에 맞는 장기렌트 플랜을 제안해드립니다.
+    </p>
+    <div class="hero-buttons">
+      <button class="primary">맞춤 상담 신청</button>
+      <button class="glass">지금 전화 상담</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <h3>최대 7개사</h3>
+      <p>주요 렌트사 견적 비교</p>
+    </div>
+    <div class="stat">
+      <h3>무료 상담</h3>
+      <p>조건별 월 납입료 안내</p>
+    </div>
+    <div class="stat">
+      <h3>즉시 출고</h3>
+      <p>가능 차량 우선 확인</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="title">
+      <span>POPULAR CARS</span>
+      <h2>인기 장기렌트 차종</h2>
+      <p>원하는 차종과 예산에 맞춰 월 납입료를 비교해드립니다.</p>
+    </div>
+
+    <div class="car-grid">
+      <div class="car-card">
+        <div class="car-img">🚗</div>
+        <div class="car-info">
+          <h3>국산 세단</h3>
+          <p>출퇴근, 패밀리카, 법인 업무용으로 가장 많이 상담되는 차종입니다.</p>
+          <div class="price">월 30만원대~</div>
+        </div>
+      </div>
+
+      <div class="car-card">
+        <div class="car-img">🚙</div>
+        <div class="car-info">
+          <h3>SUV</h3>
+          <p>가족 이용, 캠핑, 넓은 적재공간을 원하는 고객에게 적합합니다.</p>
+          <div class="price">월 40만원대~</div>
+        </div>
+      </div>
+
+      <div class="car-card">
+        <div class="car-img">⚡</div>
+        <div class="car-info">
+          <h3>전기차·하이브리드</h3>
+          <p>유류비 절감과 세제 혜택을 고려하는 고객에게 추천합니다.</p>
+          <div class="price">조건별 상담</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section dark-section">
+  <div class="container">
+    <div class="title">
+      <span>CHECK LIST</span>
+      <h2>상담 전 확인 포인트</h2>
+      <p>월 납입료만 보지 말고 계약 조건 전체를 함께 비교해야 합니다.</p>
+    </div>
+
+    <div class="check-grid">
+      <div class="check-card">
+        <h3>보증금·선납금 조건</h3>
+        <p>초기 비용을 낮출지, 월 납입료를 줄일지에 따라 견적이 달라집니다.</p>
+      </div>
+      <div class="check-card">
+        <h3>계약 기간</h3>
+        <p>36개월, 48개월, 60개월 등 이용 기간에 따라 총 비용과 월 납입료가 바뀝니다.</p>
+      </div>
+      <div class="check-card">
+        <h3>주행거리</h3>
+        <p>연간 주행거리 제한과 초과 비용을 미리 확인해야 합니다.</p>
+      </div>
+      <div class="check-card">
+        <h3>출고 일정</h3>
+        <p>즉시 출고 가능 차량과 대기 차량을 구분해 안내받는 것이 중요합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section process">
+  <div class="container">
+    <div class="title">
+      <span>PROCESS</span>
+      <h2>무료 견적 상담 절차</h2>
+    </div>
+
+    <div class="process-grid">
+      <div class="step">
+        <b>01</b>
+        <h3>상담 신청</h3>
+        <p>희망 차종과 연락처를 남깁니다.</p>
+      </div>
+      <div class="step">
+        <b>02</b>
+        <h3>조건 확인</h3>
+        <p>예산, 기간, 보증금 조건을 확인합니다.</p>
+      </div>
+      <div class="step">
+        <b>03</b>
+        <h3>견적 비교</h3>
+        <p>렌트사별 월 납입료를 비교합니다.</p>
+      </div>
+      <div class="step">
+        <b>04</b>
+        <h3>계약 안내</h3>
+        <p>출고 가능 일정과 계약 조건을 안내합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section form-section">
+  <div class="container">
+    <div class="title">
+      <span>QUOTE FORM</span>
+      <h2>무료 견적 상담 신청</h2>
+      <p>정보를 남겨주시면 맞춤 견적을 안내해드립니다.</p>
+    </div>
+
+    <form class="form-box">
+      <label>성함</label>
+      <input type="text" placeholder="성함을 입력해 주세요">
+
+      <label>연락처</label>
+      <input type="text" placeholder="연락 가능한 번호를 입력해 주세요">
+
+      <label>희망 차종</label>
+      <select>
+        <option>국산 세단</option>
+        <option>SUV</option>
+        <option>전기차·하이브리드</option>
+        <option>법인 차량</option>
+      </select>
+
+      <label>희망 조건</label>
+      <textarea placeholder="예산, 계약기간, 보증금 여부, 즉시출고 희망 여부를 적어주세요"></textarea>
+
+      <button class="submit" type="submit">무료 견적 상담 신청</button>
+    </form>
+  </div>
+</section>
+
+<button class="floating">전화 상담</button>
+
+<footer class="footer">
+  장기렌트 비교상담<br>
+  월 납입료 비교 · 무료 견적 상담 · 즉시출고 가능 차량 안내
+</footer>
+
+</body>
+</html>

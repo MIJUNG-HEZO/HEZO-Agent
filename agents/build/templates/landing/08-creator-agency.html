@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Social Light Collective</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, "Noto Sans KR", sans-serif;
+  background: #000;
+  color: #fff;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* HEADER */
+.header {
+  height: 74px;
+  background: #fff;
+  color: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  left: 24px;
+  font-size: 28px;
+}
+
+.logo {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 0.95;
+  text-align: center;
+}
+
+.logo span {
+  color: #ff4fc3;
+}
+
+/* HERO */
+.hero {
+  min-height: 700px;
+  background:
+    linear-gradient(rgba(0,0,0,0.25), rgba(0,0,0,0.55)),
+    url("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1800&q=80");
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 26px 80px;
+}
+
+.hero h1 {
+  font-size: 64px;
+  line-height: 1.05;
+  max-width: 900px;
+  font-weight: 900;
+}
+
+.hero h1 span {
+  color: #ff4fc3;
+}
+
+/* INTRO */
+.intro {
+  padding: 80px 26px 40px;
+  background: #000;
+}
+
+.intro small {
+  color: #999;
+  letter-spacing: 3px;
+  font-size: 13px;
+}
+
+.intro h2 {
+  font-size: 38px;
+  margin-top: 18px;
+  line-height: 1.35;
+}
+
+.intro p {
+  margin-top: 22px;
+  max-width: 760px;
+  color: #aaa;
+  line-height: 1.8;
+}
+
+/* NEWS */
+.news {
+  padding: 30px 26px 90px;
+  background: #000;
+}
+
+.news-card {
+  margin-bottom: 46px;
+}
+
+.news-card img {
+  width: 100%;
+  height: 260px;
+  object-fit: cover;
+  display: block;
+  margin-bottom: 22px;
+}
+
+.news-card h3 {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.news-card p {
+  color: #aaa;
+  line-height: 1.7;
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+
+.date {
+  color: #aaa;
+  font-size: 14px;
+}
+
+/* PROJECT */
+.project-section {
+  padding: 90px 26px;
+  background: #111;
+}
+
+.section-title {
+  margin-bottom: 42px;
+}
+
+.section-title small {
+  color: #ff4fc3;
+  letter-spacing: 3px;
+}
+
+.section-title h2 {
+  font-size: 42px;
+  margin-top: 16px;
+}
+
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.project {
+  position: relative;
+  height: 340px;
+  overflow: hidden;
+  background: #222;
+}
+
+.project img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.project::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(0,0,0,0.05), rgba(0,0,0,0.72));
+}
+
+.project-text {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  z-index: 2;
+}
+
+.project-text h3 {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.project-text p {
+  color: #ccc;
+  font-size: 14px;
+}
+
+/* ABOUT */
+.about {
+  padding: 110px 26px;
+  background: #000;
+}
+
+.about h2 {
+  font-size: 52px;
+  line-height: 1.25;
+  margin-bottom: 30px;
+}
+
+.about p {
+  max-width: 760px;
+  color: #aaa;
+  line-height: 1.9;
+  margin-bottom: 50px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+}
+
+.stat {
+  border-top: 1px solid #444;
+  padding-top: 24px;
+}
+
+.stat strong {
+  display: block;
+  font-size: 48px;
+  color: #ff4fc3;
+  margin-bottom: 10px;
+}
+
+.stat span {
+  color: #aaa;
+}
+
+/* SERVICES */
+.services {
+  padding: 100px 26px;
+  background: #fff;
+  color: #111;
+}
+
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.service {
+  border: 1px solid #ddd;
+  padding: 34px 24px;
+  min-height: 220px;
+}
+
+.service h3 {
+  font-size: 24px;
+  margin-bottom: 18px;
+}
+
+.service p {
+  color: #555;
+  line-height: 1.7;
+}
+
+/* CONTACT */
+.contact {
+  padding: 100px 26px;
+  background: #ff4fc3;
+  color: #000;
+  text-align: center;
+}
+
+.contact h2 {
+  font-size: 56px;
+  margin-bottom: 20px;
+}
+
+.contact p {
+  font-size: 18px;
+  margin-bottom: 34px;
+}
+
+.contact button {
+  background: #000;
+  color: #fff;
+  border: none;
+  padding: 18px 42px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+/* FOOTER */
+.footer {
+  padding: 42px 26px;
+  background: #000;
+  color: #aaa;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .hero h1 {
+    font-size: 42px;
+  }
+
+  .project-grid,
+  .stats,
+  .service-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .about h2,
+  .contact h2 {
+    font-size: 36px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+  <div class="menu">☰</div>
+  <div class="logo">
+    <span>S</span>OCIAL LIGHT<br>
+    COLLECTIVE
+  </div>
+</header>
+
+<section class="hero">
+  <h1>
+    WE ARE CREATING<br>
+    <span>'UNIQUENESS'</span><br>
+    IN THE CREATOR MARKET.
+  </h1>
+</section>
+
+<section class="intro">
+  <small>OUR CLIENTS</small>
+  <h2>
+    우리는 크리에이터만의<br>
+    특별한 가치를 전달합니다.
+  </h2>
+  <p>
+    Social Light Collective는 브랜드와 크리에이터를 연결하고,
+    콘텐츠 제작과 캠페인 전략을 통해 지속 가능한 성장을 만들어갑니다.
+  </p>
+</section>
+
+<section class="news">
+  <div class="news-card">
+    <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1600&q=80" alt="">
+    <h3>Social Light Collective, 지속적인 성장과 혁신으로 업계 주목</h3>
+    <p>
+      Social Light Collective가 끊임없는 성장과 혁신으로 주목을 받고 있습니다.
+      그들은 고객들에게 높은 품질의 서비스와 전문적인 마케팅 솔루션을 제공합니다.
+    </p>
+    <div class="date">2023.07.04</div>
+  </div>
+
+  <div class="news-card">
+    <img src="https://images.unsplash.com/photo-1556761175-4b46a572b786?auto=format&fit=crop&w=1600&q=80" alt="">
+    <h3>소셜 라이트 콜렉티브 MSE테일러와 맞손, 라이브커머스 시장 선점 나서</h3>
+    <p>
+      뷰티&라이프스타일 인플루언서 비즈니스 그룹과 새로운 파트너십 및 혁신적 캠페인을 진행합니다.
+    </p>
+    <div class="date">2023.07.04</div>
+  </div>
+</section>
+
+<section class="project-section">
+  <div class="section-title">
+    <small>PROJECTS</small>
+    <h2>Creator Campaign</h2>
+  </div>
+
+  <div class="project-grid">
+    <div class="project">
+      <img src="https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="project-text">
+        <h3>Beauty Creator</h3>
+        <p>Brand Campaign</p>
+      </div>
+    </div>
+
+    <div class="project">
+      <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="project-text">
+        <h3>Influencer Growth</h3>
+        <p>Marketing Strategy</p>
+      </div>
+    </div>
+
+    <div class="project">
+      <img src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="project-text">
+        <h3>Live Commerce</h3>
+        <p>Sales Planning</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="about">
+  <h2>
+    We build<br>
+    creator value.
+  </h2>
+  <p>
+    우리는 브랜드가 원하는 메시지와 크리에이터의 개성을 연결합니다.
+    콘텐츠 제작, 인플루언서 매칭, 캠페인 운영, 성과 분석까지 하나의 흐름으로 제공합니다.
+  </p>
+
+  <div class="stats">
+    <div class="stat">
+      <strong>120+</strong>
+      <span>Creator Network</span>
+    </div>
+
+    <div class="stat">
+      <strong>80+</strong>
+      <span>Brand Campaign</span>
+    </div>
+
+    <div class="stat">
+      <strong>95%</strong>
+      <span>Client Satisfaction</span>
+    </div>
+  </div>
+</section>
+
+<section class="services">
+  <div class="section-title">
+    <small>SERVICES</small>
+    <h2>What we do</h2>
+  </div>
+
+  <div class="service-grid">
+    <div class="service">
+      <h3>Influencer</h3>
+      <p>브랜드에 적합한 크리에이터를 매칭하고 캠페인 목적에 맞게 운영합니다.</p>
+    </div>
+
+    <div class="service">
+      <h3>Marketing</h3>
+      <p>SNS, 라이브커머스, 콘텐츠 광고를 통합적으로 기획합니다.</p>
+    </div>
+
+    <div class="service">
+      <h3>Production</h3>
+      <p>브랜드 메시지를 담은 이미지, 영상, 숏폼 콘텐츠를 제작합니다.</p>
+    </div>
+
+    <div class="service">
+      <h3>Consulting</h3>
+      <p>캠페인 성과를 분석하고 다음 전략으로 이어지는 방향을 제안합니다.</p>
+    </div>
+  </div>
+</section>
+
+<section class="contact">
+  <h2>Work with us</h2>
+  <p>브랜드와 크리에이터를 연결하는 캠페인을 시작해보세요.</p>
+  <button>Contact Us</button>
+</section>
+
+<footer class="footer">
+  SOCIAL LIGHT COLLECTIVE<br>
+  Made by imweb
+</footer>
+
+</body>
+</html>

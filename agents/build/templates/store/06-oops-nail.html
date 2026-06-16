@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OOPS! Nail Store</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #111; }
+    a { color: inherit; text-decoration: none; }
+    button { border: 0; cursor: pointer; font: inherit; }
+
+    .nav {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 20;
+      height: 78px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 7vw;
+      background: rgba(255,255,255,.88);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid rgba(0,0,0,.06);
+    }
+
+    .logo { font-size: 28px; font-weight: 950; letter-spacing: -2px; }
+    .nav-links { display: flex; align-items: center; gap: 32px; font-weight: 850; }
+    .cart-pill { padding: 13px 24px; border-radius: 999px; background: #111; color: #eaff25; }
+
+    .hero {
+      min-height: 100vh;
+      padding: 130px 7vw 80px;
+      display: grid;
+      grid-template-columns: 1fr .92fr;
+      gap: 72px;
+      align-items: center;
+      background:
+        linear-gradient(90deg, rgba(0,0,0,.62), rgba(0,0,0,.22)),
+        url("https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1800&q=85") center/cover;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    .hero-copy .eyebrow {
+      display: inline-flex;
+      padding: 9px 15px;
+      border-radius: 999px;
+      background: #eaff25;
+      color: #111;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 26px;
+    }
+
+    .hero-copy h1 {
+      font-size: clamp(74px, 8.4vw, 146px);
+      line-height: .78;
+      letter-spacing: -8px;
+      font-weight: 950;
+      margin-bottom: 30px;
+    }
+
+    .hero-copy h1 span { display: block; color: #eaff25; }
+    .hero-copy p {
+      max-width: 610px;
+      font-size: 22px;
+      line-height: 1.68;
+      color: rgba(255,255,255,.9);
+      font-weight: 750;
+      margin-bottom: 36px;
+    }
+
+    .actions { display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn {
+      min-height: 58px;
+      padding: 0 30px;
+      border-radius: 999px;
+      font-weight: 950;
+      transition: transform .22s ease, box-shadow .22s ease;
+    }
+    .btn:hover { transform: translateY(-3px); box-shadow: 0 18px 38px rgba(0,0,0,.22); }
+    .primary { background: #eaff25; color: #111; }
+    .secondary { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.46); }
+
+    .showcase {
+      position: relative;
+      padding: 28px;
+      border-radius: 42px;
+      background: rgba(255,255,255,.92);
+      color: #111;
+      box-shadow: 0 38px 110px rgba(0,0,0,.36);
+      overflow: hidden;
+    }
+
+    .showcase-img {
+      height: 460px;
+      border-radius: 32px;
+      background: url("https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=1200&q=85") center/cover;
+      margin-bottom: 24px;
+    }
+
+    .showcase-row { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+    .showcase small {
+      display: block;
+      color: #a6b800;
+      font-size: 12px;
+      font-weight: 950;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .showcase h2 { font-size: 38px; line-height: 1; letter-spacing: -2px; margin-bottom: 8px; }
+    .showcase p { color: #666; font-weight: 750; line-height: 1.5; }
+    .price { font-size: 30px; font-weight: 950; white-space: nowrap; }
+
+    .section { padding: 108px 7vw; }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 40px;
+      margin-bottom: 44px;
+    }
+    .section-head span {
+      display: block;
+      color: #a6b800;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .section-head h2 {
+      max-width: 720px;
+      font-size: clamp(42px, 5vw, 70px);
+      line-height: .96;
+      letter-spacing: -3px;
+    }
+    .section-head p { max-width: 430px; color: #686868; line-height: 1.65; font-weight: 750; }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 22px;
+    }
+
+    .product-card {
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.08);
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 18px 54px rgba(0,0,0,.08);
+      position: relative;
+    }
+
+    .product-card .img {
+      height: 310px;
+      background-size: cover;
+      background-position: center;
+      transition: transform .6s ease, filter .6s ease;
+    }
+    .product-card:nth-child(1) .img { background-image: url("https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=900&q=85"); }
+    .product-card:nth-child(2) .img { background-image: url("https://images.unsplash.com/photo-1607779097040-26e80aa78e66?auto=format&fit=crop&w=900&q=85"); }
+    .product-card:nth-child(3) .img { background-image: url("https://images.unsplash.com/photo-1600428853876-fb5a850b444f?auto=format&fit=crop&w=900&q=85"); }
+    .product-card:nth-child(4) .img { background-image: url("https://images.unsplash.com/photo-1605980776566-0486c3ac7617?auto=format&fit=crop&w=900&q=85"); }
+
+    .product-body { padding: 22px; }
+    .product-body h3 { font-size: 20px; margin-bottom: 8px; }
+    .product-body p { color: #777; font-size: 14px; line-height: 1.5; margin-bottom: 18px; font-weight: 700; }
+    .buy-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .buy-row strong { font-size: 19px; }
+    .buy-row button { padding: 10px 15px; border-radius: 999px; background: #111; color: #eaff25; font-weight: 950; }
+
+    .collection-band {
+      padding: 100px 7vw;
+      background: #eaff25;
+      display: grid;
+      grid-template-columns: .86fr 1.14fr;
+      gap: 46px;
+      align-items: center;
+    }
+
+    .collection-copy h2 {
+      font-size: clamp(52px, 7vw, 96px);
+      line-height: .88;
+      letter-spacing: -5px;
+      margin-bottom: 24px;
+    }
+    .collection-copy p { max-width: 520px; color: #303300; line-height: 1.75; font-weight: 800; margin-bottom: 30px; }
+    .collection-copy button { padding: 16px 36px; border-radius: 999px; background: #111; color: #eaff25; font-weight: 950; }
+
+    .mood-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+    .mood {
+      min-height: 260px;
+      padding: 24px;
+      border-radius: 28px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 22px 60px rgba(0,0,0,.12);
+    }
+    .mood span { color: #a6b800; font-weight: 950; }
+    .mood h3 { font-size: 28px; letter-spacing: -1px; }
+
+    .footer {
+      min-height: 86px;
+      background: #111;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 7vw;
+      font-weight: 850;
+    }
+    .footer span { color: #aaa; }
+
+    .showcase, .product-card, .mood {
+      transform-style: preserve-3d;
+      transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+      will-change: transform;
+    }
+    .showcase:hover, .product-card:hover, .mood:hover {
+      box-shadow: 0 46px 120px rgba(0,0,0,.26);
+      filter: saturate(1.07);
+    }
+    .product-card:hover .img { transform: scale(1.08); filter: saturate(1.12); }
+
+    @media (max-width: 980px) {
+      .nav-links a:not(.cart-pill) { display: none; }
+      .hero, .collection-band { grid-template-columns: 1fr; }
+      .hero-copy h1 { letter-spacing: -5px; }
+      .showcase-img { height: 340px; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 18px; }
+      .product-grid, .mood-grid { grid-template-columns: 1fr; }
+      .footer { flex-direction: column; justify-content: center; gap: 10px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <a class="logo" href="#" data-hezo="brand-name">OOPS!</a>
+    <nav class="nav-links">
+      <a href="#">Shop</a>
+      <a href="#">Collection</a>
+      <a href="#">Review</a>
+      <a href="#">About</a>
+      <a class="cart-pill" href="#">Cart 3</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <span class="eyebrow">May vivid drop</span>
+      <h1 data-hezo="hero-headline">OOPS!<span>Nail Store</span></h1>
+      <p data-hezo="hero-subheadline">
+        비비드한 컬러와 젤리 같은 광택을 가진 네일팁 컬렉션.
+        첫 화면에서 바로 대표 상품, 가격, 장바구니 진입을 보여주는 뷰티 스토어 템플릿입니다.
+      </p>
+      <div class="actions">
+        <button class="btn primary" data-hezo="cta">컬렉션 쇼핑하기 →</button>
+        <button class="btn secondary">베스트셀러 보기</button>
+      </div>
+    </div>
+
+    <article class="showcase">
+      <div class="showcase-img"></div>
+      <div class="showcase-row">
+        <div>
+          <small>Today's set</small>
+          <h2>Vivid Jelly Nail</h2>
+          <p>말랑한 컬러감과 투명한 광택의 시즌 한정 네일 세트</p>
+        </div>
+        <strong class="price">₩22,000</strong>
+      </div>
+    </article>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <div>
+        <span>Best Items</span>
+        <h2>상품을 바로 고를 수 있는 스토어 구조</h2>
+      </div>
+      <p>
+        랜딩페이지처럼 소개만 하는 것이 아니라 상품명, 가격, 장바구니 액션을 카드 단위로 보여줍니다.
+      </p>
+    </div>
+
+    <div class="product-grid">
+      <article class="product-card" data-hezo-idx="0">
+        <div class="img"></div>
+        <div class="product-body">
+          <h3 data-hezo="service-name">Vivid Nail Set</h3>
+          <p data-hezo="service-desc">컬러풀한 젤리 무드 네일팁</p>
+          <div class="buy-row"><strong>₩22,000</strong><button>담기</button></div>
+        </div>
+      </article>
+      <article class="product-card" data-hezo-idx="1">
+        <div class="img"></div>
+        <div class="product-body">
+          <h3 data-hezo="service-name">Glossy Pink</h3>
+          <p data-hezo="service-desc">데일리로 쓰기 좋은 핑크 광택</p>
+          <div class="buy-row"><strong>₩19,000</strong><button>담기</button></div>
+        </div>
+      </article>
+      <article class="product-card" data-hezo-idx="2">
+        <div class="img"></div>
+        <div class="product-body">
+          <h3 data-hezo="service-name">Clear Shine</h3>
+          <p data-hezo="service-desc">투명하고 깨끗한 미니멀 세트</p>
+          <div class="buy-row"><strong>₩18,000</strong><button>담기</button></div>
+        </div>
+      </article>
+      <article class="product-card" data-hezo-idx="3">
+        <div class="img"></div>
+        <div class="product-body">
+          <h3 data-hezo="service-name">Party Spark</h3>
+          <p data-hezo="service-desc">포인트 스타일링용 글리터 팁</p>
+          <div class="buy-row"><strong>₩24,000</strong><button>담기</button></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="collection-band">
+    <div class="collection-copy">
+      <h2 data-hezo="section-cta-title">Shop by mood.</h2>
+      <p>
+        고객이 “예쁜 페이지”를 보는 데서 끝나지 않고, 원하는 무드와 상품을 바로 선택하도록 컬렉션을 나눕니다.
+      </p>
+      <button>전체 상품 보기</button>
+    </div>
+    <div class="mood-grid">
+      <article class="mood"><span>01</span><h3>Daily Gloss</h3><p>매일 쓰기 좋은 부드러운 톤</p></article>
+      <article class="mood"><span>02</span><h3>Vivid Color</h3><p>계절감 있는 강한 포인트 컬러</p></article>
+      <article class="mood"><span>03</span><h3>Party Spark</h3><p>반짝이는 특별한 날의 세트</p></article>
+      <article class="mood"><span>04</span><h3>Gift Set</h3><p>선물용 패키지와 추천 조합</p></article>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <strong>OOPS! Nail Store</strong>
+    <span>Shop · Collection · Review · Contact</span>
+  </footer>
+
+  <script>
+    document.querySelectorAll('.showcase, .product-card, .mood').forEach((card) => {
+      card.addEventListener('mousemove', (event) => {
+        const rect = card.getBoundingClientRect();
+        const px = (event.clientX - rect.left) / rect.width;
+        const py = (event.clientY - rect.top) / rect.height;
+        card.style.transform = `perspective(1000px) rotateX(${(0.5 - py) * 11}deg) rotateY(${(px - 0.5) * 11}deg) translateY(-8px)`;
+      });
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = '';
+      });
+    });
+  </script>
+</body>
+</html>

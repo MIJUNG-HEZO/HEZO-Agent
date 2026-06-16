@@ -1,77 +1,53 @@
 {
-  "Comment": "HEZO 홈페이지 생성 파이프라인 - Generation Agent → (P3 Build Worker) → (Validation Agent) → Deploy",
-  "StartAt": "UploadContractToS3",
+  "Comment": "HEZO 홈페이지 생성 파이프라인 v2.0 — AgentCore Runtime: P4 Generation → P3 Build → (P4 Validation: P2 완료 후 활성화)",
+  "StartAt": "InvokeGenerationAgent",
   "States": {
-
-    "UploadContractToS3": {
-      "Type": "Task",
-      "Comment": "contract_json을 S3 hezo-artifacts/sites/{site_id}/contract_final.json 에 업로드",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "FunctionName": "arn:aws:lambda:ap-northeast-2:${AWS_ACCOUNT_ID}:function:hezo-p4-upload-contract",
-        "Payload": {
-          "site_id.$": "$.site_id",
-          "contract_json.$": "$.contract_json"
-        }
-      },
-      "ResultSelector": {
-        "status.$": "$.Payload.status",
-        "s3_key.$": "$.Payload.s3_key"
-      },
-      "ResultPath": "$.upload_result",
-      "Retry": [
-        {
-          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 3,
-          "BackoffRate": 2.0,
-          "JitterStrategy": "FULL"
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.error_info",
-          "Next": "MarkFailed"
-        }
-      ],
-      "Next": "InvokeGenerationAgent"
-    },
 
     "InvokeGenerationAgent": {
       "Type": "Task",
-      "Comment": "Bedrock Agent(hezo-generation-agent)를 호출하여 render_spec.json 생성",
-      "Resource": "arn:aws:states:::bedrock:invokeAgent",
+      "Comment": "P4 생성 에이전트 — contract_final.json 읽기 → render_spec.json + GEO 4종 → S3 저장",
+      "Resource": "arn:aws:states:::http:invoke",
       "Parameters": {
-        "AgentId": "${BEDROCK_AGENT_ID}",
-        "AgentAliasId": "${BEDROCK_AGENT_ALIAS_ID}",
-        "SessionId.$": "$.site_id",
-        "InputText.$": "States.Format('site_id={} 에 대한 render_spec.json 을 생성하세요. contract_final.json 을 읽고 SEO 메타데이터, Schema.org JSON-LD, FAQ, QuickAnswer, llms.txt 를 포함한 완전한 렌더 스펙을 작성하여 저장하세요.', $.site_id)",
-        "SessionState": {
-          "SessionAttributes": {
+        "ApiEndpoint": "${GENERATION_AGENT_ENDPOINT}/invoke",
+        "Method": "POST",
+        "Headers": {
+          "Content-Type": "application/json"
+        },
+        "RequestBody": {
+          "sessionId.$": "$$.Execution.Name",
+          "inputText.$": "States.Format('site_id={}', $.site_id)",
+          "sessionAttributes": {
             "site_id.$": "$.site_id",
-            "contract_s3_key.$": "$.upload_result.s3_key",
             "pipeline_run_id.$": "$$.Execution.Name"
           }
+        },
+        "Authentication": {
+          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
         }
       },
       "ResultSelector": {
-        "completion.$": "$.completion",
-        "agent_response.$": "$.completion"
+        "output.$": "$.ResponseBody.output",
+        "metadata.$": "$.ResponseBody.metadata",
+        "status_code.$": "$.StatusCode"
       },
       "ResultPath": "$.generation_result",
       "TimeoutSeconds": 600,
-      "HeartbeatSeconds": 120,
       "Retry": [
         {
-          "ErrorEquals": ["Bedrock.ThrottlingException", "Bedrock.ServiceUnavailableException"],
-          "IntervalSeconds": 10,
+          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503"],
+          "IntervalSeconds": 15,
           "MaxAttempts": 2,
           "BackoffRate": 2.0,
           "JitterStrategy": "FULL"
         }
       ],
       "Catch": [
+        {
+          "ErrorEquals": ["States.Http.StatusCode422"],
+          "Comment": "가드레일 위반 — 즉시 실패",
+          "ResultPath": "$.error_info",
+          "Next": "MarkFailed"
+        },
         {
           "ErrorEquals": ["States.Timeout", "States.ALL"],
           "ResultPath": "$.error_info",
@@ -83,17 +59,17 @@
 
     "CheckGenerationResult": {
       "Type": "Choice",
-      "Comment": "agent_response에 'render_spec_saved' 키워드가 있으면 성공으로 간주.",
+      "Comment": "생성 에이전트 output에 'render_spec_saved' 포함 여부로 성공 판정",
       "Choices": [
         {
-          "Variable": "$.generation_result.completion",
+          "Variable": "$.generation_result.output",
           "StringMatches": "*render_spec_saved*",
           "Next": "MarkGenerationComplete"
         },
         {
-          "Variable": "$.generation_result.completion",
-          "StringMatches": "*render_spec.json*",
-          "Next": "MarkGenerationComplete"
+          "Variable": "$.generation_result.output",
+          "StringMatches": "*generation_skipped*",
+          "Next": "MarkFailed"
         }
       ],
       "Default": "MarkFailed"
@@ -101,7 +77,7 @@
 
     "MarkGenerationComplete": {
       "Type": "Task",
-      "Comment": "DynamoDB에 generation_complete 상태 직접 기록 (Lambda 없이 네이티브 통합)",
+      "Comment": "DynamoDB에 generation_complete 상태 기록",
       "Resource": "arn:aws:states:::dynamodb:updateItem",
       "Parameters": {
         "TableName": "hezo_pipeline_state",
@@ -119,7 +95,7 @@
       "ResultPath": null,
       "Retry": [
         {
-          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException", "States.TaskFailed"],
+          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException"],
           "IntervalSeconds": 2,
           "MaxAttempts": 3,
           "BackoffRate": 2.0
@@ -132,34 +108,113 @@
           "Next": "PipelineFinalFailure"
         }
       ],
-      "Next": "WaitForBuildWorker"
+      "Next": "InvokeBuildAgent"
     },
 
-    "WaitForBuildWorker": {
-      "Type": "Wait",
-      "Comment": "TODO [P3 Build Worker]: ECS Fargate 빌드 워커 태스크를 여기서 실행. 현재는 1초 대기.",
-      "Seconds": 1,
-      "Next": "BuildWorkerPlaceholder"
-    },
-
-    "BuildWorkerPlaceholder": {
-      "Type": "Pass",
-      "Comment": "TODO [P3]: ECS Fargate 빌드 워커 - render_spec.json → 정적 HTML/CSS/JS 렌더링 → S3 hezo-sites 업로드. 미구현.",
-      "Result": {
-        "build_status": "skipped_placeholder",
-        "message": "P3 Build Worker not yet implemented"
+    "InvokeBuildAgent": {
+      "Type": "Task",
+      "Comment": "P3 빌드 에이전트 — render_spec.json 읽기 → HTML 렌더링 → S3 dist/ 업로드",
+      "Resource": "arn:aws:states:::http:invoke",
+      "Parameters": {
+        "ApiEndpoint": "${BUILD_AGENT_ENDPOINT}/invoke",
+        "Method": "POST",
+        "Headers": {
+          "Content-Type": "application/json"
+        },
+        "RequestBody": {
+          "sessionId.$": "$$.Execution.Name",
+          "inputText.$": "States.Format('site_id={}', $.site_id)",
+          "sessionAttributes": {
+            "site_id.$": "$.site_id",
+            "pipeline_run_id.$": "$$.Execution.Name"
+          }
+        },
+        "Authentication": {
+          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
+        }
+      },
+      "ResultSelector": {
+        "output.$": "$.ResponseBody.output",
+        "metadata.$": "$.ResponseBody.metadata",
+        "status_code.$": "$.StatusCode"
       },
       "ResultPath": "$.build_result",
-      "Next": "ValidationAgentPlaceholder"
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503"],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout", "States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBuildFailed"
+        }
+      ],
+      "Next": "CheckBuildResult"
     },
 
-    "ValidationAgentPlaceholder": {
+    "CheckBuildResult": {
+      "Type": "Choice",
+      "Comment": "빌드 에이전트 output에 'build_complete' 포함 여부로 성공 판정",
+      "Choices": [
+        {
+          "Variable": "$.build_result.output",
+          "StringMatches": "*build_complete*",
+          "Next": "MarkBuildComplete"
+        }
+      ],
+      "Default": "MarkBuildFailed"
+    },
+
+    "MarkBuildComplete": {
+      "Type": "Task",
+      "Comment": "DynamoDB에 build_complete 상태 기록",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET pipeline_status = :s, dist_s3_key = :d, pipeline_run_id = :p, updated_at = :t",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "build_complete" },
+          ":d": { "S.$": "States.Format('sites/{}/dist/index.html', $.site_id)" },
+          ":p": { "S.$": "$$.Execution.Name" },
+          ":t": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "PipelineFinalFailure"
+        }
+      ],
+      "Next": "ValidationPlaceholder"
+    },
+
+    "ValidationPlaceholder": {
       "Type": "Pass",
-      "Comment": "TODO [P3]: Validation Agent - Lighthouse 감사, Schema.org 준수 검사, AI 친화도 점수 계산. 미구현.",
+      "Comment": "TODO [P2 완료 후 활성화]: P4 검증 에이전트 — P3 HTML vs P2 크롤링 MD 비교 검증",
       "Result": {
-        "validation_status": "skipped_placeholder",
-        "lighthouse_score": null,
-        "message": "Validation Agent not yet implemented"
+        "validation_status": "skipped_pending_p2",
+        "publish_ready": true,
+        "message": "P2 크롤링 에이전트 구현 완료 후 InvokeValidationAgent로 교체"
       },
       "ResultPath": "$.validation_result",
       "Next": "PipelineSuccess"
@@ -167,7 +222,7 @@
 
     "MarkFailed": {
       "Type": "Task",
-      "Comment": "DynamoDB에 generation_failed 상태 직접 기록 후 Fail state로 전환",
+      "Comment": "DynamoDB에 pipeline_failed 상태 기록 (생성 단계 실패)",
       "Resource": "arn:aws:states:::dynamodb:updateItem",
       "Parameters": {
         "TableName": "hezo_pipeline_state",
@@ -184,7 +239,42 @@
       "ResultPath": null,
       "Retry": [
         {
-          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException", "States.TaskFailed"],
+          "ErrorEquals": ["DynamoDB.DynamoDbException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.double_failure",
+          "Next": "PipelineFinalFailure"
+        }
+      ],
+      "Next": "PipelineFinalFailure"
+    },
+
+    "MarkBuildFailed": {
+      "Type": "Task",
+      "Comment": "DynamoDB에 build_failed 상태 기록 (빌드 단계 실패)",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET pipeline_status = :s, pipeline_run_id = :p, updated_at = :t",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "build_failed" },
+          ":p": { "S.$": "$$.Execution.Name" },
+          ":t": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.DynamoDbException"],
           "IntervalSeconds": 2,
           "MaxAttempts": 2,
           "BackoffRate": 2.0
@@ -202,13 +292,13 @@
 
     "PipelineFinalFailure": {
       "Type": "Fail",
-      "Error": "GenerationAgentFailed",
-      "Cause": "Generation Agent가 render_spec.json 생성에 실패했습니다. CloudWatch Logs에서 상세 오류를 확인하세요."
+      "Error": "HezoPipelineFailed",
+      "Cause": "파이프라인 실패. CloudWatch Logs에서 상세 오류를 확인하세요."
     },
 
     "PipelineSuccess": {
       "Type": "Succeed",
-      "Comment": "파이프라인 전체 완료. site_id에 대한 render_spec.json이 S3에 저장되었습니다."
+      "Comment": "파이프라인 완료. dist/index.html이 S3에 저장되었습니다."
     }
 
   }

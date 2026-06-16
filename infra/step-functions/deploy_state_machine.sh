@@ -1,273 +1,243 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HEZO Step Functions 상태 머신 배포 스크립트
-# 사용법: bash deploy_state_machine.sh [--update]
+# HEZO Step Functions 상태 머신 배포 스크립트 v2.0
+#
+# 변경사항 (v2.0):
+#   - 구 Managed Bedrock Agent / Lambda 참조 제거
+#   - AgentCore Runtime HTTP 엔드포인트 기반으로 교체
+#   - 플레이스홀더: GENERATION_AGENT_ENDPOINT, BUILD_AGENT_ENDPOINT, EVENTBRIDGE_CONNECTION_ARN
+#
+# 사용법:
+#   bash deploy_state_machine.sh            # 생성 또는 업데이트
+#   bash deploy_state_machine.sh --setup-connection  # EventBridge Connection 먼저 생성
 # =============================================================================
 
 set -euo pipefail
-
-# Git Bash(MSYS/MinGW)에서 /로 시작하는 인자를 Windows 경로로 변환하는 것을 방지
 export MSYS_NO_PATHCONV=1
 
-# ─── .env 로드 (HEZO-Agent 레포 루트 기준) ──────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [ -f "${REPO_ROOT}/.env" ]; then
-    set -a
-    source <(sed 's/\r//' "${REPO_ROOT}/.env")
-    set +a
-    echo "[ENV] .env 로드 완료: ${REPO_ROOT}/.env"
-else
-    echo "[ENV] .env 없음 — 환경변수 또는 ~/.aws/config 사용"
+    set -a; source <(sed 's/\r//' "${REPO_ROOT}/.env"); set +a
 fi
 
-# ─── 색상 출력 헬퍼 ─────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
-success() { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-die()     { error "$*"; exit 1; }
-
-# ─── 설정값 (.env 값 우선, 없으면 기본값) ──────────────────────────────────
 REGION="${AWS_REGION:-ap-northeast-2}"
+PROFILE="${AWS_PROFILE:-rapa-cm1-21}"
 STATE_MACHINE_NAME="hezo-homepage-pipeline"
 DEFINITION_FILE="$(dirname "$0")/hezo_pipeline.json"
 ROLE_NAME="hezo-step-functions-role"
 
-# Bedrock Agent 정보 (agents/generation/deploy.sh 실행 후 SSM에 저장된 값 사용)
-BEDROCK_AGENT_ID=""
-BEDROCK_AGENT_ALIAS_ID=""
+info()    { echo "[INFO]  $*"; }
+success() { echo "[OK]    $*"; }
+warn()    { echo "[WARN]  $*" >&2; }
+error()   { echo "[ERROR] $*" >&2; exit 1; }
 
-# AWS_PROFILE이 설정돼 있으면 모든 aws 명령에 --profile 추가
-AWS_PROFILE_OPT=""
-if [ -n "${AWS_PROFILE:-}" ]; then
-    AWS_PROFILE_OPT="--profile ${AWS_PROFILE}"
-    echo "[ENV] AWS 프로파일: ${AWS_PROFILE}"
+aws_cmd() { aws --profile "$PROFILE" "$@"; }
+
+ssm_get() {
+    local name="$1" default="${2:-}"
+    aws_cmd ssm get-parameter --name "$name" --query "Parameter.Value" \
+        --output text --region "$REGION" 2>/dev/null || echo "$default"
+}
+
+# =============================================================================
+# EventBridge Connection 생성 (--setup-connection 플래그)
+# HTTP Task 인증에 필요. 에이전트 엔드포인트가 퍼블릭 + 무인증이면 NONE 타입 사용.
+# =============================================================================
+setup_connection() {
+    local conn_name="hezo-agent-connection"
+    local existing
+    existing=$(aws_cmd events list-connections \
+        --name-prefix "$conn_name" \
+        --region "$REGION" \
+        --query "Connections[?Name=='${conn_name}'].ConnectionArn | [0]" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$existing" ] && [ "$existing" != "None" ]; then
+        info "EventBridge Connection 이미 존재: $existing"
+        echo "$existing"
+        return
+    fi
+
+    local conn_arn
+    conn_arn=$(aws_cmd events create-connection \
+        --name "$conn_name" \
+        --authorization-type "API_KEY" \
+        --auth-parameters "ApiKeyAuthParameters={ApiKeyName=X-Hezo-Auth,ApiKeyValue=hezo-internal}" \
+        --region "$REGION" \
+        --query "ConnectionArn" --output text)
+
+    aws_cmd ssm put-parameter \
+        --name "hezo-eventbridge-connection-arn" \
+        --value "$conn_arn" \
+        --type String --overwrite \
+        --region "$REGION" > /dev/null
+    success "EventBridge Connection 생성: $conn_arn"
+    echo "$conn_arn"
+}
+
+if [ "${1:-}" = "--setup-connection" ]; then
+    setup_connection
+    exit 0
 fi
-
-echo ""
-echo "========================================================"
-echo "  HEZO Step Functions 상태 머신 배포"
-echo "========================================================"
-echo ""
 
 # =============================================================================
 # 1. 사전 조건 확인
 # =============================================================================
-info "사전 조건 확인 중..."
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║  HEZO Step Functions 배포 v2.0                      ║"
+echo "╚══════════════════════════════════════════════════════╝"
 
-if ! command -v aws &>/dev/null; then
-    die "AWS CLI가 설치되어 있지 않습니다."
+command -v aws >/dev/null 2>&1 || error "AWS CLI 미설치"
+
+ACCOUNT_ID=$(aws_cmd sts get-caller-identity --query Account --output text) || error "AWS 인증 실패"
+success "AWS 계정: $ACCOUNT_ID"
+
+ROLE_ARN=$(aws_cmd iam get-role --role-name "$ROLE_NAME" \
+    --query "Role.Arn" --output text 2>/dev/null) || \
+    error "IAM 역할 ${ROLE_NAME} 없음 — IAM 설정 먼저 필요"
+success "Step Functions IAM 역할: $ROLE_ARN"
+
+# =============================================================================
+# 2. 에이전트 엔드포인트 조회 (SSM → 없으면 경고 후 placeholder 사용)
+# =============================================================================
+info "SSM에서 에이전트 엔드포인트 조회 중..."
+
+GENERATION_AGENT_ENDPOINT=$(ssm_get "hezo-generation-agent-endpoint" "PLACEHOLDER_GENERATION_ENDPOINT")
+BUILD_AGENT_ENDPOINT=$(ssm_get "hezo-build-agent-endpoint" "PLACEHOLDER_BUILD_ENDPOINT")
+EVENTBRIDGE_CONNECTION_ARN=$(ssm_get "hezo-eventbridge-connection-arn" "PLACEHOLDER_CONNECTION_ARN")
+
+if [[ "$GENERATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
+    warn "hezo-generation-agent-endpoint SSM 없음 — placeholder 사용"
+    warn "  AgentCore Runtime 배포 후: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL>"
+else
+    success "Generation Agent: $GENERATION_AGENT_ENDPOINT"
 fi
 
-# 계정 ID 조회
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text) || \
-    die "AWS 자격증명이 유효하지 않습니다."
-success "AWS 계정 ID: ${ACCOUNT_ID}"
+if [[ "$BUILD_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
+    warn "hezo-build-agent-endpoint SSM 없음 — placeholder 사용"
+else
+    success "Build Agent: $BUILD_AGENT_ENDPOINT"
+fi
 
-# Step Functions 역할 ARN 조회
-ROLE_ARN=$(aws iam get-role \
-    --role-name "$ROLE_NAME" \
-    --query "Role.Arn" \
-    --output text 2>/dev/null) || \
-    die "IAM 역할 ${ROLE_NAME}을 찾을 수 없습니다. aws_setup.sh를 먼저 실행하세요."
-success "Step Functions IAM 역할 ARN: ${ROLE_ARN}"
-
-# Bedrock Agent ID를 SSM에서 조회 (agents/generation/deploy.sh 실행 후 저장됨)
-info "SSM에서 Bedrock Agent 정보 조회 중..."
-BEDROCK_AGENT_ID=$(aws ssm get-parameter \
-    --name "hezo-bedrock-agent-id" \
-    --query "Parameter.Value" \
-    --output text \
-    --region "$REGION" ${AWS_PROFILE_OPT} 2>/dev/null) || {
-    warn "SSM hezo-bedrock-agent-id 를 찾을 수 없습니다."
-    warn "agents/generation/deploy.sh 를 먼저 실행하거나 BEDROCK_AGENT_ID 환경변수를 설정하세요."
-    BEDROCK_AGENT_ID="${BEDROCK_AGENT_ID:-PLACEHOLDER_AGENT_ID}"
-}
-
-BEDROCK_AGENT_ALIAS_ID=$(aws ssm get-parameter \
-    --name "hezo-bedrock-agent-alias-id" \
-    --query "Parameter.Value" \
-    --output text \
-    --region "$REGION" ${AWS_PROFILE_OPT} 2>/dev/null) || {
-    warn "SSM hezo-bedrock-agent-alias-id 를 찾을 수 없습니다."
-    BEDROCK_AGENT_ALIAS_ID="${BEDROCK_AGENT_ALIAS_ID:-PLACEHOLDER_ALIAS_ID}"
-}
-
-success "Bedrock Agent ID: ${BEDROCK_AGENT_ID}"
-success "Bedrock Agent Alias ID: ${BEDROCK_AGENT_ALIAS_ID}"
-echo ""
+if [[ "$EVENTBRIDGE_CONNECTION_ARN" == PLACEHOLDER* ]]; then
+    warn "hezo-eventbridge-connection-arn SSM 없음"
+    warn "  실행: bash deploy_state_machine.sh --setup-connection"
+else
+    success "EventBridge Connection: $EVENTBRIDGE_CONNECTION_ARN"
+fi
 
 # =============================================================================
-# 2. 상태 머신 정의 파일에 실제 값 주입
+# 3. 상태 머신 정의 파일 플레이스홀더 치환
 # =============================================================================
-info "상태 머신 정의 파일 처리 중: ${DEFINITION_FILE}"
+info "플레이스홀더 치환 중..."
 
-DEFINITION_TEMP=$(mktemp /tmp/hezo_pipeline_XXXXXX.json)
-trap 'rm -f "$DEFINITION_TEMP"' EXIT
+DEFINITION_TEMP=$(python3 -c "import tempfile; tf=tempfile.NamedTemporaryFile(suffix='.json',delete=False); print(tf.name)")
+trap "rm -f '$DEFINITION_TEMP'" EXIT
 
-# 플레이스홀더 치환
-sed \
-    -e "s/\${AWS_ACCOUNT_ID}/${ACCOUNT_ID}/g" \
-    -e "s/\${BEDROCK_AGENT_ID}/${BEDROCK_AGENT_ID}/g" \
-    -e "s/\${BEDROCK_AGENT_ALIAS_ID}/${BEDROCK_AGENT_ALIAS_ID}/g" \
-    "$DEFINITION_FILE" > "$DEFINITION_TEMP"
+python3 - "$DEFINITION_FILE" "$DEFINITION_TEMP" \
+    "$ACCOUNT_ID" "$GENERATION_AGENT_ENDPOINT" "$BUILD_AGENT_ENDPOINT" "$EVENTBRIDGE_CONNECTION_ARN" <<'PYEOF'
+import sys, json
 
-success "플레이스홀더 치환 완료 → ${DEFINITION_TEMP}"
+src, dst, account, gen_ep, build_ep, conn_arn = sys.argv[1:]
+content = open(src, encoding='utf-8').read()
+content = content.replace('${AWS_ACCOUNT_ID}', account)
+content = content.replace('${GENERATION_AGENT_ENDPOINT}', gen_ep)
+content = content.replace('${BUILD_AGENT_ENDPOINT}', build_ep)
+content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}', conn_arn)
 
 # JSON 유효성 검증
-if python3 -c "import json,sys; json.load(open('$DEFINITION_TEMP'))" 2>/dev/null; then
-    success "JSON 구문 검증 통과"
-else
-    die "상태 머신 정의 JSON 구문 오류. 파일을 확인하세요: ${DEFINITION_TEMP}"
-fi
-echo ""
+json.loads(content)
+open(dst, 'w', encoding='utf-8').write(content)
+print("JSON 유효성 검증 통과")
+PYEOF
+
+success "플레이스홀더 치환 완료"
 
 # =============================================================================
-# 3. CloudWatch 로그 그룹 생성 (Step Functions 실행 로그용)
+# 4. CloudWatch 로그 그룹
 # =============================================================================
 LOG_GROUP="/hezo/step-functions/${STATE_MACHINE_NAME}"
-info "CloudWatch 로그 그룹 확인: ${LOG_GROUP}"
-
-if aws logs describe-log-groups \
-    --log-group-name-prefix "$LOG_GROUP" \
-    --region "$REGION" \
-    --query "logGroups[?logGroupName=='${LOG_GROUP}'].logGroupName" \
-    --output text | grep -q "$LOG_GROUP" 2>/dev/null; then
-    warn "로그 그룹 이미 존재: ${LOG_GROUP}"
+if ! aws_cmd logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --region "$REGION" \
+        --query "logGroups[?logGroupName=='${LOG_GROUP}'].logGroupName" \
+        --output text 2>/dev/null | grep -q "$LOG_GROUP"; then
+    aws_cmd logs create-log-group --log-group-name "$LOG_GROUP" --region "$REGION"
+    aws_cmd logs put-retention-policy --log-group-name "$LOG_GROUP" \
+        --retention-in-days 90 --region "$REGION"
+    success "CloudWatch 로그 그룹 생성: $LOG_GROUP"
 else
-    aws logs create-log-group \
-        --log-group-name "$LOG_GROUP" \
-        --region "$REGION"
-    aws logs put-retention-policy \
-        --log-group-name "$LOG_GROUP" \
-        --retention-in-days 90 \
-        --region "$REGION"
-    success "로그 그룹 생성: ${LOG_GROUP} (보존: 90일)"
+    info "로그 그룹 이미 존재: $LOG_GROUP"
 fi
 
 LOG_GROUP_ARN="arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:${LOG_GROUP}:*"
-echo ""
+
+LOGGING_CONFIG=$(python3 -c "
+import json
+print(json.dumps({
+  'level': 'ALL',
+  'includeExecutionData': True,
+  'destinations': [{'cloudWatchLogsLogGroup': {'logGroupArn': '$LOG_GROUP_ARN'}}]
+}))")
 
 # =============================================================================
-# 4. 상태 머신 생성 또는 업데이트
+# 5. 상태 머신 생성 또는 업데이트
 # =============================================================================
-
-# 기존 상태 머신 ARN 조회
-EXISTING_ARN=$(aws stepfunctions list-state-machines \
+EXISTING_ARN=$(aws_cmd stepfunctions list-state-machines \
     --region "$REGION" \
     --query "stateMachines[?name=='${STATE_MACHINE_NAME}'].stateMachineArn" \
-    --output text 2>/dev/null)
-
-LOGGING_CONFIGURATION=$(cat <<EOF
-{
-    "level": "ALL",
-    "includeExecutionData": true,
-    "destinations": [
-        {
-            "cloudWatchLogsLogGroup": {
-                "logGroupArn": "${LOG_GROUP_ARN}"
-            }
-        }
-    ]
-}
-EOF
-)
-
-TRACING_CONFIGURATION='{"enabled": true}'
+    --output text 2>/dev/null || echo "")
 
 if [ -n "$EXISTING_ARN" ] && [ "$EXISTING_ARN" != "None" ]; then
-    # ── 업데이트 모드 ────────────────────────────────────────────────────────
-    info "기존 상태 머신 업데이트: ${EXISTING_ARN}"
-
-    aws stepfunctions update-state-machine \
+    info "기존 상태 머신 업데이트: $EXISTING_ARN"
+    aws_cmd stepfunctions update-state-machine \
         --state-machine-arn "$EXISTING_ARN" \
         --definition "file://${DEFINITION_TEMP}" \
         --role-arn "$ROLE_ARN" \
-        --logging-configuration "$LOGGING_CONFIGURATION" \
-        --tracing-configuration "$TRACING_CONFIGURATION" \
-        --region "$REGION" \
-        --output json > /tmp/hezo_sfn_update_result.json
-
+        --logging-configuration "$LOGGING_CONFIG" \
+        --region "$REGION" --output json > /dev/null
     STATE_MACHINE_ARN="$EXISTING_ARN"
     success "상태 머신 업데이트 완료"
 else
-    # ── 신규 생성 모드 ───────────────────────────────────────────────────────
-    info "새 상태 머신 생성: ${STATE_MACHINE_NAME}"
-
-    CREATE_RESULT=$(aws stepfunctions create-state-machine \
+    info "새 상태 머신 생성: $STATE_MACHINE_NAME"
+    CREATE_RESULT=$(aws_cmd stepfunctions create-state-machine \
         --name "$STATE_MACHINE_NAME" \
         --definition "file://${DEFINITION_TEMP}" \
         --role-arn "$ROLE_ARN" \
         --type "STANDARD" \
-        --logging-configuration "$LOGGING_CONFIGURATION" \
-        --tracing-configuration "$TRACING_CONFIGURATION" \
-        --tags "project=HEZO" "managedBy=deploy_state_machine.sh" \
-        --region "$REGION" \
-        --output json)
-
+        --logging-configuration "$LOGGING_CONFIG" \
+        --tags "project=HEZO" \
+        --region "$REGION" --output json)
     STATE_MACHINE_ARN=$(echo "$CREATE_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['stateMachineArn'])")
     success "상태 머신 생성 완료"
 fi
 
-echo ""
-
 # =============================================================================
-# 5. SSM에 상태 머신 ARN 저장
+# 6. SSM에 상태 머신 ARN 저장
 # =============================================================================
-info "SSM에 상태 머신 ARN 저장 중..."
-
-# 플랫 이름 사용 (조직 SCP가 계층형 /hezo/... 경로를 차단함)
-aws ssm put-parameter \
+aws_cmd ssm put-parameter \
     --name "hezo-step-functions-arn" \
     --value "$STATE_MACHINE_ARN" \
-    --type "String" \
-    --overwrite \
-    --region "$REGION" \
-    ${AWS_PROFILE_OPT} \
-    --output text > /dev/null
-
-success "SSM 저장 완료: hezo-step-functions-arn"
-echo ""
-
-# =============================================================================
-# 6. 배포 검증 (단순 실행 테스트 - dry run)
-# =============================================================================
-info "배포 검증 중 (상태 머신 설명 조회)..."
-
-DESCRIBE_RESULT=$(aws stepfunctions describe-state-machine \
-    --state-machine-arn "$STATE_MACHINE_ARN" \
-    --region "$REGION" \
-    --output json)
-
-SM_STATUS=$(echo "$DESCRIBE_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-SM_CREATION=$(echo "$DESCRIBE_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['creationDate'])")
-
-success "상태 머신 상태: ${SM_STATUS}"
-success "생성/최종수정 시각: ${SM_CREATION}"
-echo ""
+    --type String --overwrite \
+    --region "$REGION" > /dev/null
+success "SSM 저장: hezo-step-functions-arn"
 
 # =============================================================================
 # 7. 배포 요약
 # =============================================================================
-echo "========================================================"
-echo "  Step Functions 배포 완료"
-echo "========================================================"
-echo "  상태 머신 이름  : ${STATE_MACHINE_NAME}"
-echo "  상태 머신 ARN   : ${STATE_MACHINE_ARN}"
-echo "  리전            : ${REGION}"
-echo "  IAM 역할        : ${ROLE_ARN}"
-echo "  Bedrock Agent ID: ${BEDROCK_AGENT_ID}"
-echo "  로그 그룹       : ${LOG_GROUP}"
-echo ""
-echo "  테스트 실행 예시:"
+echo
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║  배포 완료                                           ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo "  상태 머신 ARN     : $STATE_MACHINE_ARN"
+echo "  Generation Agent  : $GENERATION_AGENT_ENDPOINT"
+echo "  Build Agent       : $BUILD_AGENT_ENDPOINT"
+echo "  EventBridge Conn  : $EVENTBRIDGE_CONNECTION_ARN"
+echo
+echo "  [에이전트 엔드포인트 등록 방법]"
+echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-build-agent-endpoint      --value <URL> --type String --overwrite"
+echo
+echo "  [파이프라인 테스트 실행]"
 echo "  aws stepfunctions start-execution \\"
-echo "    --state-machine-arn '${STATE_MACHINE_ARN}' \\"
-echo "    --input '{\"site_id\": \"test-site-001\", \"contract_json\": {\"site_id\": \"test-site-001\"}}' \\"
-echo "    --region ${REGION}"
-echo "========================================================"
+echo "    --state-machine-arn '$STATE_MACHINE_ARN' \\"
+echo "    --input '{\"site_id\": \"site_tax_13_001\"}' \\"
+echo "    --region $REGION"

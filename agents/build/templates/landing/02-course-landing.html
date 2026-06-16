@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Product Bootcamp</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: Arial, "Noto Sans KR", sans-serif;
+  background: #090a0f;
+  color: #f8fafc;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+.hero {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  padding: 34px;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(64,220,181,0.2), transparent 26%),
+    radial-gradient(circle at 84% 16%, rgba(255,115,79,0.24), transparent 24%),
+    linear-gradient(135deg, #090a0f, #16121f 50%, #0e1724);
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.24;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to bottom, #000, transparent 88%);
+}
+
+.nav {
+  position: relative;
+  z-index: 2;
+  width: min(1220px, 100%);
+  height: 76px;
+  margin: 0 auto;
+  padding: 0 22px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 24px;
+  display: grid;
+  grid-template-columns: 260px 1fr 170px;
+  align-items: center;
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(24px);
+}
+
+.brand {
+  font-size: 25px;
+  font-weight: 950;
+  letter-spacing: -1px;
+}
+
+.brand span {
+  color: #40dcb5;
+}
+
+.menu {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.nav button {
+  height: 48px;
+  border-radius: 16px;
+  background: #40dcb5;
+  color: #06110e;
+  font-weight: 950;
+}
+
+.hero-layout {
+  position: relative;
+  z-index: 2;
+  width: min(1220px, 100%);
+  min-height: calc(100vh - 110px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 42px;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(64,220,181,0.12);
+  border: 1px solid rgba(64,220,181,0.25);
+  color: #8ff3d8;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 2px;
+  margin-bottom: 24px;
+}
+
+.hero h1 {
+  max-width: 790px;
+  font-size: clamp(56px, 7vw, 106px);
+  line-height: 0.9;
+  letter-spacing: -6px;
+  margin-bottom: 28px;
+}
+
+.hero h1 em {
+  font-style: normal;
+  color: #ff734f;
+}
+
+.hero p {
+  max-width: 730px;
+  color: #cbd5e1;
+  font-size: 20px;
+  line-height: 1.85;
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 34px;
+}
+
+.actions button,
+.actions a {
+  height: 60px;
+  padding: 0 30px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 950;
+}
+
+.primary {
+  background: #40dcb5;
+  color: #06110e;
+}
+
+.ghost {
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+
+.studio-board {
+  min-height: 650px;
+  border-radius: 42px;
+  padding: 22px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 34px 110px rgba(0,0,0,0.36);
+  display: grid;
+  grid-template-rows: 74px 1fr;
+  gap: 18px;
+}
+
+.board-top {
+  border-radius: 26px;
+  padding: 0 22px;
+  background: #f8fafc;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.board-top strong {
+  font-size: 18px;
+}
+
+.board-top span {
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: #e7fff8;
+  color: #087f5b;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.board-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 18px;
+}
+
+.project-card {
+  border-radius: 30px;
+  padding: 28px;
+  background:
+    linear-gradient(rgba(17,24,39,0.15), rgba(17,24,39,0.84)),
+    url("https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1100&q=85");
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.project-card h2 {
+  font-size: 43px;
+  line-height: 1.02;
+  letter-spacing: -2px;
+  margin-bottom: 14px;
+}
+
+.project-card p {
+  color: rgba(255,255,255,0.8);
+  font-size: 16px;
+}
+
+.side-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.stat-card {
+  border-radius: 28px;
+  padding: 24px;
+  background: #f8fafc;
+  color: #111827;
+}
+
+.stat-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 2px;
+}
+
+.stat-card h3 {
+  font-size: 38px;
+  letter-spacing: -2px;
+  margin: 14px 0 8px;
+}
+
+.stat-card p {
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.section {
+  padding: 110px 5vw;
+}
+
+.container {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 0.78fr 1fr;
+  gap: 54px;
+  align-items: end;
+  margin-bottom: 50px;
+}
+
+.kicker {
+  color: #40dcb5;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 3px;
+  margin-bottom: 14px;
+}
+
+.section h2 {
+  font-size: clamp(40px, 5vw, 72px);
+  line-height: 1.02;
+  letter-spacing: -3px;
+}
+
+.head p {
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1.85;
+  font-weight: 650;
+}
+
+.outcome-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 20px;
+}
+
+.big-outcome {
+  min-height: 520px;
+  border-radius: 38px;
+  padding: 36px;
+  background: #f8fafc;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.big-outcome h3 {
+  font-size: 54px;
+  line-height: 1;
+  letter-spacing: -3px;
+}
+
+.mock-lines {
+  display: grid;
+  gap: 12px;
+}
+
+.mock-lines span {
+  height: 46px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #40dcb5, #ff734f);
+}
+
+.mock-lines span:nth-child(2) {
+  width: 74%;
+}
+
+.mock-lines span:nth-child(3) {
+  width: 56%;
+}
+
+.outcome-list {
+  display: grid;
+  gap: 18px;
+}
+
+.outcome-item {
+  min-height: 160px;
+  border-radius: 32px;
+  padding: 26px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.outcome-item h3 {
+  font-size: 26px;
+  margin-bottom: 12px;
+}
+
+.outcome-item p {
+  color: #94a3b8;
+  line-height: 1.75;
+  font-weight: 650;
+}
+
+.curriculum {
+  background: #f8fafc;
+  color: #111827;
+}
+
+.curriculum .kicker {
+  color: #ff734f;
+}
+
+.curriculum .head p {
+  color: #64748b;
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 2px solid #111827;
+}
+
+.week {
+  min-height: 330px;
+  padding: 28px;
+  border-right: 1px solid #d9dee7;
+  border-bottom: 1px solid #d9dee7;
+}
+
+.week:last-child {
+  border-right: none;
+}
+
+.week strong {
+  display: block;
+  color: #ff734f;
+  font-size: 46px;
+  letter-spacing: -2px;
+  margin-bottom: 70px;
+}
+
+.week h3 {
+  font-size: 25px;
+  margin-bottom: 12px;
+}
+
+.week p {
+  color: #64748b;
+  line-height: 1.7;
+  font-weight: 650;
+}
+
+.mentors {
+  background: #111827;
+}
+
+.mentor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.mentor {
+  min-height: 330px;
+  border-radius: 36px;
+  padding: 30px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.mentor b {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  background: #40dcb5;
+  color: #06110e;
+  display: grid;
+  place-items: center;
+}
+
+.mentor h3 {
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.mentor p {
+  color: #94a3b8;
+  line-height: 1.75;
+}
+
+.apply {
+  background: #f8fafc;
+  color: #111827;
+}
+
+.apply-layout {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 24px;
+}
+
+.apply-card {
+  border-radius: 38px;
+  padding: 36px;
+  background:
+    linear-gradient(rgba(9,10,15,0.08), rgba(9,10,15,0.82)),
+    url("https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1000&q=85");
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.apply-card h2 {
+  font-size: 52px;
+}
+
+.apply-card p {
+  color: rgba(255,255,255,0.82);
+  line-height: 1.8;
+  margin-top: 18px;
+}
+
+.form {
+  border-radius: 38px;
+  padding: 36px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: #475569;
+  font-weight: 900;
+  font-size: 14px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #d7dce5;
+  border-radius: 16px;
+  padding: 16px;
+  outline: none;
+}
+
+textarea {
+  min-height: 160px;
+  resize: none;
+}
+
+.submit {
+  width: 100%;
+  height: 60px;
+  margin-top: 18px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  font-weight: 950;
+}
+
+@media (max-width: 980px) {
+  .nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .menu {
+    display: none;
+  }
+
+  .hero-layout,
+  .board-grid,
+  .head,
+  .outcome-grid,
+  .apply-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .week-grid,
+  .mentor-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .hero {
+    padding: 18px;
+  }
+
+  .nav {
+    height: 64px;
+  }
+
+  .nav button {
+    display: none;
+  }
+
+  .hero h1 {
+    font-size: 44px;
+    letter-spacing: -3px;
+  }
+
+  .section {
+    padding: 78px 20px;
+  }
+
+  .week-grid,
+  .mentor-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field.full {
+    grid-column: auto;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<section class="hero">
+  <header class="nav">
+    <a class="brand" href="#">AI Product<span>Camp</span></a>
+    <nav class="menu">
+      <a href="#outcome">결과물</a>
+      <a href="#curriculum">커리큘럼</a>
+      <a href="#mentors">멘토링</a>
+      <a href="#apply">신청</a>
+    </nav>
+    <button onclick="location.href='#apply'">지원하기</button>
+  </header>
+
+  <div class="hero-layout">
+    <div>
+      <span class="badge">8 WEEK LIVE BOOTCAMP</span>
+      <h1 data-hezo="hero-headline">AI 서비스를 직접 만들고 <em>배포까지</em> 끝내는 실무 부트캠프</h1>
+      <p data-hezo="hero-subheadline">
+        기획, 프롬프트, AI 워크플로우, 프론트 구현, 배포까지 하나의 제품을 완성합니다.
+        수강 후 남는 결과물이 바로 보이도록 설계한 모집형 랜딩페이지입니다.
+      </p>
+      <div class="actions">
+        <button class="primary" data-hezo="cta" onclick="location.href='#apply'">다음 기수 신청</button>
+        <a class="ghost" href="#curriculum">커리큘럼 보기</a>
+      </div>
+    </div>
+
+    <aside class="studio-board">
+      <div class="board-top">
+        <strong>Next Cohort Dashboard</strong>
+        <span>30 seats</span>
+      </div>
+      <div class="board-grid">
+        <div class="project-card">
+          <h2>Build<br>Ship<br>Demo</h2>
+          <p>8주 후 발표 가능한 AI 프로덕트 포트폴리오</p>
+        </div>
+        <div class="side-stack">
+          <div class="stat-card">
+            <small>DURATION</small>
+            <h3>8주</h3>
+            <p>매주 라이브 세션과 결과물 리뷰</p>
+          </div>
+          <div class="stat-card">
+            <small>OUTPUT</small>
+            <h3>3개 산출물</h3>
+            <p>PRD, AI 워크플로우, 배포 URL</p>
+          </div>
+          <div class="stat-card">
+            <small>LEVEL</small>
+            <h3>실무형</h3>
+            <p>도구 사용보다 제품 완성에 집중</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="section" id="outcome">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">OUTCOME</div>
+        <h2>끝나고 남는 결과물</h2>
+      </div>
+      <p>
+        부트캠프 랜딩은 "무엇을 배우는가"보다 "무엇을 완성하는가"가 보여야 전환됩니다.
+        그래서 산출물 중심의 화면 구조로 구성했습니다.
+      </p>
+    </div>
+
+    <div class="outcome-grid">
+      <article class="big-outcome">
+        <h3>AI Product Portfolio</h3>
+        <div class="mock-lines">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </article>
+
+      <div class="outcome-list">
+        <article class="outcome-item" data-hezo-idx="0">
+          <h3 data-hezo="service-name">서비스 PRD</h3>
+          <p data-hezo="service-desc">문제 정의, 기능 범위, 유저 플로우를 문서화합니다.</p>
+        </article>
+        <article class="outcome-item" data-hezo-idx="1">
+          <h3 data-hezo="service-name">AI Workflow</h3>
+          <p data-hezo="service-desc">챗봇과 자동화 파이프라인의 흐름을 설계합니다.</p>
+        </article>
+        <article class="outcome-item" data-hezo-idx="2">
+          <h3 data-hezo="service-name">Live Demo</h3>
+          <p data-hezo="service-desc">실제 URL로 공유 가능한 결과물을 배포합니다.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section curriculum" id="curriculum">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">CURRICULUM</div>
+        <h2>제품 완성 흐름으로 짠 8주 과정</h2>
+      </div>
+      <p>
+        강의 목록을 나열하지 않고, 실제 서비스를 만드는 순서대로 학습과 구현이 이어집니다.
+      </p>
+    </div>
+
+    <div class="week-grid">
+      <article class="week">
+        <strong>01</strong>
+        <h3>문제 정의</h3>
+        <p>시장, 사용자, 핵심 기능을 PRD로 정리합니다.</p>
+      </article>
+      <article class="week">
+        <strong>02</strong>
+        <h3>AI 설계</h3>
+        <p>대화 흐름과 에이전트 워크플로우를 설계합니다.</p>
+      </article>
+      <article class="week">
+        <strong>03</strong>
+        <h3>프로토타입</h3>
+        <p>UI와 핵심 상호작용을 구현합니다.</p>
+      </article>
+      <article class="week">
+        <strong>04</strong>
+        <h3>배포 발표</h3>
+        <p>서비스를 배포하고 데모 발표를 진행합니다.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section mentors" id="mentors">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">MENTORING</div>
+        <h2>매주 결과물을 고치는 실무형 피드백</h2>
+      </div>
+      <p>
+        녹화 강의처럼 듣고 끝나는 구조가 아니라, 만든 것을 바로 고치며 완성도를 올립니다.
+      </p>
+    </div>
+
+    <div class="mentor-grid">
+      <article class="mentor">
+        <b>01</b>
+        <div>
+          <h3>기획 리뷰</h3>
+          <p>PRD와 유저 플로우의 빈틈을 점검합니다.</p>
+        </div>
+      </article>
+      <article class="mentor">
+        <b>02</b>
+        <div>
+          <h3>기술 리뷰</h3>
+          <p>AI 워크플로우와 구현 방식을 현실적으로 조정합니다.</p>
+        </div>
+      </article>
+      <article class="mentor">
+        <b>03</b>
+        <div>
+          <h3>발표 리뷰</h3>
+          <p>제품 가치와 데모 흐름이 설득력 있게 보이도록 다듬습니다.</p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section apply" id="apply">
+  <div class="container apply-layout">
+    <aside class="apply-card">
+      <div>
+        <div class="kicker">APPLY</div>
+        <h2>다음 기수 모집 신청</h2>
+        <p>지원 정보를 남기면 개강 일정과 사전 준비 자료를 안내합니다.</p>
+      </div>
+    </aside>
+
+    <form class="form">
+      <div class="form-grid">
+        <div>
+          <label>이름</label>
+          <input placeholder="이름" />
+        </div>
+        <div>
+          <label>연락처</label>
+          <input placeholder="연락 가능한 번호" />
+        </div>
+        <div class="field full">
+          <label>관심 분야</label>
+          <select>
+            <option>AI 서비스 기획</option>
+            <option>프론트엔드 구현</option>
+            <option>AI 워크플로우</option>
+            <option>포트폴리오 제작</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label>남기고 싶은 말</label>
+          <textarea placeholder="현재 상황이나 목표를 남겨 주세요"></textarea>
+        </div>
+      </div>
+      <button class="submit">모집 알림 신청</button>
+    </form>
+  </div>
+</section>
+
+</body>
+</html>
