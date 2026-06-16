@@ -55,6 +55,12 @@ Stages:
 
   - name: contract_compile
     description: 사용자 응답과 보완 정보를 G slot-based Contract JSON draft로 조립한다.
+    required_fields:
+      - contract_status
+      - quality_status
+      - contract_version
+      - missing_required_slots
+      - filled_slots
 
   - name: contract_quality_check
     description: Contract JSON이 preview/generation 소비 조건에 충분한지 판단한다.
@@ -119,9 +125,37 @@ MockState:
     reasons:
       - answer_applied
   contract:
-    status: draft
+    contract_status: draft
     quality_status: needs_enrichment
+    contract_version: 1
     latest_version: 0
+    filled_slots:
+      - business_name
+      - core_services
+    missing_required_slots:
+      - contact_method
+    draft:
+      site_id: site_001
+      user_id: user_001
+      domain: tax_accounting
+      domain_label: 세무/회계
+      selected_template: landing/13-tax-accounting
+      slots:
+        business_name:
+          label: 업체명
+          required: true
+          value: 한빛 세무회계
+          filled: true
+        core_services:
+          label: 핵심 서비스
+          required: true
+          value: 기장 대리, 종합소득세 신고, 법인세 신고
+          filled: true
+        contact_method:
+          label: 상담 방식
+          required: true
+          value:
+          filled: false
     p4_s3_key:
 
 OutOfScope:
