@@ -14,6 +14,7 @@ import pathlib
 import re
 import sys
 
+from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 
 
@@ -21,6 +22,7 @@ CONFIG_FILE = pathlib.Path(__file__).parent / "agent_config.yaml"
 
 REQUIRED_STAGES = [
     "domain_selection",
+    "p2_markdown_request",
     "p2_markdown_review",
     "proactive_questioning",
     "contract_compile",
@@ -32,6 +34,14 @@ REQUIRED_REVIEW_FIELDS = [
     "p1_markdown_review_status",
     "p1_markdown_review_score",
     "p2_markdown_usable_for_questions",
+]
+
+REQUIRED_REQUEST_FIELDS = [
+    "payload_version",
+    "target_artifact",
+    "slot_registry",
+    "missing_slots",
+    "request_reason",
 ]
 
 
@@ -100,6 +110,77 @@ def _sample_review_input(**overrides: object) -> P2MarkdownReviewInput:
     }
     data.update(overrides)
     return P2MarkdownReviewInput(**data)
+
+
+def _sample_request_input(**overrides: object) -> P2MarkdownRequestInput:
+    data = {
+        "site_id": "site_001",
+        "user_id": "user_001",
+        "domain": "tax_accounting",
+        "domain_label": "세무/회계",
+        "selected_template": "landing/13-tax-accounting",
+        "slot_registry": {
+            "business_name": {
+                "label": "업체명",
+                "required": True,
+                "question_hint": "사무소명은 무엇인가요?",
+            },
+            "core_services": {
+                "label": "핵심 서비스",
+                "required": True,
+                "question_hint": "핵심 세무 서비스는 무엇인가요?",
+            },
+            "contact_method": {
+                "label": "상담 방식",
+                "required": True,
+                "question_hint": "상담 문의는 어떤 방식으로 받나요?",
+            },
+        },
+        "known_answers": {
+            "business_name": "한빛 세무회계",
+        },
+        "missing_slots": ("core_services", "contact_method"),
+        "request_reason": "initial_domain_selected",
+    }
+    data.update(overrides)
+    return P2MarkdownRequestInput(**data)
+
+
+def _validate_request_cases() -> list[str]:
+    errors: list[str] = []
+
+    payload = build_p2_markdown_request_payload(_sample_request_input())
+    payload_dict = payload.to_dict()
+
+    if payload_dict["target_artifact"] != "domain_question_guide_markdown":
+        errors.append("request payload target_artifact 값이 올바르지 않습니다.")
+    if payload_dict["domain"] != "tax_accounting":
+        errors.append("request payload domain 값이 올바르지 않습니다.")
+    if payload_dict["missing_slots"] != ["core_services", "contact_method"]:
+        errors.append("request payload missing_slots 값이 올바르지 않습니다.")
+
+    empty_missing_slots_payload = build_p2_markdown_request_payload(
+        _sample_request_input(missing_slots=())
+    )
+    if empty_missing_slots_payload.to_dict()["missing_slots"] != []:
+        errors.append("missing_slots가 비어 있을 때 빈 배열로 변환되어야 합니다.")
+
+    invalid_cases = [
+        ("missing_site_id", _sample_request_input(site_id=""), "required_fields_missing:site_id"),
+        ("missing_domain", _sample_request_input(domain=" "), "required_fields_missing:domain"),
+        ("empty_slot_registry", _sample_request_input(slot_registry={}), "slot_registry_empty"),
+    ]
+
+    for name, request_input, expected_error in invalid_cases:
+        try:
+            build_p2_markdown_request_payload(request_input)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
 
 
 def _validate_review_cases() -> list[str]:
@@ -185,7 +266,29 @@ def main() -> None:
     else:
         print("  [OK] P2 markdown review 필드 확인")
 
-    print("\n[3] review policy mock 값 검증")
+    print("\n[3] P2 markdown request 필드 검증")
+    request_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_REQUEST_FIELDS,
+        "request field",
+    )
+    if request_field_errors:
+        errors.extend(request_field_errors)
+        for error in request_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] P2 markdown request 필드 확인")
+
+    print("\n[4] P2 markdown request 케이스 검증")
+    request_case_errors = _validate_request_cases()
+    if request_case_errors:
+        errors.extend(request_case_errors)
+        for error in request_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
+
+    print("\n[5] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -194,7 +297,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[4] P2 markdown review 케이스 검증")
+    print("\n[6] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

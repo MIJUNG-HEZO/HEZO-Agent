@@ -1,10 +1,11 @@
 # HEZO Chat Agent
 
-P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 markdown을 검수한 뒤 적극적 질의를 통해 Contract JSON 초안을 만드는 Agent입니다.
+P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 markdown을 요청/검수한 뒤 적극적 질의를 통해 Contract JSON 초안을 만드는 Agent입니다.
 
 ## 책임 범위
 
 - 도메인/업종 확정
+- P2 markdown 요청 payload 생성
 - P2 markdown 수신 검수
 - 적극적 질의 흐름 관리
 - slot 기반 Contract JSON 초안 구성
@@ -19,6 +20,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 
 - 기본 agent config
 - mock state 구조
+- P2 markdown 요청 payload 생성 순수 로직
 - P2 markdown 수신 검수 필드
 - P2 markdown 수신 검수 순수 로직
 - 로컬 smoke test
@@ -27,6 +29,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 
 - 실제 LangGraph graph 구현
 - Bedrock 호출
+- 실제 P2 API 호출
 - DynamoDB custom checkpointer
 - S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
@@ -35,11 +38,49 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 
 ```text
 domain_selection
+-> p2_markdown_request
 -> p2_markdown_review
 -> proactive_questioning
 -> contract_compile
 -> contract_quality_check
 ```
+
+## P2 Markdown Request Payload
+
+`p2_markdown_request.py`는 P2에게 markdown 생성을 요청하기 전, P1 내부 표준 payload를 만듭니다.
+
+입력 기준:
+
+- `site_id`, `user_id`
+- `domain`, `domain_label`
+- `selected_template`
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `request_reason`
+
+출력 기준:
+
+```json
+{
+  "payload_version": "v0.1",
+  "target_artifact": "domain_question_guide_markdown",
+  "domain": "tax_accounting",
+  "domain_label": "세무/회계",
+  "selected_template": "landing/13-tax-accounting",
+  "request_reason": "initial_domain_selected",
+  "missing_slots": ["core_services", "contact_method"]
+}
+```
+
+검증 기준:
+
+- 필수 식별자 누락 시 실패
+- `domain` 누락 시 실패
+- `slot_registry`가 비어 있으면 실패
+- `missing_slots`가 비어 있어도 payload 생성 가능
+
+이번 범위에서는 실제 P2 API 호출, S3 저장, Bedrock/LangGraph 호출을 포함하지 않습니다.
 
 ## P2 Markdown Review State
 
