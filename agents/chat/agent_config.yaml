@@ -71,6 +71,14 @@ Stages:
       - quality_score
       - reasons
 
+  - name: storage_guardrails
+    description: S3 저장 전 사용자 입력/P2 markdown/Contract draft/LLM 출력 안전 검사를 수행한다.
+    required_fields:
+      - guardrail_target
+      - guardrail_action
+      - store_allowed
+      - guardrail_reasons
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -172,10 +180,18 @@ MockState:
       missing_required_slots:
         - contact_method
     p4_s3_key:
+  storage_guardrails:
+    guardrail_target: contract_draft
+    guardrail_action: NONE
+    store_allowed: true
+    masked_output:
+    guardrail_reasons:
+      - guardrail_passed
 
 OutOfScope:
   - LangGraph graph implementation
   - Bedrock invocation
+  - Bedrock Guardrails ApplyGuardrail integration
   - DynamoDB custom checkpointer
   - S3 physical bucket integration
   - AgentCore Runtime deployment

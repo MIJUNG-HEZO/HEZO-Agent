@@ -27,6 +27,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 사용자 답변 slot state 반영 순수 로직
 - Contract JSON draft compile 순수 로직
 - Contract draft quality check 순수 로직
+- 저장 전 Guardrails adapter 스켈레톤
 - 로컬 smoke test
 
 제외:
@@ -35,6 +36,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Bedrock 호출
 - 실제 P2 API 호출
 - 실제 사용자 대화 API 라우터
+- 실제 Bedrock Guardrails 호출
 - DynamoDB custom checkpointer
 - S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
@@ -49,7 +51,17 @@ domain_selection
 -> slot_answer_state
 -> contract_compile
 -> contract_quality_check
+-> storage_guardrails
 ```
+
+## Rule-based Logic and Guardrails
+
+채팅 에이전트는 코드 룰베이스와 Guardrails adapter를 분리합니다.
+
+- 코드 룰베이스: HEZO workflow, slot 상태, Contract draft, preview ready 같은 비즈니스 규칙
+- Guardrails adapter: 사용자 입력, P2 markdown, Contract draft, LLM 출력의 안전/보안 검사
+
+이번 스켈레톤의 Guardrails adapter는 실제 AWS Bedrock Guardrails 호출 없이 로컬 mock 규칙으로 동작합니다. 실제 `ApplyGuardrail` 호출, guardrail id/version 설정, boto3 client 연결은 후속 이슈에서 다룹니다.
 
 ## P2 Markdown Request Payload
 
@@ -284,6 +296,38 @@ domain_selection
 - 공백 문자열, 빈 list, 빈 dict 값은 미충족으로 처리
 
 이번 범위에서는 JSON Schema validation, P4 API/S3 전달, LangGraph node 연결, Bedrock/LLM 보완을 포함하지 않습니다.
+
+## Storage Guardrails
+
+`storage_guardrails.py`는 S3 저장 전 content를 검사하는 adapter 스켈레톤입니다.
+
+검사 대상:
+
+- `user_input`
+- `p2_markdown`
+- `contract_draft`
+- `llm_output`
+
+출력 기준:
+
+```json
+{
+  "target": "contract_draft",
+  "action": "NONE",
+  "store_allowed": true,
+  "masked_output": null,
+  "reasons": ["guardrail_passed"]
+}
+```
+
+차단 기준:
+
+- prompt injection 의심 문구 포함
+- 이메일/전화번호/주민등록번호 형태의 PII 의심 패턴 포함
+- 차단 시 `action=GUARDRAIL_INTERVENED`, `store_allowed=false`
+- dict 형태의 Contract draft는 JSON string으로 직렬화해 검사
+
+이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail id/version env 설정, S3 저장 adapter 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 
