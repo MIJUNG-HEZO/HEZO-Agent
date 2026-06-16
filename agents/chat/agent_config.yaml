@@ -1,0 +1,63 @@
+# ============================================================
+# HEZO Chat Agent — MVP Skeleton 설정
+# 입력: 사용자 메시지 + P2 domain markdown metadata
+# 출력: Contract JSON draft state (mock)
+# ============================================================
+
+AgentName: hezo-chat-agent
+Description: >
+  P1 채팅 에이전트. 사용자 대화에서 도메인을 확정하고,
+  P2 markdown을 수신 검수한 뒤 적극적 질의를 통해
+  G slot-based Contract JSON 초안을 구성한다.
+
+FoundationModel: anthropic.claude-sonnet-4-5-20251001
+IdleSessionTTLInSeconds: 600
+
+Stages:
+  - name: domain_selection
+    description: 사용자 대화에서 도메인/업종을 확정한다.
+
+  - name: p2_markdown_review
+    description: P2 markdown을 수신 검수하고 적극적 질의에 사용할 수 있는지 판단한다.
+    required_fields:
+      - p2_confidence
+      - p1_markdown_review_status
+      - p1_markdown_review_score
+      - p2_markdown_usable_for_questions
+
+  - name: proactive_questioning
+    description: P2 markdown과 slot_registry를 기반으로 부족한 정보를 질문한다.
+
+  - name: contract_compile
+    description: 사용자 응답과 보완 정보를 G slot-based Contract JSON draft로 조립한다.
+
+  - name: contract_quality_check
+    description: Contract JSON이 preview/generation 소비 조건에 충분한지 판단한다.
+
+MockState:
+  session_id: session_001
+  stage: p2_markdown_review
+  domain: tax_accounting
+  domain_label: 세무/회계
+  p2_markdown:
+    status: reviewed
+    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    generated_s3_key:
+    version: v001
+    p2_confidence: 0.78
+    p1_markdown_review_status: passed
+    p1_markdown_review_score: 0.82
+    p2_markdown_usable_for_questions: true
+  contract:
+    status: draft
+    quality_status: needs_enrichment
+    latest_version: 0
+    p4_s3_key:
+
+OutOfScope:
+  - LangGraph graph implementation
+  - Bedrock invocation
+  - DynamoDB custom checkpointer
+  - S3 physical bucket integration
+  - AgentCore Runtime deployment
+
