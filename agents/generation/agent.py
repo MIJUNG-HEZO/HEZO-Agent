@@ -42,7 +42,7 @@ logger = logging.getLogger("hezo.generation")
 # ─── 환경변수 ────────────────────────────────────────────────────────────────
 REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
-QUALITY_THRESHOLD = int(os.environ.get("QUALITY_THRESHOLD", "50"))
+QUALITY_THRESHOLD = int(os.environ.get("QUALITY_THRESHOLD", "70"))
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "2"))
 
 # ─── FastAPI 앱 ───────────────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ def run_generation(site_id: str) -> dict:
             issues_hint = [f"이전 응답이 유효한 JSON이 아니었음: {exc}"]
             continue
 
-        eval_result = evaluate_render_spec(render_spec)
+        eval_result = evaluate_render_spec(render_spec, threshold=QUALITY_THRESHOLD)
         logger.info("평가 결과: score=%d, issues=%d", eval_result["score"], eval_result["issue_count"])
 
         if eval_result["passed"]:
