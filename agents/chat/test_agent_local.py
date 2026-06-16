@@ -14,6 +14,7 @@ import pathlib
 import re
 import sys
 
+from contract_compile import ContractDraftInput, compile_contract_draft
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
@@ -27,6 +28,7 @@ REQUIRED_STAGES = [
     "p2_markdown_request",
     "p2_markdown_review",
     "proactive_questioning",
+    "slot_answer_state",
     "contract_compile",
     "contract_quality_check",
 ]
@@ -61,6 +63,14 @@ REQUIRED_SLOT_ANSWER_FIELDS = [
     "known_answers",
     "missing_slots",
     "reasons",
+]
+
+REQUIRED_CONTRACT_FIELDS = [
+    "contract_status",
+    "quality_status",
+    "contract_version",
+    "missing_required_slots",
+    "filled_slots",
 ]
 
 
@@ -194,6 +204,27 @@ def _sample_slot_answer_input(**overrides: object) -> SlotAnswerInput:
     return SlotAnswerInput(**data)
 
 
+def _sample_contract_input(**overrides: object) -> ContractDraftInput:
+    request_input = _sample_request_input()
+    data = {
+        "site_id": request_input.site_id,
+        "user_id": request_input.user_id,
+        "domain": request_input.domain,
+        "domain_label": request_input.domain_label,
+        "selected_template": request_input.selected_template,
+        "slot_registry": request_input.slot_registry,
+        "known_answers": {
+            "business_name": "한빛 세무회계",
+            "core_services": "기장 대리, 종합소득세 신고, 법인세 신고",
+            "contact_method": "전화 상담",
+        },
+        "missing_slots": (),
+        "contract_version": 1,
+    }
+    data.update(overrides)
+    return ContractDraftInput(**data)
+
+
 def _validate_request_cases() -> list[str]:
     errors: list[str] = []
 
@@ -222,6 +253,67 @@ def _validate_request_cases() -> list[str]:
     for name, request_input, expected_error in invalid_cases:
         try:
             build_p2_markdown_request_payload(request_input)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
+def _validate_contract_cases() -> list[str]:
+    errors: list[str] = []
+
+    ready = compile_contract_draft(_sample_contract_input())
+    ready_dict = ready.to_dict()
+    if ready_dict["contract_status"] != "draft":
+        errors.append("Contract compile 결과는 draft 상태여야 합니다.")
+    if ready_dict["quality_status"] != "ready_for_quality_check":
+        errors.append("필수 slot이 모두 채워지면 ready_for_quality_check 상태여야 합니다.")
+    if ready_dict["missing_required_slots"] != []:
+        errors.append("필수 slot이 모두 채워진 경우 missing_required_slots는 비어 있어야 합니다.")
+    if ready_dict["draft"]["slots"]["core_services"]["filled"] is not True:
+        errors.append("답변이 있는 slot은 filled=true여야 합니다.")
+
+    needs_enrichment = compile_contract_draft(
+        _sample_contract_input(
+            known_answers={"business_name": "한빛 세무회계"},
+            missing_slots=("core_services", "contact_method"),
+        )
+    )
+    if needs_enrichment.quality_status != "needs_enrichment":
+        errors.append("필수 slot이 누락되면 needs_enrichment 상태여야 합니다.")
+    if needs_enrichment.missing_required_slots != ("core_services", "contact_method"):
+        errors.append("누락된 필수 slot은 missing_required_slots에 포함되어야 합니다.")
+    if needs_enrichment.draft["slots"]["core_services"]["value"] is not None:
+        errors.append("답변이 없는 slot의 value는 None이어야 합니다.")
+
+    ignored_extra_answer = compile_contract_draft(
+        _sample_contract_input(
+            known_answers={
+                "business_name": "한빛 세무회계",
+                "core_services": "기장 대리",
+                "contact_method": "전화 상담",
+                "unknown_slot": "draft에 포함되면 안 됩니다.",
+            },
+        )
+    )
+    if "unknown_slot" in ignored_extra_answer.draft["slots"]:
+        errors.append("slot_registry에 없는 답변은 draft slots에 포함되면 안 됩니다.")
+
+    invalid_cases = [
+        ("missing_site_id", _sample_contract_input(site_id=""), "required_fields_missing:site_id"),
+        ("empty_slot_registry", _sample_contract_input(slot_registry={}), "slot_registry_empty"),
+        (
+            "invalid_contract_version",
+            _sample_contract_input(contract_version=0),
+            "contract_version_must_be_positive",
+        ),
+    ]
+    for name, compile_input, expected_error in invalid_cases:
+        try:
+            compile_contract_draft(compile_input)
         except ValueError as error:
             if str(error) != expected_error:
                 errors.append(f"{name}: error={error!s}, expected={expected_error}")
@@ -466,7 +558,20 @@ def main() -> None:
     else:
         print("  [OK] slot answer state 필드 확인")
 
-    print("\n[6] P2 markdown request 케이스 검증")
+    print("\n[6] contract compile 필드 검증")
+    contract_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_CONTRACT_FIELDS,
+        "contract field",
+    )
+    if contract_field_errors:
+        errors.extend(contract_field_errors)
+        for error in contract_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] contract compile 필드 확인")
+
+    print("\n[7] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -475,7 +580,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[7] proactive questioning 케이스 검증")
+    print("\n[8] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -484,7 +589,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[8] slot answer state 케이스 검증")
+    print("\n[9] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -493,7 +598,16 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[9] review policy mock 값 검증")
+    print("\n[10] contract compile 케이스 검증")
+    contract_case_errors = _validate_contract_cases()
+    if contract_case_errors:
+        errors.extend(contract_case_errors)
+        for error in contract_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
+
+    print("\n[11] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -502,7 +616,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[10] P2 markdown review 케이스 검증")
+    print("\n[12] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

@@ -25,6 +25,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - P2 markdown 수신 검수 순수 로직
 - 적극적 질의 후보 생성 순수 로직
 - 사용자 답변 slot state 반영 순수 로직
+- Contract JSON draft compile 순수 로직
 - 로컬 smoke test
 
 제외:
@@ -199,6 +200,55 @@ domain_selection
 - 비어 있지 않은 list/dict 구조화 답변은 허용
 
 이번 범위에서는 실제 사용자 대화 API 라우터, LangGraph node 연결, DynamoDB checkpoint 저장, Contract JSON 반영을 포함하지 않습니다.
+
+## Contract Draft Compile
+
+`contract_compile.py`는 최신 slot state를 내부 Contract JSON draft 형태로 조립합니다.
+
+입력 기준:
+
+- `site_id`, `user_id`
+- `domain`, `domain_label`
+- `selected_template`
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `contract_version`
+
+출력 기준:
+
+```json
+{
+  "contract_status": "draft",
+  "quality_status": "needs_enrichment",
+  "missing_required_slots": ["contact_method"],
+  "filled_slots": ["business_name", "core_services"],
+  "draft": {
+    "contract_version": 1,
+    "domain": "tax_accounting",
+    "domain_label": "세무/회계",
+    "selected_template": "landing/13-tax-accounting",
+    "slots": {
+      "core_services": {
+        "label": "핵심 서비스",
+        "required": true,
+        "value": "기장 대리, 종합소득세 신고, 법인세 신고",
+        "filled": true
+      }
+    }
+  }
+}
+```
+
+조립 기준:
+
+- `slot_registry`에 정의된 slot만 draft에 포함
+- 답변이 있는 slot은 `filled=true`, 답변이 없으면 `filled=false`
+- 답변이 없는 slot의 `value`는 `null`
+- 필수 slot이 모두 채워지면 `quality_status=ready_for_quality_check`
+- 필수 slot이 남아 있으면 `quality_status=needs_enrichment`
+
+이번 범위에서는 Contract JSON 최종 schema validation, P4 API/S3 전달, LangGraph node 연결, Bedrock/LLM 보완을 포함하지 않습니다.
 
 ## Local Smoke Test
 
