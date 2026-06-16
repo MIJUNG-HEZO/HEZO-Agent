@@ -20,6 +20,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 기본 agent config
 - mock state 구조
 - P2 markdown 수신 검수 필드
+- P2 markdown 수신 검수 순수 로직
 - 로컬 smoke test
 
 제외:
@@ -56,6 +57,26 @@ domain_selection
 - `passed`: 적극적 질의에 사용 가능
 - `needs_enrichment`: 일부 사용 가능, 부족한 질문은 LangGraph/LLM 보완 필요
 - `failed`: 적극적 질의 재료로 사용하지 않고 P2 재요청 또는 fallback 질문 사용
+
+## P2 Markdown Review Logic
+
+`p2_markdown_review.py`는 이미 수신한 P2 markdown metadata를 기준으로 P1 검수 결과를 산출합니다.
+
+검수 기준:
+
+- 도메인 일치 여부
+- P2 confidence 컷 0.70 이상 여부
+- 인젝션/명령형 조작 문구 포함 여부
+- 필수 slot 질문 후보 충분성
+- 과장/단정 표현 위험 여부
+
+검증 케이스:
+
+- 정상 통과
+- confidence 부족
+- domain 불일치
+- 인젝션 의심 문구
+- 필수 slot 질문 부족
 
 ## Local Smoke Test
 
