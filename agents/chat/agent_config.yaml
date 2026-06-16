@@ -1,13 +1,13 @@
 # ============================================================
 # HEZO Chat Agent — MVP Skeleton 설정
-# 입력: 사용자 메시지 + P2 domain markdown metadata
+# 입력: 사용자 메시지 + domain/slot context + P2 domain markdown metadata
 # 출력: Contract JSON draft state (mock)
 # ============================================================
 
 AgentName: hezo-chat-agent
 Description: >
   P1 채팅 에이전트. 사용자 대화에서 도메인을 확정하고,
-  P2 markdown을 수신 검수한 뒤 적극적 질의를 통해
+  P2 markdown을 요청/수신 검수한 뒤 적극적 질의를 통해
   G slot-based Contract JSON 초안을 구성한다.
 
 FoundationModel: anthropic.claude-sonnet-4-5-20251001
@@ -16,6 +16,15 @@ IdleSessionTTLInSeconds: 600
 Stages:
   - name: domain_selection
     description: 사용자 대화에서 도메인/업종을 확정한다.
+
+  - name: p2_markdown_request
+    description: 확정된 도메인과 slot_registry를 기준으로 P2 markdown 요청 payload를 만든다.
+    required_fields:
+      - payload_version
+      - target_artifact
+      - slot_registry
+      - missing_slots
+      - request_reason
 
   - name: p2_markdown_review
     description: P2 markdown을 수신 검수하고 적극적 질의에 사용할 수 있는지 판단한다.
@@ -27,6 +36,22 @@ Stages:
 
   - name: proactive_questioning
     description: P2 markdown과 slot_registry를 기반으로 부족한 정보를 질문한다.
+    required_fields:
+      - question_candidates
+      - slot
+      - question
+      - priority
+      - source
+      - fallback
+
+  - name: slot_answer_state
+    description: 사용자 답변을 known_answers에 반영하고 missing_slots를 갱신한다.
+    required_fields:
+      - answer_status
+      - answered_slot
+      - known_answers
+      - missing_slots
+      - reasons
 
   - name: contract_compile
     description: 사용자 응답과 보완 정보를 G slot-based Contract JSON draft로 조립한다.
@@ -36,9 +61,32 @@ Stages:
 
 MockState:
   session_id: session_001
-  stage: p2_markdown_review
+  stage: p2_markdown_request
   domain: tax_accounting
   domain_label: 세무/회계
+  selected_template: landing/13-tax-accounting
+  p2_markdown_request:
+    payload_version: v0.1
+    target_artifact: domain_question_guide_markdown
+    request_reason: initial_domain_selected
+    slot_registry:
+      business_name:
+        label: 업체명
+        required: true
+        question_hint: 사무소명은 무엇인가요?
+      core_services:
+        label: 핵심 서비스
+        required: true
+        question_hint: 핵심 세무 서비스는 무엇인가요?
+      contact_method:
+        label: 상담 방식
+        required: true
+        question_hint: 상담 문의는 어떤 방식으로 받나요?
+    known_answers:
+      business_name: 한빛 세무회계
+    missing_slots:
+      - core_services
+      - contact_method
   p2_markdown:
     status: reviewed
     source_s3_key: domains/tax_accounting/question_guides/v001.md
@@ -48,6 +96,28 @@ MockState:
     p1_markdown_review_status: passed
     p1_markdown_review_score: 0.82
     p2_markdown_usable_for_questions: true
+  proactive_questioning:
+    question_candidates:
+      - slot: core_services
+        question: 핵심 세무 서비스는 무엇인가요?
+        priority: 1
+        source: p2_markdown
+        fallback: false
+      - slot: contact_method
+        question: 상담 문의는 어떤 방식으로 받나요?
+        priority: 2
+        source: p2_markdown
+        fallback: false
+  slot_answer_state:
+    answered_slot: core_services
+    answer_status: accepted
+    known_answers:
+      business_name: 한빛 세무회계
+      core_services: 기장 대리, 종합소득세 신고, 법인세 신고
+    missing_slots:
+      - contact_method
+    reasons:
+      - answer_applied
   contract:
     status: draft
     quality_status: needs_enrichment
@@ -60,4 +130,3 @@ OutOfScope:
   - DynamoDB custom checkpointer
   - S3 physical bucket integration
   - AgentCore Runtime deployment
-
