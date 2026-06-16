@@ -1,0 +1,56 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockInvokeModel",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:ap-northeast-2:${AWS_ACCOUNT_ID}:inference-profile/global.anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:ap-northeast-2:${AWS_ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20251001",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5*"
+      ]
+    },
+    {
+      "Sid": "S3ArtifactsReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::hezo-artifacts",
+        "arn:aws:s3:::hezo-artifacts/*",
+        "arn:aws:s3:::hezo-sites",
+        "arn:aws:s3:::hezo-sites/*"
+      ]
+    },
+    {
+      "Sid": "SSMReadFlag",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "arn:aws:ssm:ap-northeast-2:${AWS_ACCOUNT_ID}:parameter/hezo-*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:ap-northeast-2:${AWS_ACCOUNT_ID}:log-group:/hezo/*",
+        "arn:aws:logs:ap-northeast-2:${AWS_ACCOUNT_ID}:log-group:/aws/bedrock/agentcore/*"
+      ]
+    }
+  ]
+}

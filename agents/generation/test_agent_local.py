@@ -16,6 +16,12 @@ import json
 import pathlib
 import sys
 
+try:
+    import jsonschema
+    _HAS_JSONSCHEMA = True
+except ImportError:
+    _HAS_JSONSCHEMA = False
+
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 SCHEMA_FILE  = pathlib.Path(__file__).parent / "render_spec_schema.json"
 
@@ -38,13 +44,9 @@ def _assert_blocking(render_spec: dict, site_id: str) -> list[str]:
     page = pages[0]
     blocks = page.get("blocks", [])
 
-    # 1. H1 정확히 1개
-    hero_blocks = [b for b in blocks if b.get("type") == "Hero"]
-    h1_count = sum(1 for b in hero_blocks if b.get("h1"))
-    if h1_count == 0:
-        errors.append("BLOCKING: Hero 블록에 h1 필드가 없습니다.")
-    elif h1_count > 1:
-        errors.append(f"BLOCKING: h1이 {h1_count}개 있습니다. 정확히 1개여야 합니다.")
+    # 1. title_h1 필수 (페이지 레벨)
+    if not page.get("title_h1"):
+        errors.append("BLOCKING: pages[0].title_h1 이 없거나 비어 있습니다.")
 
     # 2. FAQ 최소 5개
     faq_blocks = [b for b in blocks if b.get("type") == "FAQ"]
@@ -194,8 +196,30 @@ def main() -> None:
     render_spec = json.loads(render_path.read_text(encoding="utf-8"))
     print(f"[2] render_spec 로드: {render_path.name}")
 
+    # ── JSON Schema 검증 ──────────────────────────────────────────────────────
+    print("\n[3] JSON Schema 검증 (render_spec_schema.json)")
+    schema_validation_errors: list[str] = []
+    if not SCHEMA_FILE.exists():
+        print(f"  [SKIP] 스키마 파일 없음: {SCHEMA_FILE}")
+    elif not _HAS_JSONSCHEMA:
+        print("  [SKIP] jsonschema 패키지 미설치 (pip install jsonschema)")
+    else:
+        schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+        # _comment 등 fixture 전용 주석 키는 실제 에이전트 출력에 없으므로 제거
+        spec_for_validation = {k: v for k, v in render_spec.items() if not k.startswith("_")}
+        validator = jsonschema.Draft7Validator(schema)
+        raw_errors = sorted(validator.iter_errors(spec_for_validation), key=lambda e: list(e.path))
+        if raw_errors:
+            for e in raw_errors:
+                path = " → ".join(str(p) for p in e.path) or "(root)"
+                msg = f"  [FAIL] {path}: {e.message}"
+                print(msg)
+                schema_validation_errors.append(f"SCHEMA: {path}: {e.message}")
+        else:
+            print("  [OK] JSON Schema 검증 통과")
+
     # ── BLOCKING 조건 검사 ────────────────────────────────────────────────────
-    print("\n[3] BLOCKING 조건 검사")
+    print("\n[4] BLOCKING 조건 검사")
     blocking_errors = _assert_blocking(render_spec, site_id)
     if blocking_errors:
         for e in blocking_errors:
@@ -204,7 +228,7 @@ def main() -> None:
         print("  [OK] 모든 BLOCKING 조건 통과")
 
     # ── 레퍼런스 비교 ─────────────────────────────────────────────────────────
-    print("\n[4] 레퍼런스 출력 비교")
+    print("\n[5] 레퍼런스 출력 비교")
     diffs = _compare_with_reference(args.fixture, render_spec)
     if diffs:
         for d in diffs:
@@ -213,7 +237,11 @@ def main() -> None:
         print("  [OK] 레퍼런스와 일치")
 
     # ── 최종 결과 ─────────────────────────────────────────────────────────────
-    all_errors = contract_errors + [e for e in blocking_errors if e.startswith("BLOCKING")]
+    all_errors = (
+        contract_errors
+        + schema_validation_errors
+        + [e for e in blocking_errors if e.startswith("BLOCKING")]
+    )
     print(f"\n{'='*60}")
     if all_errors:
         print(f"  결과: FAIL ({len(all_errors)}개 오류)")

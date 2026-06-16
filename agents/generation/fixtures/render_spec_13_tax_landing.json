@@ -4,23 +4,37 @@
   "site_id": "site_tax_13_001",
   "template_id": "landing_tax",
   "site_type": "landing",
+  "module_key": "tax_accounting",
 
   "pages": [
     {
       "path": "/",
+      "title_h1": "숫자를 정리하면 사업의 다음 결정이 보입니다",
+      "h2_list": [
+        "해조세무회계에서는 신고 일정을 어떻게 관리하나요?",
+        "해조세무회계를 통해 절세가 가능한가요?",
+        "사업 초기 세무 구조는 어떻게 잡나요?",
+        "기장 대행 서비스는 어떤 업체에 적합한가요?",
+        "부가세 신고는 얼마나 자주 해야 하나요?",
+        "무료 세무 상담은 어떻게 신청하나요?"
+      ],
       "seo": {
         "title": "해조세무회계 | 서울 강남 세무사 사무소 — 정확한 신고",
         "description": "개인사업자, 소상공인, 초기 법인 대표를 위한 해조세무회계. 기장 대행, 부가세 신고, 종합소득세 신고 전문. 정확한 신고, 빠른 상담.",
         "canonical": "https://tax.hezo.io/",
-        "target_keywords": ["정확한 신고", "빠른 상담", "절세 전략", "사업자 맞춤 관리", "서울 강남 세무사 사무소"],
+        "keywords": ["정확한 신고", "빠른 상담", "절세 전략", "사업자 맞춤 관리", "서울 강남 세무사 사무소"],
         "og": {
           "title": "해조세무회계 — 서울 강남 세무사 사무소",
           "description": "개인사업자·소상공인을 위한 세무 상담. 기장 대행·부가세·종합소득세 전문.",
-          "image": "og-thumb.jpg",
+          "image": "https://tax.hezo.io/og-thumb.jpg",
           "type": "website",
           "locale": "ko_KR"
         },
-        "twitter_card": "summary_large_image"
+        "twitter": {
+          "card": "summary_large_image",
+          "title": "해조세무회계 — 서울 강남 세무사 사무소",
+          "description": "개인사업자·소상공인을 위한 세무 상담. 기장 대행·부가세·종합소득세 전문."
+        }
       },
 
       "jsonld": [
@@ -189,8 +203,8 @@
     "llms_full_txt": "# 해조세무회계\n> 세무사 사무소 | 서울 강남\n\n해조세무회계는 서울 강남에 위치한 세무사 사무소로 개인사업자, 소상공인, 초기 법인 대표를 위한 세무 서비스를 제공합니다.\n\n## 핵심 서비스\n- **기장 대행**: 매월 매출·비용·인건비 정리 및 신고 리스크 점검\n- **부가세 신고**: 연 2회(일반과세자) 신고 대행\n- **종합소득세 신고**: 연 1회 종합소득세 신고 및 절세 최적화\n- **법인세 신고**: 법인 결산 및 법인세 신고 대행\n- **창업 세무 상담**: 사업자등록부터 초기 세무 구조 설계까지\n\n## 고객 고통점 해결\n- 세금 신고 일정 관리: 담당자가 사전 연락하여 일정 누락 방지\n- 절세: 비용 증빙 검토, 공제 항목 최적화, 법인 전환 진단\n- 창업 초기 세무 구조: 단계별 안내로 불필요한 세금 방지\n\n## 연락처\n- 전화: 02-1234-5678\n- 카카오채널: @hezo-tax\n- 영업시간: 평일 09:00-18:00\n\n## 타겟 고객\n- 개인사업자\n- 소상공인\n- 초기 법인 대표",
 
     "sitemap_pages": [
-      { "path": "/",        "priority": "1.0", "changefreq": "monthly" },
-      { "path": "/llms.txt","priority": "0.5", "changefreq": "monthly" }
+      { "path": "/",        "priority": 1.0, "changefreq": "monthly" },
+      { "path": "/llms.txt","priority": 0.5, "changefreq": "monthly" }
     ],
 
     "robots_rules": [

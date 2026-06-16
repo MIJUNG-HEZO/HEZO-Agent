@@ -6,10 +6,15 @@
 
 set -euo pipefail
 
+# Git Bash(MSYS/MinGW)에서 /로 시작하는 인자를 Windows 경로로 변환하는 것을 방지
+export MSYS_NO_PATHCONV=1
+
 # ─── .env 로드 (HEZO-Agent 레포 루트 기준) ──────────────────────────────────
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [ -f "${REPO_ROOT}/.env" ]; then
-    set -a; source "${REPO_ROOT}/.env"; set +a
+    set -a
+    source <(sed 's/\r//' "${REPO_ROOT}/.env")
+    set +a
     echo "[ENV] .env 로드 완료: ${REPO_ROOT}/.env"
 else
     echo "[ENV] .env 없음 — 환경변수 또는 ~/.aws/config 사용"
@@ -76,21 +81,21 @@ success "Step Functions IAM 역할 ARN: ${ROLE_ARN}"
 # Bedrock Agent ID를 SSM에서 조회 (agents/generation/deploy.sh 실행 후 저장됨)
 info "SSM에서 Bedrock Agent 정보 조회 중..."
 BEDROCK_AGENT_ID=$(aws ssm get-parameter \
-    --name "/hezo/bedrock-agent-id" \
+    --name "hezo-bedrock-agent-id" \
     --query "Parameter.Value" \
     --output text \
-    --region "$REGION" 2>/dev/null) || {
-    warn "SSM /hezo/bedrock-agent-id 를 찾을 수 없습니다."
+    --region "$REGION" ${AWS_PROFILE_OPT} 2>/dev/null) || {
+    warn "SSM hezo-bedrock-agent-id 를 찾을 수 없습니다."
     warn "agents/generation/deploy.sh 를 먼저 실행하거나 BEDROCK_AGENT_ID 환경변수를 설정하세요."
     BEDROCK_AGENT_ID="${BEDROCK_AGENT_ID:-PLACEHOLDER_AGENT_ID}"
 }
 
 BEDROCK_AGENT_ALIAS_ID=$(aws ssm get-parameter \
-    --name "/hezo/bedrock-agent-alias-id" \
+    --name "hezo-bedrock-agent-alias-id" \
     --query "Parameter.Value" \
     --output text \
-    --region "$REGION" 2>/dev/null) || {
-    warn "SSM /hezo/bedrock-agent-alias-id 를 찾을 수 없습니다."
+    --region "$REGION" ${AWS_PROFILE_OPT} 2>/dev/null) || {
+    warn "SSM hezo-bedrock-agent-alias-id 를 찾을 수 없습니다."
     BEDROCK_AGENT_ALIAS_ID="${BEDROCK_AGENT_ALIAS_ID:-PLACEHOLDER_ALIAS_ID}"
 }
 
@@ -217,16 +222,17 @@ echo ""
 # =============================================================================
 info "SSM에 상태 머신 ARN 저장 중..."
 
+# 플랫 이름 사용 (조직 SCP가 계층형 /hezo/... 경로를 차단함)
 aws ssm put-parameter \
-    --name "/hezo/step-functions-arn" \
+    --name "hezo-step-functions-arn" \
     --value "$STATE_MACHINE_ARN" \
     --type "String" \
-    --description "HEZO 홈페이지 생성 파이프라인 Step Functions ARN" \
     --overwrite \
     --region "$REGION" \
+    ${AWS_PROFILE_OPT} \
     --output text > /dev/null
 
-success "SSM 저장 완료: /hezo/step-functions-arn"
+success "SSM 저장 완료: hezo-step-functions-arn"
 echo ""
 
 # =============================================================================
