@@ -16,6 +16,7 @@ import sys
 
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
+from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
 
 
 CONFIG_FILE = pathlib.Path(__file__).parent / "agent_config.yaml"
@@ -42,6 +43,15 @@ REQUIRED_REQUEST_FIELDS = [
     "slot_registry",
     "missing_slots",
     "request_reason",
+]
+
+REQUIRED_QUESTION_FIELDS = [
+    "question_candidates",
+    "slot",
+    "question",
+    "priority",
+    "source",
+    "fallback",
 ]
 
 
@@ -146,6 +156,22 @@ def _sample_request_input(**overrides: object) -> P2MarkdownRequestInput:
     return P2MarkdownRequestInput(**data)
 
 
+def _sample_question_input(**overrides: object) -> ProactiveQuestionInput:
+    request_input = _sample_request_input()
+    data = {
+        "domain": request_input.domain,
+        "domain_label": request_input.domain_label,
+        "p1_markdown_review_status": "passed",
+        "p2_markdown_usable_for_questions": True,
+        "slot_registry": request_input.slot_registry,
+        "known_answers": request_input.known_answers,
+        "missing_slots": request_input.missing_slots,
+        "max_questions": 3,
+    }
+    data.update(overrides)
+    return ProactiveQuestionInput(**data)
+
+
 def _validate_request_cases() -> list[str]:
     errors: list[str] = []
 
@@ -174,6 +200,72 @@ def _validate_request_cases() -> list[str]:
     for name, request_input, expected_error in invalid_cases:
         try:
             build_p2_markdown_request_payload(request_input)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
+def _validate_question_cases() -> list[str]:
+    errors: list[str] = []
+
+    candidates = build_proactive_question_candidates(_sample_question_input())
+    candidate_dicts = [candidate.to_dict() for candidate in candidates]
+
+    if [candidate["slot"] for candidate in candidate_dicts] != ["core_services", "contact_method"]:
+        errors.append("question candidates는 답변된 slot을 제외하고 missing_slots 순서를 유지해야 합니다.")
+    if candidate_dicts[0]["question"] != "핵심 세무 서비스는 무엇인가요?":
+        errors.append("P2 사용 가능 상태에서는 question_hint 기반 질문을 사용해야 합니다.")
+    if candidate_dicts[0]["source"] != "p2_markdown" or candidate_dicts[0]["fallback"]:
+        errors.append("P2 question_hint 기반 질문은 p2_markdown source와 fallback=false여야 합니다.")
+
+    fallback_candidates = build_proactive_question_candidates(
+        _sample_question_input(
+            p1_markdown_review_status="failed",
+            p2_markdown_usable_for_questions=False,
+        )
+    )
+    if not fallback_candidates or not fallback_candidates[0].fallback:
+        errors.append("P2 사용 불가 상태에서는 fallback 질문이 생성되어야 합니다.")
+    if fallback_candidates and fallback_candidates[0].source != "fallback":
+        errors.append("fallback 질문은 source=fallback이어야 합니다.")
+
+    required_first_candidates = build_proactive_question_candidates(
+        _sample_question_input(
+            known_answers={},
+            missing_slots=("contact_method", "business_name", "core_services"),
+            max_questions=2,
+        )
+    )
+    if [candidate.slot for candidate in required_first_candidates] != [
+        "contact_method",
+        "business_name",
+    ]:
+        errors.append("필수 slot 우선순위와 max_questions 제한이 올바르게 적용되어야 합니다.")
+
+    empty_candidates = build_proactive_question_candidates(
+        _sample_question_input(
+            known_answers={
+                "business_name": "한빛 세무회계",
+                "core_services": "기장 대리, 종합소득세 신고",
+                "contact_method": "전화 상담",
+            },
+        )
+    )
+    if empty_candidates:
+        errors.append("이미 답변된 slot은 질문 후보에서 제외되어야 합니다.")
+
+    invalid_cases = [
+        ("missing_domain", _sample_question_input(domain=""), "required_fields_missing:domain"),
+        ("empty_slot_registry", _sample_question_input(slot_registry={}), "slot_registry_empty"),
+        ("invalid_max_questions", _sample_question_input(max_questions=0), "max_questions_must_be_positive"),
+    ]
+    for name, question_input, expected_error in invalid_cases:
+        try:
+            build_proactive_question_candidates(question_input)
         except ValueError as error:
             if str(error) != expected_error:
                 errors.append(f"{name}: error={error!s}, expected={expected_error}")
@@ -279,7 +371,20 @@ def main() -> None:
     else:
         print("  [OK] P2 markdown request 필드 확인")
 
-    print("\n[4] P2 markdown request 케이스 검증")
+    print("\n[4] proactive questioning 필드 검증")
+    question_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_QUESTION_FIELDS,
+        "question field",
+    )
+    if question_field_errors:
+        errors.extend(question_field_errors)
+        for error in question_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] proactive questioning 필드 확인")
+
+    print("\n[5] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -288,7 +393,16 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[5] review policy mock 값 검증")
+    print("\n[6] proactive questioning 케이스 검증")
+    question_case_errors = _validate_question_cases()
+    if question_case_errors:
+        errors.extend(question_case_errors)
+        for error in question_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
+
+    print("\n[7] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -297,7 +411,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[6] P2 markdown review 케이스 검증")
+    print("\n[8] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

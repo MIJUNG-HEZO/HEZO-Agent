@@ -23,6 +23,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - P2 markdown 요청 payload 생성 순수 로직
 - P2 markdown 수신 검수 필드
 - P2 markdown 수신 검수 순수 로직
+- 적극적 질의 후보 생성 순수 로직
 - 로컬 smoke test
 
 제외:
@@ -30,6 +31,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 실제 LangGraph graph 구현
 - Bedrock 호출
 - 실제 P2 API 호출
+- 실제 사용자 대화 API 라우터
 - DynamoDB custom checkpointer
 - S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
@@ -118,6 +120,45 @@ domain_selection
 - domain 불일치
 - 인젝션 의심 문구
 - 필수 slot 질문 부족
+
+## Proactive Question Candidates
+
+`proactive_questioning.py`는 검수된 P2 markdown 상태와 `slot_registry`를 기준으로 사용자에게 물어볼 질문 후보를 생성합니다.
+
+입력 기준:
+
+- `domain`, `domain_label`
+- `p1_markdown_review_status`
+- `p2_markdown_usable_for_questions`
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `max_questions`
+
+출력 기준:
+
+```json
+[
+  {
+    "slot": "core_services",
+    "question": "핵심 세무 서비스는 무엇인가요?",
+    "priority": 1,
+    "source": "p2_markdown",
+    "fallback": false,
+    "required": true
+  }
+]
+```
+
+생성 기준:
+
+- P2 markdown이 사용 가능하면 `question_hint` 기반 질문 생성
+- P2 markdown이 사용 불가하면 fallback 질문 생성
+- 이미 답변된 slot은 질문 후보에서 제외
+- 필수 slot을 선택 slot보다 우선
+- `max_questions`를 초과하지 않음
+
+이번 범위에서는 실제 LangGraph node 연결, Bedrock/LLM 질문 보완, 사용자 답변 저장, Contract JSON 반영을 포함하지 않습니다.
 
 ## Local Smoke Test
 
