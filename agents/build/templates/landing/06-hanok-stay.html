@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>온재 한옥 스테이</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: "Noto Serif KR", Georgia, "Times New Roman", serif;
+      background: #f7f1e8;
+      color: #2e261f;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .nav {
+      position: fixed;
+      top: 22px;
+      left: 50%;
+      z-index: 50;
+      width: min(1180px, calc(100% - 36px));
+      height: 72px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 240px 1fr 180px;
+      align-items: center;
+      padding: 0 22px;
+      border: 1px solid rgba(255,255,255,.34);
+      border-radius: 999px;
+      background: rgba(39, 31, 25, .38);
+      color: #fffaf3;
+      backdrop-filter: blur(22px);
+      box-shadow: 0 22px 70px rgba(31, 23, 18, .22);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      font-weight: 700;
+      letter-spacing: -1px;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #f3d39d;
+      color: #3d2e21;
+      font-size: 18px;
+    }
+
+    .brand strong {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .menu {
+      display: flex;
+      justify-content: center;
+      gap: 34px;
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(255,250,243,.86);
+    }
+
+    .nav-cta {
+      height: 46px;
+      border-radius: 999px;
+      background: #fffaf3;
+      color: #3d2e21;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .hero {
+      min-height: 100vh;
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      align-items: end;
+      padding: 132px 6vw 56px;
+      color: #fffaf3;
+      background:
+        linear-gradient(90deg, rgba(31,23,18,.78), rgba(31,23,18,.24) 56%, rgba(31,23,18,.46)),
+        url("https://images.unsplash.com/photo-1625465913621-c7cc4e735e41?auto=format&fit=crop&w=1800&q=85") center/cover;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 220px;
+      background: linear-gradient(transparent, #f7f1e8);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 48px;
+      align-items: end;
+      width: min(1240px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      padding: 9px 13px;
+      border: 1px solid rgba(255,250,243,.32);
+      border-radius: 999px;
+      background: rgba(255,250,243,.12);
+      color: #f3d39d;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      max-width: 900px;
+      font-size: clamp(54px, 7.2vw, 118px);
+      line-height: .96;
+      letter-spacing: -5px;
+      font-weight: 500;
+      margin-bottom: 28px;
+    }
+
+    .hero-copy p {
+      max-width: 780px;
+      color: rgba(255,250,243,.86);
+      font-size: 19px;
+      line-height: 1.9;
+      font-weight: 500;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .hero-actions button,
+    .hero-actions a {
+      height: 58px;
+      padding: 0 28px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .primary {
+      background: #f3d39d;
+      color: #3d2e21;
+      box-shadow: 0 22px 60px rgba(243, 211, 157, .2);
+    }
+
+    .secondary {
+      border: 1px solid rgba(255,250,243,.42);
+      color: #fffaf3;
+      background: rgba(255,250,243,.08);
+    }
+
+    .booking-card {
+      border: 1px solid rgba(255,250,243,.28);
+      border-radius: 34px;
+      padding: 26px;
+      background: rgba(255,250,243,.9);
+      color: #3d2e21;
+      box-shadow: 0 32px 100px rgba(31, 23, 18, .28);
+      backdrop-filter: blur(20px);
+    }
+
+    .booking-card small {
+      color: #a78054;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2px;
+    }
+
+    .booking-card h2 {
+      margin: 10px 0 20px;
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: -1px;
+    }
+
+    .booking-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      padding: 16px 0;
+      border-top: 1px solid #e1d4c4;
+      color: #6d5b4b;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .booking-row strong {
+      color: #3d2e21;
+    }
+
+    .booking-card button {
+      width: 100%;
+      height: 54px;
+      margin-top: 18px;
+      border-radius: 999px;
+      background: #3d2e21;
+      color: #fffaf3;
+      font-weight: 700;
+    }
+
+    .section {
+      padding: 108px 6vw;
+    }
+
+    .section-inner {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: .72fr 1fr;
+      gap: 56px;
+      align-items: end;
+      margin-bottom: 46px;
+    }
+
+    .section-kicker {
+      color: #a78054;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      margin-bottom: 14px;
+    }
+
+    .section h2 {
+      color: #3d2e21;
+      font-size: clamp(36px, 4.4vw, 66px);
+      line-height: 1.05;
+      letter-spacing: -3px;
+      font-weight: 500;
+    }
+
+    .section-head p,
+    .quiet-copy {
+      color: #7a695a;
+      font-size: 18px;
+      line-height: 1.85;
+      font-weight: 500;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .feature {
+      min-height: 260px;
+      padding: 28px;
+      border: 1px solid #e5d8c8;
+      border-radius: 30px;
+      background: #fffaf3;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 20px 60px rgba(75, 56, 39, .06);
+    }
+
+    .feature span {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #efe1ce;
+      color: #9d784d;
+      font-size: 22px;
+    }
+
+    .feature h3 {
+      color: #3d2e21;
+      font-size: 25px;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+
+    .feature p {
+      color: #7a695a;
+      line-height: 1.75;
+      font-size: 15px;
+    }
+
+    .rooms {
+      background: #2e261f;
+      color: #fffaf3;
+      border-radius: 46px 46px 0 0;
+    }
+
+    .rooms .section-kicker {
+      color: #f3d39d;
+    }
+
+    .rooms h2 {
+      color: #fffaf3;
+    }
+
+    .rooms .section-head p {
+      color: rgba(255,250,243,.74);
+    }
+
+    .room-grid {
+      display: grid;
+      grid-template-columns: 1.08fr .92fr;
+      gap: 22px;
+    }
+
+    .room {
+      overflow: hidden;
+      border-radius: 34px;
+      background: #fffaf3;
+      color: #3d2e21;
+    }
+
+    .room.large {
+      grid-row: span 2;
+    }
+
+    .room-img {
+      min-height: 320px;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .room.large .room-img {
+      min-height: 620px;
+      background-image:
+        linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)),
+        url("https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1200&q=85");
+    }
+
+    .room:nth-child(2) .room-img {
+      background-image:
+        linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)),
+        url("https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=85");
+    }
+
+    .room:nth-child(3) .room-img {
+      background-image:
+        linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)),
+        url("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=85");
+    }
+
+    .room-info {
+      padding: 26px;
+    }
+
+    .room-info h3 {
+      font-size: 28px;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+
+    .room-info p {
+      color: #756656;
+      line-height: 1.75;
+      margin-bottom: 18px;
+    }
+
+    .room-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .room-meta span {
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: #efe1ce;
+      color: #7d603f;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .experience {
+      background:
+        linear-gradient(rgba(247,241,232,.92), rgba(247,241,232,.95)),
+        url("https://images.unsplash.com/photo-1600566753151-384129cf4e3e?auto=format&fit=crop&w=1600&q=85") center/cover;
+    }
+
+    .experience-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .experience-card {
+      min-height: 460px;
+      border-radius: 34px;
+      padding: 34px;
+      background: rgba(255,250,243,.86);
+      border: 1px solid rgba(229,216,200,.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      backdrop-filter: blur(18px);
+    }
+
+    .experience-card h3 {
+      color: #3d2e21;
+      font-size: 34px;
+      line-height: 1.15;
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+
+    .experience-card p {
+      color: #7a695a;
+      line-height: 1.85;
+    }
+
+    .time-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .time-row {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 18px;
+      padding: 16px 0;
+      border-top: 1px solid #e0d2c1;
+    }
+
+    .time-row strong {
+      color: #9b744c;
+    }
+
+    .inquiry {
+      padding-bottom: 120px;
+    }
+
+    .inquiry-layout {
+      display: grid;
+      grid-template-columns: .86fr 1.14fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .price-card {
+      position: sticky;
+      top: 116px;
+      padding: 34px;
+      border-radius: 34px;
+      background: #3d2e21;
+      color: #fffaf3;
+    }
+
+    .price-card small {
+      color: #f3d39d;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2px;
+    }
+
+    .price-card h2 {
+      color: #fffaf3;
+      margin: 14px 0;
+      font-size: 42px;
+    }
+
+    .price {
+      font-size: 48px;
+      color: #f3d39d;
+      margin: 22px 0;
+    }
+
+    .price-card p {
+      color: rgba(255,250,243,.74);
+      line-height: 1.85;
+    }
+
+    .form {
+      padding: 34px;
+      border-radius: 34px;
+      background: #fffaf3;
+      border: 1px solid #e5d8c8;
+      box-shadow: 0 20px 60px rgba(75, 56, 39, .06);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      color: #6d5b4b;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 9px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid #ddcebb;
+      border-radius: 18px;
+      background: #fff;
+      color: #3d2e21;
+      padding: 16px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 138px;
+      resize: vertical;
+    }
+
+    .submit {
+      width: 100%;
+      height: 58px;
+      margin-top: 20px;
+      border-radius: 999px;
+      background: #9b744c;
+      color: #fffaf3;
+      font-weight: 800;
+    }
+
+    .floating {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      z-index: 60;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 15px 20px;
+      border-radius: 999px;
+      background: #fffaf3;
+      color: #3d2e21;
+      box-shadow: 0 18px 60px rgba(31,23,18,.22);
+      font-weight: 800;
+    }
+
+    .footer {
+      padding: 54px 6vw;
+      background: #2e261f;
+      color: rgba(255,250,243,.72);
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .footer strong {
+      display: block;
+      color: #fffaf3;
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 980px) {
+      .nav {
+        grid-template-columns: 1fr auto;
+      }
+
+      .menu {
+        display: none;
+      }
+
+      .hero-inner,
+      .section-head,
+      .room-grid,
+      .experience-layout,
+      .inquiry-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .booking-card,
+      .price-card {
+        position: static;
+      }
+
+      .feature-grid,
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .field.full {
+        grid-column: auto;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .nav {
+        top: 12px;
+        width: calc(100% - 24px);
+        height: 64px;
+        padding: 0 14px;
+      }
+
+      .brand strong {
+        font-size: 17px;
+      }
+
+      .nav-cta {
+        display: none;
+      }
+
+      .hero {
+        padding: 116px 20px 42px;
+      }
+
+      h1 {
+        font-size: 46px;
+        letter-spacing: -2px;
+      }
+
+      .hero-copy p,
+      .section-head p,
+      .quiet-copy {
+        font-size: 16px;
+      }
+
+      .section {
+        padding: 80px 20px;
+      }
+
+      .room.large .room-img,
+      .room-img {
+        min-height: 300px;
+      }
+
+      .floating {
+        right: 16px;
+        bottom: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="#top">
+      <span class="brand-mark">溫</span>
+      <strong>온재 한옥 스테이</strong>
+    </a>
+    <nav class="menu">
+      <a href="#intro">숙소 소개</a>
+      <a href="#rooms">객실 안내</a>
+      <a href="#experience">머무는 방식</a>
+      <a href="#inquiry">문의</a>
+    </nav>
+    <button class="nav-cta" onclick="location.href='#inquiry'">예약 문의</button>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <span class="eyebrow">HANOK STAY · PRIVATE REST</span>
+        <h1>도심 가까이에서 만나는 조용한 한옥의 하루</h1>
+        <p>
+          온재 한옥 스테이는 전통 한옥의 정취와 편안한 숙박 동선을 함께 담은 프라이빗 숙소입니다.
+          가족 여행, 기념일, 촬영 대관까지 일정과 목적에 맞춰 빠르게 안내합니다.
+        </p>
+        <div class="hero-actions">
+          <button class="primary" onclick="location.href='#inquiry'">지금 문의 남기기</button>
+          <a class="secondary" href="#rooms">객실 먼저 보기</a>
+        </div>
+      </div>
+
+      <aside class="booking-card">
+        <small>QUICK SUMMARY</small>
+        <h2>1박 문의가<br>₩180,000 ~</h2>
+        <div class="booking-row"><span>추천 인원</span><strong>2~4명</strong></div>
+        <div class="booking-row"><span>이용 목적</span><strong>숙박 · 촬영 · 기념일</strong></div>
+        <div class="booking-row"><span>문의 응답</span><strong>당일 안내</strong></div>
+        <button onclick="location.href='#inquiry'">가능 일정 확인하기</button>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section" id="intro">
+    <div class="section-inner">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">ABOUT ONJAE</div>
+          <h2>고요함을 머무는 공간</h2>
+        </div>
+        <p>
+          한옥의 지붕선, 마당, 나무 소재가 만드는 차분한 분위기를 살리면서도
+          실제 숙박 문의 전환에 필요한 객실 정보와 예약 동선을 한 화면 안에 정리했습니다.
+        </p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature">
+          <span>庭</span>
+          <div><h3>프라이빗 마당</h3><p>독립적인 공간 구성으로 조용한 휴식과 사진 촬영이 모두 가능합니다.</p></div>
+        </article>
+        <article class="feature">
+          <span>木</span>
+          <div><h3>전통 소재감</h3><p>목재와 한지의 결을 살린 실내 구성으로 고급스러운 한옥 무드를 제공합니다.</p></div>
+        </article>
+        <article class="feature">
+          <span>問</span>
+          <div><h3>빠른 문의 안내</h3><p>일정, 인원, 목적을 남기면 가능한 객실과 조건을 빠르게 안내합니다.</p></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section rooms" id="rooms">
+    <div class="section-inner">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">ROOMS</div>
+          <h2>머무는 목적에 맞춘 객실</h2>
+        </div>
+        <p>
+          커플 여행부터 가족 숙박, 촬영 대관까지 목적에 맞게 선택할 수 있는 객실 구성을 보여줍니다.
+        </p>
+      </div>
+
+      <div class="room-grid">
+        <article class="room large">
+          <div class="room-img"></div>
+          <div class="room-info">
+            <h3>온재 스테이 A</h3>
+            <p>커플과 소규모 가족에게 적합한 조용한 한옥 객실입니다.</p>
+            <div class="room-meta"><span>2~3인</span><span>마당 전망</span><span>조식 옵션</span></div>
+          </div>
+        </article>
+        <article class="room">
+          <div class="room-img"></div>
+          <div class="room-info">
+            <h3>온재 스테이 B</h3>
+            <p>기념일, 프라이빗 모임, 촬영 일정에 어울리는 넓은 객실입니다.</p>
+            <div class="room-meta"><span>3~4인</span><span>촬영 대관</span></div>
+          </div>
+        </article>
+        <article class="room">
+          <div class="room-img"></div>
+          <div class="room-info">
+            <h3>온재 라운지</h3>
+            <p>차를 마시거나 짧은 작업을 하기 좋은 조용한 공용 라운지입니다.</p>
+            <div class="room-meta"><span>다도</span><span>휴식 공간</span></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section experience" id="experience">
+    <div class="section-inner experience-layout">
+      <article class="experience-card">
+        <div>
+          <div class="section-kicker">STAY EXPERIENCE</div>
+          <h3>체크인부터 저녁의 차 한 잔까지</h3>
+          <p>
+            단순한 숙소 소개가 아니라 방문자가 머무는 장면을 상상할 수 있게 구성했습니다.
+            랜딩페이지에서는 이런 경험 흐름이 문의 전환에 직접적으로 도움이 됩니다.
+          </p>
+        </div>
+        <p class="quiet-copy">예약 확정 후 정확한 주소, 주차 안내, 입실 동선이 개별 안내됩니다.</p>
+      </article>
+
+      <article class="experience-card">
+        <div class="time-list">
+          <div class="time-row"><strong>15:00</strong><p>체크인 및 객실 안내</p></div>
+          <div class="time-row"><strong>17:00</strong><p>마당에서 차와 휴식</p></div>
+          <div class="time-row"><strong>20:00</strong><p>조용한 야간 한옥 스테이</p></div>
+          <div class="time-row"><strong>11:00</strong><p>체크아웃 및 주변 산책 코스 안내</p></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section inquiry" id="inquiry">
+    <div class="section-inner inquiry-layout">
+      <aside class="price-card">
+        <small>PRICE & INQUIRY</small>
+        <h2>1박 기준 문의가</h2>
+        <div class="price">₩180,000 ~</div>
+        <p>
+          성수기, 주말, 인원 추가, 촬영·대관 여부에 따라 금액이 달라질 수 있습니다.
+          문의를 남겨주시면 가능한 일정과 금액을 확인해 안내드립니다.
+        </p>
+      </aside>
+
+      <form class="form">
+        <div class="form-grid">
+          <div class="field">
+            <label>성함</label>
+            <input type="text" placeholder="성함을 입력해 주세요" />
+          </div>
+          <div class="field">
+            <label>연락처</label>
+            <input type="text" placeholder="연락 가능한 번호" />
+          </div>
+          <div class="field">
+            <label>희망 일정</label>
+            <input type="date" />
+          </div>
+          <div class="field">
+            <label>인원</label>
+            <select>
+              <option>2명</option>
+              <option>3~4명</option>
+              <option>5명 이상</option>
+              <option>촬영·대관 문의</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label>문의 내용</label>
+            <textarea placeholder="예약 목적, 희망 객실, 문의 사항을 남겨 주세요"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="submit">문의 제출하기</button>
+      </form>
+    </div>
+  </section>
+
+  <a class="floating" href="#inquiry">예약 문의</a>
+
+  <footer class="footer">
+    <strong>온재 한옥 스테이</strong>
+    고요한 하루를 위한 프라이빗 한옥 숙소<br>
+    © 2026 Onjae Hanok Stay. All rights reserved.
+  </footer>
+</body>
+</html>

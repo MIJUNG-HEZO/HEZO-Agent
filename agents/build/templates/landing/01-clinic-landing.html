@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>임플란트 상담 · CT 기반 진단</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, "Noto Sans KR", sans-serif;
+  background: #fff;
+  color: #111;
+}
+
+.header {
+  height: 96px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 34px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo-icon {
+  width: 46px;
+  height: 46px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.logo-text h1 {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.logo-text p {
+  font-size: 12px;
+  letter-spacing: 5px;
+  color: #8b95a1;
+}
+
+.menu {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 25px;
+}
+
+.hero {
+  min-height: 690px;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg,
+      rgba(91,113,128,0.78) 0%,
+      rgba(120,139,150,0.55) 42%,
+      rgba(255,255,255,0.02) 78%
+    ),
+    url("https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1800&q=80");
+  background-size: cover;
+  background-position: center right;
+}
+
+.hero-inner {
+  width: 100%;
+  min-height: 690px;
+  padding: 110px 34px 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hero-text {
+  max-width: 760px;
+  color: #fff;
+}
+
+.hero-text h2 {
+  font-size: 58px;
+  line-height: 1.25;
+  letter-spacing: -3px;
+  font-weight: 800;
+  margin-bottom: 34px;
+}
+
+.hero-text p {
+  font-size: 17px;
+  line-height: 1.9;
+  color: rgba(255,255,255,0.88);
+  max-width: 760px;
+  margin-bottom: 36px;
+}
+
+.buttons {
+  display: flex;
+  gap: 14px;
+}
+
+.buttons button {
+  height: 58px;
+  padding: 0 28px;
+  border-radius: 13px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.primary {
+  background: #5f84a4;
+  color: #fff;
+  border: none;
+}
+
+.glass-btn {
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.45);
+  backdrop-filter: blur(8px);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 70px;
+}
+
+.info-card {
+  min-height: 106px;
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.18);
+  backdrop-filter: blur(8px);
+  color: #fff;
+}
+
+.info-card h3 {
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+.info-card p {
+  font-size: 14px;
+  color: rgba(255,255,255,0.82);
+}
+
+.detail-section {
+  padding: 28px 34px 90px;
+  background: #fff;
+}
+
+.detail-grid {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 26px;
+}
+
+.detail-card {
+  position: relative;
+  height: 390px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #ddd;
+}
+
+.detail-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    rgba(0,0,0,0.12),
+    rgba(0,0,0,0.62)
+  );
+}
+
+.detail-overlay {
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  bottom: 32px;
+  z-index: 2;
+  color: #fff;
+}
+
+.detail-overlay span {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 18px;
+  color: rgba(255,255,255,0.78);
+}
+
+.detail-overlay h3 {
+  font-size: 30px;
+  line-height: 1.25;
+  margin-bottom: 18px;
+  font-weight: 800;
+}
+
+.detail-overlay p {
+  font-size: 15px;
+  line-height: 1.8;
+  color: rgba(255,255,255,0.86);
+  margin-bottom: 16px;
+}
+
+.detail-overlay ul {
+  list-style: none;
+}
+
+.detail-overlay li {
+  font-size: 14px;
+  color: rgba(255,255,255,0.86);
+  margin-bottom: 8px;
+}
+
+.detail-overlay li::before {
+  content: "· ";
+  margin-right: 6px;
+}
+
+.section {
+  padding: 80px 34px;
+  text-align: center;
+}
+
+.section h2 {
+  font-size: 36px;
+  margin-bottom: 16px;
+}
+
+.section p {
+  color: #6b7280;
+  line-height: 1.8;
+}
+
+.floating {
+  position: fixed;
+  right: 34px;
+  bottom: 28px;
+  background: #6d8fad;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 17px 26px;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+}
+
+@media (max-width: 768px) {
+  .hero-text h2 {
+    font-size: 38px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-card {
+    height: 360px;
+  }
+
+  .detail-overlay h3 {
+    font-size: 24px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">🦷</div>
+    <div class="logo-text">
+      <h1 data-hezo="brand-name">임플란트 상담 · CT 기반 진단</h1>
+      <p data-hezo="brand-tagline">CONSULTATION LANDING DRAFT</p>
+    </div>
+  </div>
+
+  <button class="menu">☰</button>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+
+    <div class="hero-text">
+      <h2 data-hezo="hero-headline">
+        임플란트 가능 여부부터<br>
+        먼저 정확히 살펴보고<br>
+        설명드립니다.
+      </h2>
+
+      <p data-hezo="hero-subheadline">
+        치아 상태, 잇몸뼈, 통증과 회복 부담, 뼈이식 가능성,
+        예상 일정과 비용 범위를 CT 기반으로 차분히 안내하는 광고 랜딩 초안입니다.
+        과한 약속보다 진단과 설명의 흐름을 먼저 보여줍니다.
+      </p>
+
+      <div class="buttons">
+        <button class="primary" data-hezo="cta">상담 신청</button>
+        <button class="glass-btn">카카오 문의</button>
+        <button class="glass-btn" data-hezo="phone">전화 상담 02-0000-0000</button>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-card" data-hezo-idx="0">
+        <h3 data-hezo="service-name">대상 고객 확인</h3>
+        <p data-hezo="service-desc">결손 부위, 기존 보철 불편, 재수술 문의</p>
+      </div>
+
+      <div class="info-card" data-hezo-idx="1">
+        <h3 data-hezo="service-name">CT 기반 진단</h3>
+        <p data-hezo="service-desc">뼈 상태·신경 위치·식립 계획을 먼저 확인</p>
+      </div>
+
+      <div class="info-card" data-hezo-idx="2">
+        <h3 data-hezo="service-name">통증·회복 부담 안내</h3>
+        <p data-hezo="service-desc">개인 상태에 따른 회복 흐름 설명</p>
+      </div>
+
+      <div class="info-card" data-hezo-idx="3">
+        <h3 data-hezo="service-name">비용·이벤트 문의</h3>
+        <p data-hezo="service-desc">재료·개수·추가 술식에 따른 항목별 안내</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="detail-section">
+  <div class="detail-grid">
+
+    <div class="detail-card">
+      <img src="https://images.unsplash.com/photo-1606811971618-4486d14f3f99?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="detail-overlay" data-hezo-idx="0">
+        <span data-hezo="detail-category">대상 고객</span>
+        <h3 data-hezo="detail-name">이런 분이 많이 문의합니다</h3>
+        <p data-hezo="detail-desc">
+          치아가 빠진 지 오래되었거나, 틀니·브릿지 불편감으로
+          임플란트를 고민하는 분께 상담이 많이 이어집니다.
+        </p>
+        <ul data-hezo="detail-list">
+          <li>앞니·어금니 빈 공간이 신경 쓰이는 경우</li>
+          <li>씹는 힘 저하로 식사 불편이 있는 경우</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <img src="https://images.unsplash.com/photo-1666214280557-f1b5022eb634?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="detail-overlay" data-hezo-idx="1">
+        <span data-hezo="detail-category">진료 안내</span>
+        <h3 data-hezo="detail-name">식립 가능성부터 순서대로 확인</h3>
+        <p data-hezo="detail-desc">
+          3D CT를 바탕으로 잇몸뼈 높이, 신경 위치,
+          추가 술식 필요 여부를 먼저 살펴보고 상담 방향을 정합니다.
+        </p>
+        <ul data-hezo="detail-list">
+          <li>뼈이식 가능성 체크</li>
+          <li>식립 위치·개수·일정 설명</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <img src="https://images.unsplash.com/photo-1609840114035-3c981b782dfe?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="detail-overlay" data-hezo-idx="2">
+        <span data-hezo="detail-category">치료 과정</span>
+        <h3 data-hezo="detail-name">개인 상태에 맞춰 부담을 설명</h3>
+        <p data-hezo="detail-desc">
+          수술 전후 통증, 회복 기간, 식사 가능 시점,
+          내원 횟수를 미리 안내해 불안감을 줄입니다.
+        </p>
+        <ul data-hezo="detail-list">
+          <li>회복 기간 안내</li>
+          <li>주의사항 사전 설명</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <img src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=1000&q=80" alt="">
+      <div class="detail-overlay" data-hezo-idx="3">
+        <span data-hezo="detail-category">예약 안내</span>
+        <h3 data-hezo="detail-name">재료와 상태에 따른 비용 범위 안내</h3>
+        <p data-hezo="detail-desc">
+          임플란트 개수, 재료, 뼈이식 여부,
+          이벤트 적용 가능성에 따라 예상 비용을 안내합니다.
+        </p>
+        <ul data-hezo="detail-list">
+          <li>상태별 비용 범위 안내</li>
+          <li>이벤트 적용 여부 확인</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="section">
+  <h2 data-hezo="section-cta-title">치과 임플란트 상담 신청</h2>
+  <p data-hezo="section-cta-desc">
+    빠르게 상담을 시작할 수 있는 광고 랜딩페이지 샘플입니다.
+  </p>
+</section>
+
+<button class="floating" data-hezo="floating-cta">전화 상담</button>
+
+</body>
+</html>

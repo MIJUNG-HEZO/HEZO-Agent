@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HEZO AI Builder</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: Arial, "Noto Sans KR", sans-serif;
+  background: #f6f8fb;
+  color: #111827;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(22,163,111,0.16), transparent 28%),
+    radial-gradient(circle at 78% 14%, rgba(56,105,214,0.14), transparent 24%),
+    linear-gradient(#f6f8fb, #eef3f7);
+}
+
+.topbar {
+  width: min(1240px, 100%);
+  height: 76px;
+  margin: 0 auto 22px;
+  border: 1px solid #e4e9ef;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.84);
+  backdrop-filter: blur(20px);
+  display: grid;
+  grid-template-columns: 220px 1fr 170px;
+  align-items: center;
+  padding: 0 20px;
+  box-shadow: 0 18px 50px rgba(17,24,39,0.06);
+}
+
+.brand {
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -1px;
+}
+
+.brand span {
+  color: #16a36f;
+}
+
+.menu {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  color: #667085;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.topbar button {
+  height: 48px;
+  border-radius: 16px;
+  background: #111827;
+  color: #fff;
+  font-weight: 950;
+}
+
+.hero {
+  width: min(1240px, 100%);
+  min-height: calc(100vh - 120px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 0.86fr 1.14fr;
+  gap: 24px;
+}
+
+.hero-copy {
+  border-radius: 36px;
+  padding: 54px;
+  background: #111827;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  position: relative;
+}
+
+.hero-copy::after {
+  content: "";
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  right: -120px;
+  bottom: -120px;
+  border-radius: 50%;
+  background: rgba(22,163,111,0.22);
+  filter: blur(6px);
+}
+
+.badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(22,163,111,0.14);
+  color: #8ce7c0;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 2px;
+  margin-bottom: 28px;
+}
+
+.hero h1 {
+  position: relative;
+  z-index: 2;
+  font-size: clamp(50px, 6.5vw, 96px);
+  line-height: 0.9;
+  letter-spacing: -6px;
+  margin-bottom: 30px;
+}
+
+.hero p {
+  position: relative;
+  z-index: 2;
+  max-width: 620px;
+  color: #cbd5e1;
+  font-size: 19px;
+  line-height: 1.85;
+  font-weight: 650;
+}
+
+.actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 34px;
+}
+
+.actions button,
+.actions a {
+  height: 58px;
+  padding: 0 28px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 950;
+}
+
+.primary {
+  background: #16a36f;
+  color: #fff;
+}
+
+.secondary {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+}
+
+.hero-bottom {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 48px;
+}
+
+.mini-metric {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.mini-metric strong {
+  display: block;
+  font-size: 27px;
+  margin-bottom: 6px;
+}
+
+.mini-metric span {
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.product-stage {
+  border-radius: 36px;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e4e9ef;
+  box-shadow: 0 26px 80px rgba(17,24,39,0.08);
+  display: grid;
+  grid-template-rows: 78px 1fr;
+  gap: 18px;
+}
+
+.window-top {
+  border-radius: 24px;
+  background: #f6f8fb;
+  border: 1px solid #e4e9ef;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+}
+
+.dots {
+  display: flex;
+  gap: 8px;
+}
+
+.dots span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.window-top strong {
+  color: #475569;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 18px;
+}
+
+.sidebar {
+  border-radius: 26px;
+  background: #111827;
+  padding: 14px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.sidebar span {
+  height: 46px;
+  border-radius: 16px;
+  background: #243247;
+}
+
+.sidebar span:first-child {
+  background: #16a36f;
+}
+
+.main-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 18px;
+}
+
+.score-panel {
+  min-height: 170px;
+  border-radius: 28px;
+  padding: 26px;
+  background: linear-gradient(135deg, #e3fff3, #f8fafc);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.score-panel small {
+  color: #087f5b;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 2px;
+}
+
+.score-panel h2 {
+  font-size: 44px;
+  letter-spacing: -2px;
+  margin-top: 12px;
+}
+
+.score {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: #111827;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.analytics {
+  border-radius: 28px;
+  padding: 22px;
+  background: #111827;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.bar {
+  border-radius: 999px 999px 10px 10px;
+  background: linear-gradient(#16a36f, #8ce7c0);
+}
+
+.bar:nth-child(1) { height: 38%; }
+.bar:nth-child(2) { height: 72%; }
+.bar:nth-child(3) { height: 56%; }
+.bar:nth-child(4) { height: 86%; }
+.bar:nth-child(5) { height: 64%; }
+
+.check-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.check-row div {
+  border-radius: 22px;
+  background: #f6f8fb;
+  border: 1px solid #e4e9ef;
+  padding: 18px;
+}
+
+.check-row strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.check-row span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.section {
+  padding: 112px 5vw;
+}
+
+.container {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 0.78fr 1fr;
+  gap: 54px;
+  align-items: end;
+  margin-bottom: 48px;
+}
+
+.kicker {
+  color: #087f5b;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 3px;
+  margin-bottom: 14px;
+}
+
+.section h2 {
+  font-size: clamp(40px, 5vw, 72px);
+  line-height: 1.02;
+  letter-spacing: -3px;
+}
+
+.head p {
+  color: #667085;
+  font-size: 18px;
+  line-height: 1.85;
+  font-weight: 650;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.feature {
+  min-height: 340px;
+  border-radius: 34px;
+  padding: 30px;
+  background: #fff;
+  border: 1px solid #e4e9ef;
+  box-shadow: 0 22px 60px rgba(17,24,39,0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.feature b {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  background: #e3fff3;
+  color: #087f5b;
+}
+
+.feature h3 {
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.feature p {
+  color: #667085;
+  line-height: 1.75;
+  font-weight: 650;
+}
+
+.workflow {
+  background: #111827;
+  color: #fff;
+}
+
+.workflow .head p {
+  color: #94a3b8;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 20px;
+}
+
+.contract {
+  min-height: 540px;
+  border-radius: 36px;
+  padding: 32px;
+  background: #f8fafc;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.contract h3 {
+  font-size: 48px;
+  letter-spacing: -2px;
+}
+
+.json-lines {
+  display: grid;
+  gap: 12px;
+  font-family: monospace;
+  color: #087f5b;
+}
+
+.json-lines span {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #e3fff3;
+}
+
+.flow-list {
+  display: grid;
+  gap: 14px;
+}
+
+.flow-item {
+  border-radius: 28px;
+  padding: 24px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.flow-item strong {
+  color: #8ce7c0;
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.flow-item h3 {
+  font-size: 26px;
+  margin: 12px 0 8px;
+}
+
+.flow-item p {
+  color: #94a3b8;
+  line-height: 1.7;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.report-card {
+  min-height: 500px;
+  border-radius: 38px;
+  padding: 34px;
+  background: #fff;
+  border: 1px solid #e4e9ef;
+  box-shadow: 0 22px 60px rgba(17,24,39,0.05);
+}
+
+.report-card.dark {
+  background: #111827;
+  color: #fff;
+}
+
+.report-card h3 {
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 18px;
+}
+
+.report-card p {
+  color: #667085;
+  line-height: 1.8;
+  font-weight: 650;
+}
+
+.report-card.dark p {
+  color: #94a3b8;
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.list div {
+  display: flex;
+  justify-content: space-between;
+  padding: 17px;
+  border-radius: 18px;
+  background: #f6f8fb;
+  color: #111827;
+  font-weight: 850;
+}
+
+.report-card.dark .list div {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.pricing {
+  background: #eef3f7;
+}
+
+.price-grid {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 20px;
+}
+
+.price-card {
+  border-radius: 38px;
+  padding: 34px;
+  background: #fff;
+  border: 1px solid #e4e9ef;
+}
+
+.price-card.featured {
+  background: #111827;
+  color: #fff;
+}
+
+.price-card h3 {
+  font-size: 34px;
+}
+
+.price-card p {
+  color: #667085;
+  line-height: 1.75;
+  margin: 14px 0;
+  font-weight: 650;
+}
+
+.price-card.featured p {
+  color: #94a3b8;
+}
+
+.price {
+  font-size: 52px;
+  font-weight: 950;
+  letter-spacing: -2px;
+  margin: 28px 0;
+}
+
+.price-card button {
+  width: 100%;
+  height: 58px;
+  border-radius: 999px;
+  background: #16a36f;
+  color: #fff;
+  font-weight: 950;
+}
+
+@media (max-width: 980px) {
+  .topbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .menu {
+    display: none;
+  }
+
+  .hero,
+  .head,
+  .flow,
+  .report-grid,
+  .price-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .shell {
+    padding: 12px;
+  }
+
+  .topbar button {
+    display: none;
+  }
+
+  .hero-copy {
+    padding: 34px;
+  }
+
+  .hero h1 {
+    font-size: 44px;
+    letter-spacing: -3px;
+  }
+
+  .hero-bottom,
+  .check-row,
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 78px 20px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<main class="shell">
+  <header class="topbar">
+    <a class="brand" href="#">HEZO<span>AI</span></a>
+    <nav class="menu">
+      <a href="#features">기능</a>
+      <a href="#workflow">워크플로우</a>
+      <a href="#report">리포트</a>
+      <a href="#pricing">가격</a>
+    </nav>
+    <button onclick="location.href='#pricing'">무료 시작</button>
+  </header>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <div>
+        <span class="badge">GENERATIVE ENGINE READY</span>
+        <h1 data-hezo="hero-headline">AI가 읽는 홈페이지를 만들고 측정하세요.</h1>
+        <p data-hezo="hero-subheadline">
+          챗봇 입력을 구조화하고, AI 친화 리소스와 점수 리포트까지 자동 생성하는 SaaS 랜딩입니다.
+          제품 화면과 가치가 첫 화면에서 바로 보이도록 구성했습니다.
+        </p>
+        <div class="actions">
+          <button class="primary" data-hezo="cta" onclick="location.href='#pricing'">무료로 시작</button>
+          <a class="secondary" href="#workflow">작동 흐름 보기</a>
+        </div>
+      </div>
+
+      <div class="hero-bottom">
+        <div class="mini-metric"><strong>5분</strong><span>대화 입력</span></div>
+        <div class="mini-metric"><strong>92점</strong><span>AI 친화도</span></div>
+        <div class="mini-metric"><strong>3엔진</strong><span>LLM 추적</span></div>
+      </div>
+    </div>
+
+    <aside class="product-stage">
+      <div class="window-top">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <strong>HEZO Studio</strong>
+      </div>
+      <div class="dashboard">
+        <aside class="sidebar">
+          <span></span><span></span><span></span><span></span><span></span>
+        </aside>
+        <div class="main-panel">
+          <div class="score-panel">
+            <div>
+              <small>AI FRIENDLY SCORE</small>
+              <h2>Visibility Report</h2>
+            </div>
+            <div class="score">92</div>
+          </div>
+          <div class="analytics">
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+            <div class="bar"></div>
+          </div>
+          <div class="check-row">
+            <div><strong>JSON-LD</strong><span>valid schema</span></div>
+            <div><strong>FAQ</strong><span>12 blocks</span></div>
+            <div><strong>LLM</strong><span>tracking on</span></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </section>
+</main>
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">FEATURES</div>
+        <h2>생성, 구조화, 분석을 한 번에</h2>
+      </div>
+      <p>
+        SaaS 랜딩은 말만 하는 페이지가 아니라 실제 대시보드와 기능 구조가 보여야 신뢰가 생깁니다.
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature" data-hezo-idx="0">
+        <b>01</b>
+        <div>
+          <h3 data-hezo="service-name">챗봇 입력</h3>
+          <p data-hezo="service-desc">복잡한 폼 대신 대화로 사업 정보를 수집하고 site-contract JSON으로 정리합니다.</p>
+        </div>
+      </article>
+
+      <article class="feature" data-hezo-idx="1">
+        <b>02</b>
+        <div>
+          <h3 data-hezo="service-name">AI 친화 생성</h3>
+          <p data-hezo="service-desc">Schema, FAQ, sitemap, llms.txt를 자동 생성해 AI가 읽기 쉬운 구조를 만듭니다.</p>
+        </div>
+      </article>
+
+      <article class="feature" data-hezo-idx="2">
+        <b>03</b>
+        <div>
+          <h3 data-hezo="service-name">운영 대시보드</h3>
+          <p data-hezo="service-desc">AI 친화 점수, 유입, 인용 여부를 한 화면에서 확인합니다.</p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section workflow" id="workflow">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">WORKFLOW</div>
+        <h2>하나의 JSON으로 이어지는 제품 흐름</h2>
+      </div>
+      <p>
+        입력부터 발행, 검증, 측정까지 하나의 파이프라인으로 이어지는 구조를 보여줍니다.
+      </p>
+    </div>
+
+    <div class="flow">
+      <article class="contract">
+        <h3>site-contract JSON</h3>
+        <div class="json-lines">
+          <span>{ business: "clinic" }</span>
+          <span>{ template: "landing" }</span>
+          <span>{ schema: "MedicalBusiness" }</span>
+          <span>{ publish: "ready" }</span>
+        </div>
+      </article>
+
+      <div class="flow-list">
+        <article class="flow-item">
+          <strong>STEP 01</strong>
+          <h3>대화 수집</h3>
+          <p>챗봇으로 고객 정보를 수집하고 부족한 항목을 다시 질문합니다.</p>
+        </article>
+        <article class="flow-item">
+          <strong>STEP 02</strong>
+          <h3>자동 생성</h3>
+          <p>선택된 템플릿과 구조화 데이터를 기반으로 페이지를 생성합니다.</p>
+        </article>
+        <article class="flow-item">
+          <strong>STEP 03</strong>
+          <h3>검증·측정</h3>
+          <p>AI 친화 점수와 LLM 인용 추적 리포트를 제공합니다.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="report">
+  <div class="container">
+    <div class="head">
+      <div>
+        <div class="kicker">REPORT</div>
+        <h2>고객이 보는 성과 화면</h2>
+      </div>
+      <p>
+        단순 생성기가 아니라 운영과 분석이 붙은 SaaS라는 점을 리포트 영역에서 보여줍니다.
+      </p>
+    </div>
+
+    <div class="report-grid">
+      <article class="report-card">
+        <h3>AI Friendly Score</h3>
+        <p>구조화 데이터, FAQ, 메타태그, 속도, 엔티티 일관성을 기준으로 내부 구조 점수를 보여줍니다.</p>
+        <div class="list">
+          <div><span>Schema</span><strong>OK</strong></div>
+          <div><span>FAQ</span><strong>12</strong></div>
+          <div><span>Speed</span><strong>91</strong></div>
+        </div>
+      </article>
+
+      <article class="report-card dark">
+        <h3>LLM Citation</h3>
+        <p>ChatGPT, Perplexity, Claude 기준 질문 세트의 mention/citation 여부를 주간 추이로 정리합니다.</p>
+        <div class="list">
+          <div><span>ChatGPT</span><strong>32%</strong></div>
+          <div><span>Perplexity</span><strong>41%</strong></div>
+          <div><span>Claude</span><strong>28%</strong></div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section pricing" id="pricing">
+  <div class="container price-grid">
+    <article class="price-card">
+      <h3>Starter</h3>
+      <p>작은 비즈니스의 첫 AI 친화 홈페이지 생성</p>
+      <div class="price">₩29,000</div>
+      <button>시작하기</button>
+    </article>
+
+    <article class="price-card featured">
+      <h3>Pro</h3>
+      <p>여러 사이트와 주간 벤치마크가 필요한 팀용 플랜</p>
+      <div class="price">₩99,000</div>
+      <button>데모 요청</button>
+    </article>
+  </div>
+</section>
+
+</body>
+</html>

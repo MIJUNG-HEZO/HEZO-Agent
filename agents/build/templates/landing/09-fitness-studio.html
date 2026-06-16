@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Peak Form Fitness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,"Noto Sans KR",sans-serif;background:#090909;color:#fff}
+a{text-decoration:none;color:inherit}
+button,input,select{font:inherit}
+.nav{position:fixed;top:28px;left:50%;transform:translateX(-50%);z-index:20;width:min(1180px,calc(100% - 40px));height:72px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(0,0,0,.54);backdrop-filter:blur(18px);display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.brand{font-size:24px;font-weight:900;letter-spacing:-1px}.brand span{color:#ff5a1f}
+.nav nav{display:flex;gap:32px;color:#ddd;font-size:14px;font-weight:800}
+.nav button{height:46px;border:0;border-radius:999px;background:#ff5a1f;color:#fff;padding:0 24px;font-weight:900}
+.hero{min-height:100vh;display:grid;grid-template-columns:.82fr 1.18fr;background:#090909}
+.copy{padding:180px 6vw 70px;display:flex;flex-direction:column;justify-content:center}
+.eyebrow{color:#ff9b72;font-size:13px;font-weight:900;letter-spacing:3px;margin-bottom:28px}
+.copy h1{font-size:clamp(64px,8vw,128px);line-height:.86;letter-spacing:-7px;margin-bottom:30px}
+.copy h1 em{font-style:normal;color:#ff5a1f}
+.copy p{max-width:620px;color:#c7c7c7;font-size:19px;line-height:1.85;font-weight:650}
+.actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}.actions button{height:60px;border-radius:999px;padding:0 30px;font-weight:900}
+.primary{background:#ff5a1f;color:#fff;border:0}.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.22)}
+.visual{position:relative;min-height:100vh;background:linear-gradient(rgba(0,0,0,.08),rgba(0,0,0,.74)),url("https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1500&q=85") center/cover}
+.program-card{position:absolute;left:34px;right:34px;bottom:38px;border-radius:34px;background:rgba(255,255,255,.92);color:#111;padding:28px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;box-shadow:0 30px 80px rgba(0,0,0,.28)}
+.program-card div{border-radius:22px;background:#f3f3f3;padding:22px}.program-card small{display:block;color:#ff5a1f;font-weight:900;letter-spacing:2px;margin-bottom:12px}.program-card h3{font-size:24px;letter-spacing:-1px}
+.section{padding:110px 6vw}
+.training-board{background:#050505}
+.board-wrap{max-width:1220px;margin:auto;display:grid;grid-template-columns:.88fr 1.12fr;gap:26px;align-items:stretch}
+.board-title{min-height:650px;border-radius:40px;background:linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.68)),url("https://images.unsplash.com/photo-1534367610401-9f5ed68180aa?auto=format&fit=crop&w=1200&q=85") center/cover;padding:36px;display:flex;flex-direction:column;justify-content:space-between}
+.board-title small{color:#ff5a1f;font-size:12px;font-weight:950;letter-spacing:4px}
+.board-title h2{font-size:clamp(46px,5vw,86px);line-height:.95;letter-spacing:-5px}
+.routine{border-radius:40px;background:#151515;border:1px solid #272727;padding:30px;display:grid;gap:14px}
+.routine-row{min-height:124px;border-radius:26px;background:#0b0b0b;border:1px solid #242424;padding:22px 24px;display:grid;grid-template-columns:92px 1fr 130px;gap:20px;align-items:center}
+.routine-row b{font-size:44px;color:#ff5a1f;letter-spacing:-2px}
+.routine-row h3{font-size:28px;margin-bottom:8px}
+.routine-row p{color:#a8a8a8;line-height:1.55}
+.routine-row span{text-align:right;color:#ff9b72;font-weight:900}
+.coach-section{background:#fff;color:#111}
+.coach-wrap{max-width:1220px;margin:auto;display:grid;grid-template-columns:1.05fr .95fr;gap:24px}
+.coach-copy{border-radius:40px;background:#f4f4f4;padding:36px}.coach-copy h2{font-size:clamp(42px,5vw,76px);line-height:1;letter-spacing:-4px;margin-bottom:22px}.coach-copy p{color:#666;line-height:1.85;font-size:18px}
+.coach-photo{min-height:480px;border-radius:40px;background:url("https://images.unsplash.com/photo-1571019613914-85f342c6a11e?auto=format&fit=crop&w=1200&q=85") center/cover}
+.join{background:#ff5a1f;color:#fff}.joinbox{max-width:1180px;margin:auto;display:grid;grid-template-columns:.9fr 1.1fr;gap:24px}.join h2{font-size:clamp(44px,5vw,78px);line-height:.98;letter-spacing:-4px}
+.form{background:#fff;color:#111;border-radius:34px;padding:34px;display:grid;gap:14px}.form input,.form select{height:56px;border:1px solid #ddd;border-radius:16px;padding:0 16px}.form button{height:60px;border:0;border-radius:999px;background:#111;color:#fff;font-weight:900}
+@media(max-width:900px){.hero,.board-wrap,.coach-wrap,.joinbox{grid-template-columns:1fr}.visual{min-height:620px}.program-card{grid-template-columns:1fr}.routine-row{grid-template-columns:1fr}.routine-row span{text-align:left}.nav nav{display:none}}
+</style>
+</head>
+<body>
+<header class="nav"><a class="brand">PEAK<span>FORM</span></a><nav><a href="#program">프로그램</a><a href="#coach">코치</a><a href="#join">체험신청</a></nav><button onclick="location.href='#join'">무료 체험</button></header>
+<section class="hero"><div class="copy"><div class="eyebrow">PERSONAL TRAINING CLUB</div><h1>몸이 바뀌는 <em>90일</em>을 설계합니다.</h1><p>운동 기록, 식단, 회복 컨디션을 함께 관리하는 프리미엄 PT 스튜디오 랜딩입니다. 첫 화면에서 강한 에너지와 상담 전환을 동시에 잡습니다.</p><div class="actions"><button class="primary">체험 수업 예약</button><button class="ghost">프로그램 보기</button></div></div><div class="visual"><div class="program-card"><div><small>01</small><h3>1:1 PT</h3></div><div><small>02</small><h3>Body Rebuild</h3></div><div><small>03</small><h3>Meal Coaching</h3></div></div></div></section>
+<section class="section training-board" id="program"><div class="board-wrap"><aside class="board-title"><small>TRAINING BOARD</small><h2>목표별로 다른 루틴 설계</h2></aside><div class="routine"><article class="routine-row"><b>01</b><div><h3>체형 분석</h3><p>인바디와 움직임 평가를 바탕으로 현재 상태를 수치화합니다.</p></div><span>Analysis</span></article><article class="routine-row"><b>02</b><div><h3>개인 루틴</h3><p>주당 운동 가능 시간과 목표에 맞는 루틴을 설계합니다.</p></div><span>Routine</span></article><article class="routine-row"><b>03</b><div><h3>주간 피드백</h3><p>운동 기록과 식단을 확인하고 다음 주 계획을 조정합니다.</p></div><span>Feedback</span></article></div></div></section>
+<section class="section coach-section" id="coach"><div class="coach-wrap"><div class="coach-copy"><h2>데이터와 코칭이 같이 움직입니다.</h2><p>단순히 운동을 시키는 것이 아니라, 컨디션과 회복 시간을 반영해 다음 루틴을 조정합니다. 바디프로필, 체중 감량, 근력 향상까지 다른 목적에 맞는 상담 흐름을 제공합니다.</p></div><div class="coach-photo"></div></div></section>
+<section class="section join" id="join"><div class="joinbox"><div><div class="eyebrow">START TODAY</div><h2>첫 체험 수업을 예약하세요.</h2></div><form class="form"><input placeholder="이름"><input placeholder="연락처"><select><option>목표 선택</option><option>체중 감량</option><option>근력 증가</option><option>자세 교정</option></select><button>상담 신청하기</button></form></div></section>
+</body>
+</html>

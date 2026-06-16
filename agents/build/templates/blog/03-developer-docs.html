@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevLab Notes</title>
+  <link rel="stylesheet" href="../static/blog-premium.css" />
+</head>
+<body class="dev">
+  <header class="bp-nav">
+    <a class="bp-logo" href="./index.html" data-hezo="brand-name">DevLab</a>
+    <nav><a>Architecture</a><a>Frontend</a><a>AI Workflow</a><a>Deploy</a></nav>
+    <a class="bp-pill">GitHub</a>
+  </header>
+
+  <main class="dev-shell">
+    <aside class="dev-side">
+      <strong>Minu.dev</strong>
+      <a>Latest Notes</a><a>LangGraph</a><a>Next.js</a><a>PostgreSQL</a><a>Deployment</a><a>Debug Log</a>
+    </aside>
+    <section class="dev-main">
+      <p class="eyebrow">Engineering notebook</p>
+      <h1 data-hezo="hero-headline">실험하고, 실패하고, 다시 정리하는 개발 기록.</h1>
+      <p class="muted" data-hezo="hero-subheadline">코드 조각, 아키텍처 의사결정, 트러블슈팅 로그를 개발자답게 읽기 좋은 문서형 블로그로 구성합니다.</p>
+
+      <div class="dev-code">
+        <pre>const contract = await chatbot.collect()
+const page = renderer.build(contract)
+await verifier.score(page)
+await deploy.preview(page)</pre>
+      </div>
+
+      <div class="dev-grid">
+        <article class="dev-card" data-hezo-idx="0"><b>01</b><h3 data-hezo="service-name">구조 설계</h3><p class="muted" data-hezo="service-desc">데이터 모델과 상태 흐름을 먼저 정리합니다.</p></article>
+        <article class="dev-card" data-hezo-idx="1"><b>02</b><h3 data-hezo="service-name">문제 해결</h3><p class="muted" data-hezo="service-desc">버그 원인과 해결 과정을 재현 가능하게 남깁니다.</p></article>
+      </div>
+
+      <section class="section" style="padding-inline:0">
+        <div class="blog-title-row">
+          <h2 data-hezo="section-cta-title">최근 개발 노트</h2>
+          <p>개발 블로그는 예쁜 카드보다 검색 가능하고 오래 읽히는 문서 구조가 중요합니다.</p>
+        </div>
+        <div class="post-feed">
+          <article class="post-card"><div class="post-thumb"><img src="https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=900&q=85" alt="코드" /></div><div><h3>LangGraph 상태 전이를 시각화하는 방법</h3><p>대화형 에이전트를 디버깅하기 위한 노드 로그 설계.</p></div><time>Jun 04</time></article>
+          <article class="post-card"><div class="post-thumb"><img src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=900&q=85" alt="서버" /></div><div><h3>S3와 CloudFront 정적 배포 체크리스트</h3><p>캐시 무효화, 파일명 변경, 배포 설정 파일 제외까지.</p></div><time>Jun 02</time></article>
+          <article class="post-card"><div class="post-thumb"><img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=85" alt="데이터" /></div><div><h3>site-contract JSON을 공용 타입으로 관리하기</h3><p>프론트, 백엔드, AI 파이프라인이 같은 계약을 읽는 구조.</p></div><time>May 30</time></article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <a class="back" href="./index.html">← 목록</a>
+</body>
+</html>

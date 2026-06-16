@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>리프팅 시술 상담</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, "Noto Sans KR", sans-serif;
+  background: #fff;
+  color: #111;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* HEADER */
+.header {
+  height: 92px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 38px;
+  color: #fff;
+  background: rgba(0,0,0,0.28);
+  backdrop-filter: blur(8px);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-weight: 800;
+}
+
+.logo-icon {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav {
+  display: flex;
+  gap: 42px;
+  font-size: 15px;
+  color: rgba(255,255,255,0.86);
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.header-buttons button {
+  height: 50px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.outline {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.45);
+  color: #fff;
+}
+
+.white-btn {
+  background: #fff;
+  border: none;
+  color: #111;
+}
+
+/* HERO */
+.hero {
+  min-height: 760px;
+  position: relative;
+  background:
+    linear-gradient(
+      rgba(0,0,0,0.1),
+      rgba(0,0,0,0.15)
+    ),
+    url("https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=1800&q=80");
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  display: flex;
+  align-items: flex-end;
+  padding: 120px 56px 80px;
+}
+
+.hero-bottom {
+  width: 100%;
+  background: rgba(0,0,0,0.58);
+  backdrop-filter: blur(8px);
+  padding: 36px 48px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 34px;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+
+.hero-info h3 {
+  font-size: 17px;
+  margin-bottom: 12px;
+}
+
+.hero-info p {
+  font-size: 14px;
+  color: rgba(255,255,255,0.72);
+  line-height: 1.7;
+}
+
+.floating {
+  position: fixed;
+  right: 34px;
+  top: 58%;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.float-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  border: none;
+  color: #fff;
+  font-weight: 900;
+  line-height: 1.35;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+}
+
+.float-btn.kakao {
+  background: #ef4fad;
+}
+
+.float-btn.phone {
+  background: #071126;
+}
+
+/* COMMON */
+.section {
+  padding: 100px 40px;
+}
+
+.container {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.section-title {
+  text-align: center;
+  margin-bottom: 56px;
+}
+
+.section-title span {
+  display: block;
+  color: #ef4fad;
+  font-weight: 900;
+  letter-spacing: 4px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.section-title h2 {
+  font-size: 44px;
+  line-height: 1.3;
+  letter-spacing: -1.5px;
+  margin-bottom: 16px;
+}
+
+.section-title p {
+  color: #777;
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+/* TARGET */
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.target-card {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 26px;
+  padding: 38px 30px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.05);
+}
+
+.target-card b {
+  display: inline-block;
+  color: #ef4fad;
+  margin-bottom: 18px;
+  font-size: 15px;
+}
+
+.target-card h3 {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.target-card p {
+  color: #666;
+  line-height: 1.75;
+}
+
+/* BEFORE AFTER */
+.before-after-section {
+  padding: 110px 40px;
+  background: #f8f4f7;
+}
+
+.before-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 42px;
+}
+
+.before-tabs button {
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #555;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.before-tabs .active {
+  background: #ef4fad;
+  color: #fff;
+  border: none;
+}
+
+.before-card {
+  max-width: 1050px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 30px;
+  overflow: hidden;
+  box-shadow: 0 22px 50px rgba(0,0,0,0.08);
+}
+
+.before-card-title {
+  padding: 34px 38px;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -1px;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.compare-item {
+  position: relative;
+  height: 560px;
+  overflow: hidden;
+  background: #ddd;
+}
+
+.compare-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.compare-item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(0,0,0,0.05), rgba(0,0,0,0.18));
+}
+
+.label {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  z-index: 2;
+  background: #111827;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.compare-desc {
+  padding: 30px 38px;
+  color: #666;
+  line-height: 1.85;
+  font-size: 15px;
+}
+
+.notice {
+  margin-top: 14px;
+  color: #999;
+  font-size: 13px;
+}
+
+/* PRICE */
+.price-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.price-card {
+  border: 1px solid #eee;
+  border-radius: 28px;
+  padding: 36px;
+  text-align: center;
+  background: #fff;
+}
+
+.price-card.featured {
+  border-color: #ef4fad;
+  box-shadow: 0 20px 50px rgba(239,79,173,0.18);
+}
+
+.price-card h3 {
+  font-size: 24px;
+  margin-bottom: 14px;
+}
+
+.price-card .price {
+  font-size: 34px;
+  font-weight: 900;
+  color: #ef4fad;
+  margin-bottom: 18px;
+}
+
+.price-card p {
+  color: #666;
+  line-height: 1.7;
+}
+
+/* PROCESS */
+.process-section {
+  background: #111827;
+  color: #fff;
+}
+
+.process-section .section-title p {
+  color: rgba(255,255,255,0.68);
+}
+
+.process-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.step {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 24px;
+  padding: 34px 24px;
+  text-align: center;
+}
+
+.step b {
+  display: block;
+  color: #ef4fad;
+  font-size: 38px;
+  margin-bottom: 18px;
+}
+
+.step h3 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+.step p {
+  color: rgba(255,255,255,0.72);
+  line-height: 1.65;
+}
+
+/* FORM */
+.form-section {
+  background: #fff;
+}
+
+.form-box {
+  max-width: 780px;
+  margin: 0 auto;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 30px;
+  padding: 42px;
+}
+
+.form-box label {
+  display: block;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.form-box input,
+.form-box select,
+.form-box textarea {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 18px;
+  font-size: 15px;
+}
+
+.form-box textarea {
+  height: 130px;
+  resize: none;
+}
+
+.submit {
+  width: 100%;
+  height: 60px;
+  border: none;
+  border-radius: 16px;
+  background: #ef4fad;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+/* FOOTER */
+.footer {
+  background: #111827;
+  color: #aaa;
+  text-align: center;
+  padding: 46px 20px;
+  line-height: 1.8;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .header {
+    padding: 0 18px;
+  }
+
+  .nav,
+  .header-buttons {
+    display: none;
+  }
+
+  .hero {
+    min-height: 620px;
+  }
+
+  .hero-bottom {
+    grid-template-columns: 1fr;
+    position: static;
+    margin-top: auto;
+  }
+
+  .target-grid,
+  .price-grid,
+  .process-grid,
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-item {
+    height: 420px;
+  }
+
+  .before-card-title {
+    font-size: 26px;
+  }
+
+  .floating {
+    right: 18px;
+    top: auto;
+    bottom: 24px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">L</div>
+    <strong>리프팅 시술 상담</strong>
+  </div>
+
+  <nav class="nav">
+    <a href="#service">시술 소개</a>
+    <a href="#target">대상 고객</a>
+    <a href="#before">전후사진</a>
+    <a href="#price">가격·이벤트</a>
+    <a href="#form">상담 신청</a>
+  </nav>
+
+  <div class="header-buttons">
+    <button class="outline">변화 예시 보기</button>
+    <button class="white-btn">빠른 상담</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-bottom">
+    <div class="hero-info">
+      <h3>얼굴 라인·탄력 상담</h3>
+      <p>얼굴 라인과 피부 탄력을 함께 보고 개인별 시술 방향을 설명합니다.</p>
+    </div>
+
+    <div class="hero-info">
+      <h3>맞춤 시술 안내</h3>
+      <p>단일 시술보다 일정, 예산, 회복 계획까지 고려한 복합 상담을 제공합니다.</p>
+    </div>
+
+    <div class="hero-info">
+      <h3>충분한 사전 상담</h3>
+      <p>실제 결과와 회복 기간은 개인차가 있으므로 충분한 상담 후 결정합니다.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="target">
+  <div class="container">
+    <div class="section-title">
+      <span>TARGET</span>
+      <h2>이런 고민이 있다면 상담이 필요합니다</h2>
+      <p>리프팅은 얼굴형, 피부 탄력, 지방량, 회복 가능 시간을 함께 고려해야 합니다.</p>
+    </div>
+
+    <div class="target-grid">
+      <div class="target-card">
+        <b>01</b>
+        <h3>턱선이 흐려진 경우</h3>
+        <p>예전보다 얼굴 라인이 무너져 보이거나 턱선이 둔해진 경우 상담이 필요합니다.</p>
+      </div>
+
+      <div class="target-card">
+        <b>02</b>
+        <h3>볼 처짐이 고민인 경우</h3>
+        <p>볼살이 아래로 내려와 팔자·마리오넷 라인이 도드라져 보이는 경우에 적합합니다.</p>
+      </div>
+
+      <div class="target-card">
+        <b>03</b>
+        <h3>자연스러운 변화를 원하는 경우</h3>
+        <p>과한 변화보다 본래 인상을 유지하면서 정돈된 얼굴 라인을 원할 때 상담합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="before-after-section" id="before">
+  <div class="container">
+    <div class="section-title">
+      <span>BEFORE & AFTER</span>
+      <h2>전후사진 형식 변화 예시</h2>
+      <p>상담 이해를 돕는 예시 영역입니다. 실제 병원 전후사진으로 교체해서 사용하면 됩니다.</p>
+    </div>
+
+    <div class="before-tabs">
+      <button class="active">전체</button>
+      <button>턱선 리프팅</button>
+      <button>볼 탄력</button>
+      <button>이중턱</button>
+      <button>복합 디자인</button>
+    </div>
+
+    <div class="before-card">
+      <div class="before-card-title">볼 탄력 중심 상담</div>
+
+      <div class="compare-grid">
+        <div class="compare-item">
+          <span class="label">Before</span>
+          <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1200&q=80" alt="before">
+        </div>
+
+        <div class="compare-item">
+          <span class="label">After</span>
+          <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1200&q=80" alt="after">
+        </div>
+      </div>
+
+      <div class="compare-desc">
+        피부 탄력, 볼 처짐, 얼굴 라인 개선을 목표로 상담하는 영역 예시입니다.
+        실제 병원에서는 여기 전후사진과 시술 설명이 들어갑니다.
+        <div class="notice">
+          ※ 본 영역은 예시입니다. 실제 결과와 유지 기간은 개인의 피부 상태, 시술 방식, 회복 과정에 따라 달라질 수 있습니다.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="price">
+  <div class="container">
+    <div class="section-title">
+      <span>PRICE</span>
+      <h2>가격·이벤트 안내</h2>
+      <p>시술 범위와 장비, 횟수에 따라 금액이 달라질 수 있습니다.</p>
+    </div>
+
+    <div class="price-grid">
+      <div class="price-card">
+        <h3>기본 리프팅 상담</h3>
+        <div class="price">문의</div>
+        <p>얼굴 라인, 피부 탄력, 고민 부위 중심의 기본 상담입니다.</p>
+      </div>
+
+      <div class="price-card featured">
+        <h3>인기 리프팅 패키지</h3>
+        <div class="price">이벤트가</div>
+        <p>턱선, 볼 처짐, 이중턱을 함께 고려하는 대표 상담 패키지입니다.</p>
+      </div>
+
+      <div class="price-card">
+        <h3>복합 시술 상담</h3>
+        <div class="price">맞춤 견적</div>
+        <p>리프팅과 스킨부스터, 탄력 관리 등을 함께 고려하는 상담입니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section process-section">
+  <div class="container">
+    <div class="section-title">
+      <span>PROCESS</span>
+      <h2>상담 진행 절차</h2>
+      <p>빠르게 문의를 받고 자연스럽게 내원 상담으로 연결되는 흐름입니다.</p>
+    </div>
+
+    <div class="process-grid">
+      <div class="step">
+        <b>01</b>
+        <h3>상담 신청</h3>
+        <p>이름, 연락처, 고민 부위를 남깁니다.</p>
+      </div>
+
+      <div class="step">
+        <b>02</b>
+        <h3>기본 확인</h3>
+        <p>피부 상태와 원하는 변화를 확인합니다.</p>
+      </div>
+
+      <div class="step">
+        <b>03</b>
+        <h3>시술 방향 안내</h3>
+        <p>예산과 회복기간을 고려해 안내합니다.</p>
+      </div>
+
+      <div class="step">
+        <b>04</b>
+        <h3>예약 확정</h3>
+        <p>가능 일정과 준비사항을 안내합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section form-section" id="form">
+  <div class="container">
+    <div class="section-title">
+      <span>CONSULTATION</span>
+      <h2>리프팅 상담 신청</h2>
+      <p>상담 내용을 남겨주시면 확인 후 연락드립니다.</p>
+    </div>
+
+    <form class="form-box">
+      <label>성함</label>
+      <input type="text" placeholder="성함을 입력해 주세요">
+
+      <label>연락처</label>
+      <input type="text" placeholder="연락 가능한 번호를 입력해 주세요">
+
+      <label>고민 부위</label>
+      <select>
+        <option>턱선</option>
+        <option>볼 처짐</option>
+        <option>이중턱</option>
+        <option>전체 얼굴 라인</option>
+      </select>
+
+      <label>문의 내용</label>
+      <textarea placeholder="원하는 변화, 예산, 희망 일정을 남겨 주세요"></textarea>
+
+      <button type="submit" class="submit">상담 신청하기</button>
+    </form>
+  </div>
+</section>
+
+<div class="floating">
+  <button class="float-btn kakao">카카오<br>상담</button>
+  <button class="float-btn phone">전화<br>문의</button>
+</div>
+
+<footer class="footer">
+  리프팅 시술 상담 랜딩페이지<br>
+  시술 소개 · 대상 고객 · 전후사진 · 가격 이벤트 · 상담 신청
+</footer>
+
+</body>
+</html>
