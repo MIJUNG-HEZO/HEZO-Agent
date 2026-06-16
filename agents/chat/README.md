@@ -31,6 +31,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - DynamoDB chat state/checkpoint 저장소 스켈레톤
 - S3 artifact storage adapter 스켈레톤
 - Bedrock Claude invocation adapter 스켈레톤
+- Bedrock Guardrails ApplyGuardrail adapter 스켈레톤
 - 로컬 smoke test
 
 제외:
@@ -58,6 +59,7 @@ domain_selection
 -> chat_state_checkpoint
 -> s3_artifact_storage
 -> bedrock_claude_invocation
+-> bedrock_guardrails_apply
 ```
 
 ## Rule-based Logic and Guardrails
@@ -481,6 +483,58 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 - 실제 Bedrock Runtime, boto3 client, retry/backoff, streaming은 후속 이슈에서 처리
 
 이번 범위에서는 실제 AWS Bedrock 호출, model permission 설정, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## Bedrock Guardrails ApplyGuardrail
+
+`bedrock_guardrails_adapter.py`는 Bedrock Guardrails `ApplyGuardrail` 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+
+검사 대상:
+
+- `user_input`
+- `p2_markdown`
+- `contract_draft`
+- `llm_output`
+
+입력 기준:
+
+- `target`
+- `content`
+- `source`
+- `guardrail_id`
+- `guardrail_version`
+- `metadata`
+
+출력 기준:
+
+```json
+{
+  "status": "succeeded",
+  "target": "llm_output",
+  "source": "OUTPUT",
+  "action": "NONE",
+  "store_allowed": true,
+  "masked_output": null,
+  "reasons": ["guardrail_passed"],
+  "assessments": [
+    {
+      "policy": "mock_guardrail",
+      "reason": "guardrail_passed",
+      "blocked": false
+    }
+  ],
+  "latency_ms": 18
+}
+```
+
+검사 기준:
+
+- safe content는 `action=NONE`, `store_allowed=true`
+- prompt injection 의심 문구는 `GUARDRAIL_INTERVENED`
+- 이메일/전화번호/주민등록번호 형태의 PII 의심 패턴은 `GUARDRAIL_INTERVENED`
+- guardrail id/version 누락, 빈 content는 실패 결과로 정규화
+- 기존 `storage_guardrails.py`와 호환되도록 `action`, `store_allowed`, `reasons` 구조 유지
+
+이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail 생성/정책 설정, boto3 client 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 
