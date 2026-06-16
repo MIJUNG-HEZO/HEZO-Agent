@@ -31,6 +31,18 @@ from contract_quality_check import ContractQualityInput, check_contract_quality
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
+from s3_artifact_store import (
+    ArtifactPayload,
+    CHAT_TRANSCRIPTS_BUCKET,
+    CONTRACTS_BUCKET,
+    InMemoryS3ArtifactStore,
+    P2_MARKDOWNS_BUCKET,
+    chat_transcript_key,
+    contract_draft_key,
+    contract_final_key,
+    guardrail_report_key,
+    p2_markdown_key,
+)
 from slot_answer_state import SlotAnswerInput, apply_slot_answer
 from storage_guardrails import StorageGuardrailInput, apply_storage_guardrails
 
@@ -47,6 +59,7 @@ REQUIRED_STAGES = [
     "contract_quality_check",
     "storage_guardrails",
     "chat_state_checkpoint",
+    "s3_artifact_storage",
 ]
 
 REQUIRED_REVIEW_FIELDS = [
@@ -109,6 +122,15 @@ REQUIRED_CHECKPOINT_FIELDS = [
     "message_sk",
     "checkpoint_sk",
     "latest_checkpoint",
+]
+
+REQUIRED_S3_ARTIFACT_FIELDS = [
+    "transcript_bucket",
+    "p2_markdown_bucket",
+    "contract_bucket",
+    "transcript_key",
+    "contract_draft_key",
+    "contract_final_key",
 ]
 
 
@@ -618,6 +640,129 @@ def _validate_chat_state_store_cases() -> list[str]:
     return errors
 
 
+def _validate_s3_artifact_store_cases() -> list[str]:
+    errors: list[str] = []
+    store = InMemoryS3ArtifactStore()
+
+    if chat_transcript_key("session_001", 1) != "sessions/session_001/transcripts/000001.json":
+        errors.append("chat transcript key 생성 규칙이 올바르지 않습니다.")
+    if p2_markdown_key("tax_accounting", "v001") != (
+        "domains/tax_accounting/question_guides/v001.md"
+    ):
+        errors.append("P2 markdown key 생성 규칙이 올바르지 않습니다.")
+    if contract_draft_key("site_001", 1) != "sites/site_001/contracts/draft/000001.json":
+        errors.append("contract draft key 생성 규칙이 올바르지 않습니다.")
+    if contract_final_key("site_001") != "sites/site_001/contract_final.json":
+        errors.append("contract final key 생성 규칙이 올바르지 않습니다.")
+    if guardrail_report_key("session_001", "contract_draft", "2026-06-16T10:00:01Z") != (
+        "sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json"
+    ):
+        errors.append("guardrail report key 생성 규칙이 올바르지 않습니다.")
+
+    transcript_ref = store.build_artifact_ref(
+        "chat_transcript",
+        session_id="session_001",
+        version=1,
+    )
+    if transcript_ref.bucket != CHAT_TRANSCRIPTS_BUCKET:
+        errors.append("chat transcript bucket이 올바르지 않습니다.")
+    store.put_artifact(
+        ArtifactPayload(
+            ref=transcript_ref,
+            body={"messages": [{"role": "user", "content": "안녕하세요"}]},
+        )
+    )
+    if "messages" not in store.get_artifact(transcript_ref):
+        errors.append("chat transcript artifact를 저장 후 조회할 수 있어야 합니다.")
+
+    p2_ref = store.build_artifact_ref(
+        "p2_markdown",
+        domain="tax_accounting",
+        version="v001",
+    )
+    if p2_ref.bucket != P2_MARKDOWNS_BUCKET:
+        errors.append("P2 markdown bucket이 올바르지 않습니다.")
+    store.put_artifact(ArtifactPayload(ref=p2_ref, body="# 세무/회계 질문 가이드"))
+    if "# 세무/회계 질문 가이드" != store.get_artifact(p2_ref):
+        errors.append("P2 markdown artifact를 저장 후 조회할 수 있어야 합니다.")
+
+    draft_ref = store.build_artifact_ref("contract_draft", site_id="site_001", version=1)
+    if draft_ref.bucket != CONTRACTS_BUCKET:
+        errors.append("contract draft bucket이 올바르지 않습니다.")
+    store.put_artifact(
+        ArtifactPayload(
+            ref=draft_ref,
+            body={"contract_version": 1, "site_id": "site_001"},
+        )
+    )
+    if "contract_version" not in store.get_artifact(draft_ref):
+        errors.append("contract draft artifact를 저장 후 조회할 수 있어야 합니다.")
+
+    final_ref = store.build_artifact_ref("contract_final", site_id="site_001")
+    store.put_artifact(
+        ArtifactPayload(
+            ref=final_ref,
+            body={"schema_version": "0.1.0", "ids": {"site_id": "site_001"}},
+        )
+    )
+    if final_ref.key != "sites/site_001/contract_final.json":
+        errors.append("contract final key가 올바르지 않습니다.")
+
+    guardrail_ref = store.build_artifact_ref(
+        "guardrail_report",
+        session_id="session_001",
+        target="contract_draft",
+        timestamp="2026-06-16T10:00:01Z",
+    )
+    store.put_artifact(
+        ArtifactPayload(
+            ref=guardrail_ref,
+            body={"action": "NONE", "store_allowed": True},
+        )
+    )
+    if "store_allowed" not in store.get_artifact(guardrail_ref):
+        errors.append("guardrail report artifact를 저장 후 조회할 수 있어야 합니다.")
+
+    invalid_cases = [
+        ("empty_session_id", lambda: chat_transcript_key(" ", 1), "session_id_missing"),
+        (
+            "invalid_transcript_version",
+            lambda: chat_transcript_key("session_001", 0),
+            "transcript_version_must_be_positive",
+        ),
+        ("empty_domain", lambda: p2_markdown_key(" ", "v001"), "domain_missing"),
+        ("empty_site_id", lambda: contract_final_key(" "), "site_id_missing"),
+        (
+            "guardrail_blocked",
+            lambda: store.put_artifact(
+                ArtifactPayload(
+                    ref=draft_ref,
+                    body={"contract_version": 1},
+                    guardrail_action="GUARDRAIL_INTERVENED",
+                    store_allowed=False,
+                )
+            ),
+            "artifact_store_blocked_by_guardrail",
+        ),
+        (
+            "empty_body",
+            lambda: store.put_artifact(ArtifactPayload(ref=draft_ref, body=" ")),
+            "artifact_body_empty",
+        ),
+    ]
+
+    for name, action, expected_error in invalid_cases:
+        try:
+            action()
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
 def _validate_slot_answer_cases() -> list[str]:
     errors: list[str] = []
 
@@ -905,7 +1050,20 @@ def main() -> None:
     else:
         print("  [OK] chat state checkpoint 필드 확인")
 
-    print("\n[10] P2 markdown request 케이스 검증")
+    print("\n[10] S3 artifact storage 필드 검증")
+    s3_artifact_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_S3_ARTIFACT_FIELDS,
+        "s3 artifact field",
+    )
+    if s3_artifact_field_errors:
+        errors.extend(s3_artifact_field_errors)
+        for error in s3_artifact_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] S3 artifact storage 필드 확인")
+
+    print("\n[11] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -914,7 +1072,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[11] proactive questioning 케이스 검증")
+    print("\n[12] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -923,7 +1081,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[12] slot answer state 케이스 검증")
+    print("\n[13] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -932,7 +1090,7 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[13] contract compile 케이스 검증")
+    print("\n[14] contract compile 케이스 검증")
     contract_case_errors = _validate_contract_cases()
     if contract_case_errors:
         errors.extend(contract_case_errors)
@@ -941,7 +1099,7 @@ def main() -> None:
     else:
         print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
 
-    print("\n[14] contract quality check 케이스 검증")
+    print("\n[15] contract quality check 케이스 검증")
     quality_case_errors = _validate_quality_cases()
     if quality_case_errors:
         errors.extend(quality_case_errors)
@@ -950,7 +1108,7 @@ def main() -> None:
     else:
         print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
 
-    print("\n[15] storage guardrails 케이스 검증")
+    print("\n[16] storage guardrails 케이스 검증")
     guardrail_case_errors = _validate_guardrail_cases()
     if guardrail_case_errors:
         errors.extend(guardrail_case_errors)
@@ -959,7 +1117,7 @@ def main() -> None:
     else:
         print("  [OK] 저장 허용 / injection 차단 / PII 차단 / dict 직렬화 케이스 확인")
 
-    print("\n[16] chat state checkpoint 케이스 검증")
+    print("\n[17] chat state checkpoint 케이스 검증")
     checkpoint_case_errors = _validate_chat_state_store_cases()
     if checkpoint_case_errors:
         errors.extend(checkpoint_case_errors)
@@ -968,7 +1126,16 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / metadata / message / checkpoint / guardrail 저장 조회 확인")
 
-    print("\n[17] review policy mock 값 검증")
+    print("\n[18] S3 artifact storage 케이스 검증")
+    s3_artifact_case_errors = _validate_s3_artifact_store_cases()
+    if s3_artifact_case_errors:
+        errors.extend(s3_artifact_case_errors)
+        for error in s3_artifact_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] key 생성 / transcript / P2 markdown / contract / guardrail 저장 조회 확인")
+
+    print("\n[19] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -977,7 +1144,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[18] P2 markdown review 케이스 검증")
+    print("\n[20] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

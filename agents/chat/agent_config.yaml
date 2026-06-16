@@ -88,6 +88,16 @@ Stages:
       - checkpoint_sk
       - latest_checkpoint
 
+  - name: s3_artifact_storage
+    description: S3 bucket/key 기준으로 P2 markdown, transcript, Contract artifact 저장 경계를 정의한다.
+    required_fields:
+      - transcript_bucket
+      - p2_markdown_bucket
+      - contract_bucket
+      - transcript_key
+      - contract_draft_key
+      - contract_final_key
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -207,11 +217,20 @@ MockState:
       version: 1
       state_ref: in_memory
     guardrail_sk: GUARDRAIL#2026-06-16T10:00:01Z#contract_draft
+  s3_artifact_storage:
+    transcript_bucket: dev-hezo-chat-transcripts
+    p2_markdown_bucket: dev-hezo-p2-markdowns
+    contract_bucket: dev-hezo-p4-contracts
+    transcript_key: sessions/session_001/transcripts/000001.json
+    p2_markdown_key: domains/tax_accounting/question_guides/v001.md
+    contract_draft_key: sites/site_001/contracts/draft/000001.json
+    contract_final_key: sites/site_001/contract_final.json
+    guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
 
 OutOfScope:
   - LangGraph graph implementation
   - Bedrock invocation
   - Bedrock Guardrails ApplyGuardrail integration
   - Real DynamoDB custom checkpointer
-  - S3 physical bucket integration
+  - Real S3 physical bucket integration
   - AgentCore Runtime deployment
