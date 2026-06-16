@@ -17,6 +17,7 @@ import sys
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
+from slot_answer_state import SlotAnswerInput, apply_slot_answer
 
 
 CONFIG_FILE = pathlib.Path(__file__).parent / "agent_config.yaml"
@@ -52,6 +53,14 @@ REQUIRED_QUESTION_FIELDS = [
     "priority",
     "source",
     "fallback",
+]
+
+REQUIRED_SLOT_ANSWER_FIELDS = [
+    "answer_status",
+    "answered_slot",
+    "known_answers",
+    "missing_slots",
+    "reasons",
 ]
 
 
@@ -172,6 +181,19 @@ def _sample_question_input(**overrides: object) -> ProactiveQuestionInput:
     return ProactiveQuestionInput(**data)
 
 
+def _sample_slot_answer_input(**overrides: object) -> SlotAnswerInput:
+    request_input = _sample_request_input()
+    data = {
+        "slot_registry": request_input.slot_registry,
+        "known_answers": request_input.known_answers,
+        "missing_slots": request_input.missing_slots,
+        "answered_slot": "core_services",
+        "answer": "기장 대리, 종합소득세 신고, 법인세 신고",
+    }
+    data.update(overrides)
+    return SlotAnswerInput(**data)
+
+
 def _validate_request_cases() -> list[str]:
     errors: list[str] = []
 
@@ -205,6 +227,53 @@ def _validate_request_cases() -> list[str]:
                 errors.append(f"{name}: error={error!s}, expected={expected_error}")
         else:
             errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
+def _validate_slot_answer_cases() -> list[str]:
+    errors: list[str] = []
+
+    accepted = apply_slot_answer(_sample_slot_answer_input())
+    accepted_dict = accepted.to_dict()
+    if accepted_dict["answer_status"] != "accepted":
+        errors.append("정상 답변은 accepted 상태여야 합니다.")
+    if accepted_dict["known_answers"].get("core_services") != "기장 대리, 종합소득세 신고, 법인세 신고":
+        errors.append("정상 답변은 known_answers에 반영되어야 합니다.")
+    if "core_services" in accepted_dict["missing_slots"]:
+        errors.append("답변된 slot은 missing_slots에서 제거되어야 합니다.")
+
+    updated = apply_slot_answer(
+        _sample_slot_answer_input(
+            answered_slot="business_name",
+            answer="새한 세무회계",
+        )
+    )
+    if updated.known_answers.get("business_name") != "새한 세무회계":
+        errors.append("이미 답변된 slot도 유효한 새 답변으로 업데이트되어야 합니다.")
+
+    structured = apply_slot_answer(
+        _sample_slot_answer_input(
+            answered_slot="core_services",
+            answer=["기장 대리", "종합소득세 신고"],
+        )
+    )
+    if structured.answer_status != "accepted":
+        errors.append("비어 있지 않은 list 답변은 accepted 상태여야 합니다.")
+
+    rejected_cases = [
+        ("empty_answer", _sample_slot_answer_input(answer=" "), "answer_empty"),
+        ("unknown_slot", _sample_slot_answer_input(answered_slot="unknown"), "unknown_slot"),
+        ("missing_slot", _sample_slot_answer_input(answered_slot=""), "answered_slot_missing"),
+        ("empty_registry", _sample_slot_answer_input(slot_registry={}), "slot_registry_empty"),
+        ("empty_list_answer", _sample_slot_answer_input(answer=[]), "answer_empty"),
+    ]
+    for name, answer_input, expected_reason in rejected_cases:
+        result = apply_slot_answer(answer_input)
+        if result.answer_status != "rejected":
+            errors.append(f"{name}: rejected 상태여야 합니다.")
+        if result.reasons != (expected_reason,):
+            errors.append(f"{name}: reasons={result.reasons!r}, expected={(expected_reason,)!r}")
 
     return errors
 
@@ -384,7 +453,20 @@ def main() -> None:
     else:
         print("  [OK] proactive questioning 필드 확인")
 
-    print("\n[5] P2 markdown request 케이스 검증")
+    print("\n[5] slot answer state 필드 검증")
+    slot_answer_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_SLOT_ANSWER_FIELDS,
+        "slot answer field",
+    )
+    if slot_answer_field_errors:
+        errors.extend(slot_answer_field_errors)
+        for error in slot_answer_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] slot answer state 필드 확인")
+
+    print("\n[6] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -393,7 +475,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[6] proactive questioning 케이스 검증")
+    print("\n[7] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -402,7 +484,16 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[7] review policy mock 값 검증")
+    print("\n[8] slot answer state 케이스 검증")
+    slot_answer_case_errors = _validate_slot_answer_cases()
+    if slot_answer_case_errors:
+        errors.extend(slot_answer_case_errors)
+        for error in slot_answer_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
+
+    print("\n[9] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -411,7 +502,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[8] P2 markdown review 케이스 검증")
+    print("\n[10] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

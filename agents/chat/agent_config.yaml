@@ -44,6 +44,15 @@ Stages:
       - source
       - fallback
 
+  - name: slot_answer_state
+    description: 사용자 답변을 known_answers에 반영하고 missing_slots를 갱신한다.
+    required_fields:
+      - answer_status
+      - answered_slot
+      - known_answers
+      - missing_slots
+      - reasons
+
   - name: contract_compile
     description: 사용자 응답과 보완 정보를 G slot-based Contract JSON draft로 조립한다.
 
@@ -99,6 +108,16 @@ MockState:
         priority: 2
         source: p2_markdown
         fallback: false
+  slot_answer_state:
+    answered_slot: core_services
+    answer_status: accepted
+    known_answers:
+      business_name: 한빛 세무회계
+      core_services: 기장 대리, 종합소득세 신고, 법인세 신고
+    missing_slots:
+      - contact_method
+    reasons:
+      - answer_applied
   contract:
     status: draft
     quality_status: needs_enrichment
