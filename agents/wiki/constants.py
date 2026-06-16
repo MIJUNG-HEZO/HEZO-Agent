@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 
 # ─── 환경변수 (실제 키 값은 절대 코드/깃에 두지 않음 — 프로필/환경변수만 참조) ──
-WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki-dev")
+WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki")
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "hezo-p2")
 
