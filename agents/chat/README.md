@@ -28,6 +28,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Contract JSON draft compile 순수 로직
 - Contract draft quality check 순수 로직
 - 저장 전 Guardrails adapter 스켈레톤
+- DynamoDB chat state/checkpoint 저장소 스켈레톤
 - 로컬 smoke test
 
 제외:
@@ -37,7 +38,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 실제 P2 API 호출
 - 실제 사용자 대화 API 라우터
 - 실제 Bedrock Guardrails 호출
-- DynamoDB custom checkpointer
+- 실제 DynamoDB custom checkpointer
 - S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
 
@@ -52,6 +53,7 @@ domain_selection
 -> contract_compile
 -> contract_quality_check
 -> storage_guardrails
+-> chat_state_checkpoint
 ```
 
 ## Rule-based Logic and Guardrails
@@ -328,6 +330,54 @@ domain_selection
 - dict 형태의 Contract draft는 JSON string으로 직렬화해 검사
 
 이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail id/version env 설정, S3 저장 adapter 연결을 포함하지 않습니다.
+
+## Chat State Checkpoint Store
+
+`chat_state_store.py`는 DynamoDB single-table 설계를 기준으로 세션 상태와 체크포인트 저장 경계를 정의하는 adapter 스켈레톤입니다.
+
+저장 대상:
+
+- session metadata
+- chat message
+- checkpoint state
+- guardrail summary
+- contract draft reference/state
+
+키 설계:
+
+```text
+PK = SESSION#{session_id}
+SK = META
+SK = MESSAGE#{created_at}#{message_id}
+SK = CHECKPOINT#{stage}#{version}
+SK = CONTRACT#{version}
+SK = GUARDRAIL#{created_at}#{target}
+```
+
+출력 기준:
+
+```json
+{
+  "pk": "SESSION#session_001",
+  "sk": "CHECKPOINT#contract_quality_check#000001",
+  "item_type": "checkpoint",
+  "data": {
+    "session_id": "session_001",
+    "stage": "contract_quality_check",
+    "version": 1
+  }
+}
+```
+
+저장 기준:
+
+- DynamoDB PK/SK 생성 규칙을 코드 상수로 고정
+- `save_session_metadata`, `append_message`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
+- 로컬 smoke test에서는 `InMemoryChatStateStore`로 저장/조회 검증
+- 실제 DynamoDB table, boto3 client, IAM, TTL, GSI 설정은 후속 infra 이슈에서 처리
+- LangGraph custom checkpointer 연결은 후속 이슈에서 처리
+
+이번 범위에서는 실제 AWS DynamoDB 호출, table 생성, AgentCore Runtime 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 
