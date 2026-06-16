@@ -292,15 +292,21 @@ def run_generation(site_id: str) -> dict:
 # AgentCore Runtime HTTP 핸들러
 # =============================================================================
 
-@app.post("/invoke")
-async def invoke(request: Request) -> JSONResponse:
-    """AgentCore Runtime 진입점"""
-    payload = await request.json()
+async def _handle_invoke(request: Request) -> JSONResponse:
+    """AgentCore Runtime 공통 핸들러"""
+    body = await request.body()
+    logger.info("요청 경로: %s %s (body_len=%d)", request.method, request.url.path, len(body))
+
+    try:
+        payload = __import__("json").loads(body) if body else {}
+    except Exception:
+        payload = {}
+
     session_id = payload.get("sessionId", "")
     input_text = payload.get("inputText", "")
     session_attrs = payload.get("sessionAttributes", {})
 
-    logger.info("invoke 호출 — sessionId=%s, inputText=%r", session_id, input_text[:120])
+    logger.info("invoke 호출 — sessionId=%s, inputText=%r", session_id, input_text[:120] if input_text else "")
 
     try:
         site_id = parse_site_id(input_text, session_attrs)
@@ -316,13 +322,39 @@ async def invoke(request: Request) -> JSONResponse:
 
     except GuardrailViolation as exc:
         logger.error("가드레일 위반: %s — %s", exc.code, exc.detail)
-        return JSONResponse(
-            {"error": exc.code, "message": exc.detail},
-            status_code=422,
-        )
+        return JSONResponse({"error": exc.code, "message": exc.detail}, status_code=422)
     except Exception as exc:
         logger.exception("생성 에이전트 오류: %s", exc)
         return JSONResponse({"error": "GENERATION_ERROR", "message": str(exc)}, status_code=500)
+
+
+# AgentCore Runtime이 호출하는 경로 후보 모두 등록
+@app.post("/invoke")
+async def invoke(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /invoke")
+    return await _handle_invoke(request)
+
+
+@app.post("/invocations")
+async def invocations(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /invocations")
+    return await _handle_invoke(request)
+
+
+@app.post("/")
+async def invoke_root(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /")
+    return await _handle_invoke(request)
+
+
+# AgentCore Runtime 디버그용: 어떤 경로가 호출됐는지 확인
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def catch_all(path: str, request: Request) -> JSONResponse:
+    body = await request.body()
+    logger.warning("알 수 없는 경로: %s %s (body_len=%d)", request.method, request.url.path, len(body))
+    if request.method == "POST":
+        return await _handle_invoke(request)
+    return JSONResponse({"path": path, "method": request.method}, status_code=200)
 
 
 @app.get("/health")
