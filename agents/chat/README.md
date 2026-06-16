@@ -26,6 +26,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 적극적 질의 후보 생성 순수 로직
 - 사용자 답변 slot state 반영 순수 로직
 - Contract JSON draft compile 순수 로직
+- Contract draft quality check 순수 로직
 - 로컬 smoke test
 
 제외:
@@ -249,6 +250,40 @@ domain_selection
 - 필수 slot이 남아 있으면 `quality_status=needs_enrichment`
 
 이번 범위에서는 Contract JSON 최종 schema validation, P4 API/S3 전달, LangGraph node 연결, Bedrock/LLM 보완을 포함하지 않습니다.
+
+## Contract Quality Check
+
+`contract_quality_check.py`는 Contract draft가 preview 단계로 넘어갈 수 있는지 로컬 규칙으로 판정합니다.
+
+입력 기준:
+
+- Contract draft dict
+- `required_slot_threshold`
+- `minimum_filled_slots`
+
+출력 기준:
+
+```json
+{
+  "quality_status": "needs_enrichment",
+  "preview_ready": false,
+  "generation_ready": false,
+  "quality_score": 0.67,
+  "missing_required_slots": ["contact_method"],
+  "reasons": ["required_slots_missing"]
+}
+```
+
+판정 기준:
+
+- 필수 slot이 누락되면 `quality_status=needs_enrichment`
+- 채워진 slot 개수가 `minimum_filled_slots`보다 적으면 `needs_enrichment`
+- 필수 slot 충족률이 threshold 이상이고 최소 slot 개수를 만족하면 `ready_for_preview`
+- preview 가능 상태일 때만 `preview_ready=true`
+- `generation_ready`는 schema validation/P4 adapter 이후 단계에서만 true로 전환
+- 공백 문자열, 빈 list, 빈 dict 값은 미충족으로 처리
+
+이번 범위에서는 JSON Schema validation, P4 API/S3 전달, LangGraph node 연결, Bedrock/LLM 보완을 포함하지 않습니다.
 
 ## Local Smoke Test
 

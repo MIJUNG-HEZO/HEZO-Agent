@@ -15,6 +15,7 @@ import re
 import sys
 
 from contract_compile import ContractDraftInput, compile_contract_draft
+from contract_quality_check import ContractQualityInput, check_contract_quality
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
@@ -71,6 +72,13 @@ REQUIRED_CONTRACT_FIELDS = [
     "contract_version",
     "missing_required_slots",
     "filled_slots",
+]
+
+REQUIRED_QUALITY_FIELDS = [
+    "preview_ready",
+    "generation_ready",
+    "quality_score",
+    "reasons",
 ]
 
 
@@ -314,6 +322,83 @@ def _validate_contract_cases() -> list[str]:
     for name, compile_input, expected_error in invalid_cases:
         try:
             compile_contract_draft(compile_input)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
+def _validate_quality_cases() -> list[str]:
+    errors: list[str] = []
+
+    ready_draft = compile_contract_draft(_sample_contract_input()).draft
+    ready = check_contract_quality(ContractQualityInput(draft=ready_draft))
+    ready_dict = ready.to_dict()
+    if ready_dict["quality_status"] != "ready_for_preview":
+        errors.append("품질 기준 충족 시 ready_for_preview 상태여야 합니다.")
+    if ready_dict["preview_ready"] is not True:
+        errors.append("품질 기준 충족 시 preview_ready=true여야 합니다.")
+    if ready_dict["generation_ready"] is not False:
+        errors.append("generation_ready는 이번 단계에서 false여야 합니다.")
+    if ready_dict["quality_score"] != 1.0:
+        errors.append("필수 slot이 모두 채워지면 quality_score=1.0이어야 합니다.")
+
+    missing_required_draft = compile_contract_draft(
+        _sample_contract_input(
+            known_answers={"business_name": "한빛 세무회계"},
+            missing_slots=("core_services", "contact_method"),
+        )
+    ).draft
+    missing_required = check_contract_quality(ContractQualityInput(draft=missing_required_draft))
+    if missing_required.quality_status != "needs_enrichment":
+        errors.append("필수 slot 누락 시 needs_enrichment 상태여야 합니다.")
+    if missing_required.missing_required_slots != ("core_services", "contact_method"):
+        errors.append("필수 slot 누락 목록이 quality result에 포함되어야 합니다.")
+    if "required_slots_missing" not in missing_required.reasons:
+        errors.append("필수 slot 누락 사유가 reasons에 포함되어야 합니다.")
+
+    minimum_not_met = check_contract_quality(
+        ContractQualityInput(
+            draft=ready_draft,
+            required_slot_threshold=1.0,
+            minimum_filled_slots=4,
+        )
+    )
+    if minimum_not_met.quality_status != "needs_enrichment":
+        errors.append("minimum_filled_slots 미달 시 needs_enrichment 상태여야 합니다.")
+    if "minimum_filled_slots_not_met" not in minimum_not_met.reasons:
+        errors.append("minimum_filled_slots 미달 사유가 reasons에 포함되어야 합니다.")
+
+    blank_value_draft = compile_contract_draft(
+        _sample_contract_input(known_answers={
+            "business_name": "한빛 세무회계",
+            "core_services": " ",
+            "contact_method": {},
+        })
+    ).draft
+    blank_value = check_contract_quality(ContractQualityInput(draft=blank_value_draft))
+    if blank_value.missing_required_slots != ("core_services", "contact_method"):
+        errors.append("공백 문자열/빈 dict 값은 미충족으로 처리되어야 합니다.")
+
+    invalid_cases = [
+        ("empty_slots", ContractQualityInput(draft={"slots": {}}), "draft_slots_empty"),
+        (
+            "invalid_threshold",
+            ContractQualityInput(draft=ready_draft, required_slot_threshold=1.2),
+            "required_slot_threshold_out_of_range",
+        ),
+        (
+            "invalid_minimum",
+            ContractQualityInput(draft=ready_draft, minimum_filled_slots=0),
+            "minimum_filled_slots_must_be_positive",
+        ),
+    ]
+    for name, quality_input, expected_error in invalid_cases:
+        try:
+            check_contract_quality(quality_input)
         except ValueError as error:
             if str(error) != expected_error:
                 errors.append(f"{name}: error={error!s}, expected={expected_error}")
@@ -571,7 +656,20 @@ def main() -> None:
     else:
         print("  [OK] contract compile 필드 확인")
 
-    print("\n[7] P2 markdown request 케이스 검증")
+    print("\n[7] contract quality check 필드 검증")
+    quality_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_QUALITY_FIELDS,
+        "quality field",
+    )
+    if quality_field_errors:
+        errors.extend(quality_field_errors)
+        for error in quality_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] contract quality check 필드 확인")
+
+    print("\n[8] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -580,7 +678,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[8] proactive questioning 케이스 검증")
+    print("\n[9] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -589,7 +687,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[9] slot answer state 케이스 검증")
+    print("\n[10] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -598,7 +696,7 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[10] contract compile 케이스 검증")
+    print("\n[11] contract compile 케이스 검증")
     contract_case_errors = _validate_contract_cases()
     if contract_case_errors:
         errors.extend(contract_case_errors)
@@ -607,7 +705,16 @@ def main() -> None:
     else:
         print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
 
-    print("\n[11] review policy mock 값 검증")
+    print("\n[12] contract quality check 케이스 검증")
+    quality_case_errors = _validate_quality_cases()
+    if quality_case_errors:
+        errors.extend(quality_case_errors)
+        for error in quality_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
+
+    print("\n[13] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -616,7 +723,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[12] P2 markdown review 케이스 검증")
+    print("\n[14] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)
