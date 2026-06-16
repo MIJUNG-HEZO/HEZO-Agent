@@ -64,6 +64,12 @@ Stages:
 
   - name: contract_quality_check
     description: Contract JSON이 preview/generation 소비 조건에 충분한지 판단한다.
+    required_fields:
+      - quality_status
+      - preview_ready
+      - generation_ready
+      - quality_score
+      - reasons
 
 MockState:
   session_id: session_001
@@ -156,6 +162,15 @@ MockState:
           required: true
           value:
           filled: false
+    quality_check:
+      quality_status: needs_enrichment
+      preview_ready: false
+      generation_ready: false
+      quality_score: 0.67
+      reasons:
+        - required_slots_missing
+      missing_required_slots:
+        - contact_method
     p4_s3_key:
 
 OutOfScope:
