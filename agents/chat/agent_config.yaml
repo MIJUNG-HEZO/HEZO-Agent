@@ -79,6 +79,15 @@ Stages:
       - store_allowed
       - guardrail_reasons
 
+  - name: chat_state_checkpoint
+    description: DynamoDB single-table 기준으로 세션 상태와 체크포인트 저장 경계를 정의한다.
+    required_fields:
+      - session_pk
+      - metadata_sk
+      - message_sk
+      - checkpoint_sk
+      - latest_checkpoint
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -187,11 +196,22 @@ MockState:
     masked_output:
     guardrail_reasons:
       - guardrail_passed
+  chat_state_checkpoint:
+    table_name: hezo_agent_chat
+    session_pk: SESSION#session_001
+    metadata_sk: META
+    message_sk: MESSAGE#2026-06-16T10:00:00Z#msg_001
+    checkpoint_sk: CHECKPOINT#contract_quality_check#000001
+    latest_checkpoint:
+      stage: contract_quality_check
+      version: 1
+      state_ref: in_memory
+    guardrail_sk: GUARDRAIL#2026-06-16T10:00:01Z#contract_draft
 
 OutOfScope:
   - LangGraph graph implementation
   - Bedrock invocation
   - Bedrock Guardrails ApplyGuardrail integration
-  - DynamoDB custom checkpointer
+  - Real DynamoDB custom checkpointer
   - S3 physical bucket integration
   - AgentCore Runtime deployment
