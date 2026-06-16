@@ -36,6 +36,13 @@ Stages:
 
   - name: proactive_questioning
     description: P2 markdown과 slot_registry를 기반으로 부족한 정보를 질문한다.
+    required_fields:
+      - question_candidates
+      - slot
+      - question
+      - priority
+      - source
+      - fallback
 
   - name: contract_compile
     description: 사용자 응답과 보완 정보를 G slot-based Contract JSON draft로 조립한다.
@@ -57,12 +64,15 @@ MockState:
       business_name:
         label: 업체명
         required: true
+        question_hint: 사무소명은 무엇인가요?
       core_services:
         label: 핵심 서비스
         required: true
+        question_hint: 핵심 세무 서비스는 무엇인가요?
       contact_method:
         label: 상담 방식
         required: true
+        question_hint: 상담 문의는 어떤 방식으로 받나요?
     known_answers:
       business_name: 한빛 세무회계
     missing_slots:
@@ -77,6 +87,18 @@ MockState:
     p1_markdown_review_status: passed
     p1_markdown_review_score: 0.82
     p2_markdown_usable_for_questions: true
+  proactive_questioning:
+    question_candidates:
+      - slot: core_services
+        question: 핵심 세무 서비스는 무엇인가요?
+        priority: 1
+        source: p2_markdown
+        fallback: false
+      - slot: contact_method
+        question: 상담 문의는 어떤 방식으로 받나요?
+        priority: 2
+        source: p2_markdown
+        fallback: false
   contract:
     status: draft
     quality_status: needs_enrichment
