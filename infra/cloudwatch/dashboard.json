@@ -10,7 +10,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "cost", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "cost", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -24,7 +24,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.latency_ms\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.latency_ms\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -38,7 +38,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.input_tokens\"', 'Sum', 300)", "id": "tin", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.input_tokens\"', 'Sum', 300)", "id": "tin", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -52,7 +52,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.output_tokens\"', 'Sum', 300)", "id": "tout", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.output_tokens\"', 'Sum', 300)", "id": "tout", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -66,7 +66,7 @@
         "period": 300,
         "stat": "Sum",
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,OTelLib,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "csum", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "csum", "region": "ap-northeast-2" } ]
         ]
       }
     }

@@ -6,6 +6,7 @@ COPY agents/generation/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY agents/ ./agents/
+COPY libs/ ./libs/
 
 ENV AWS_DEFAULT_REGION=ap-northeast-2
 ENV MODEL_ID=global.anthropic.claude-sonnet-4-6

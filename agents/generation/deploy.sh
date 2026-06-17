@@ -20,6 +20,11 @@
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
+# .env 로드 (있으면) — 계정ID·프로필 등을 명령어에 박지 않고 여기서 읽음
+if [ -f "$(dirname "$0")/.env" ]; then
+    set -a; source "$(dirname "$0")/.env"; set +a
+fi
+
 REGION="${AWS_REGION:-ap-northeast-2}"
 PROFILE="${AWS_PROFILE:-rapa-cm1-21}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -214,17 +219,20 @@ print(json.dumps(env))
 PYENV
 )
 
+    # AgentCore 런타임 이름은 하이픈 불가 → 밑줄로 변환 (hezo-generation-agent → hezo_generation_agent)
+    local runtime_name="${repo//-/_}"
+
     # 기존 런타임 조회
     local existing_id
     existing_id=$(aws_cmd bedrock-agentcore-control list-agent-runtimes --region "$REGION" \
-        --query "agentRuntimes[?agentRuntimeName=='${repo}'].agentRuntimeId | [0]" \
+        --query "agentRuntimes[?agentRuntimeName=='${runtime_name}'].agentRuntimeId | [0]" \
         --output text 2>/dev/null || echo "None")
 
     local runtime_id
     if [ -z "$existing_id" ] || [ "$existing_id" = "None" ]; then
-        info "AgentCore Runtime 생성 중: $repo"
+        info "AgentCore Runtime 생성 중: $runtime_name"
         runtime_id=$(aws_cmd bedrock-agentcore-control create-agent-runtime \
-            --agent-runtime-name "$repo" \
+            --agent-runtime-name "$runtime_name" \
             --agent-runtime-artifact "{\"containerConfiguration\":{\"containerUri\":\"${ecr_uri}\"}}" \
             --role-arn "$role_arn" \
             --network-configuration "{\"networkMode\":\"PUBLIC\"}" \
@@ -237,6 +245,8 @@ PYENV
         aws_cmd bedrock-agentcore-control update-agent-runtime \
             --agent-runtime-id "$existing_id" \
             --agent-runtime-artifact "{\"containerConfiguration\":{\"containerUri\":\"${ecr_uri}\"}}" \
+            --role-arn "$role_arn" \
+            --network-configuration "{\"networkMode\":\"PUBLIC\"}" \
             --environment-variables "$env_json" \
             --region "$REGION" >/dev/null
         runtime_id="$existing_id"
@@ -407,7 +417,7 @@ test_agent() {
         --query "Parameter.Value" --output text --region "$REGION" 2>/dev/null || echo "")
     [ -z "$runtime_id" ] && error "SSM에 hezo-${agent}-agent-id 없음. 먼저 배포하세요."
 
-    local runtime_arn="arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT_ID}:agentRuntime/${runtime_id}"
+    local runtime_arn="arn:aws:bedrock-agentcore:${REGION}:${ACCOUNT_ID}:runtime/${runtime_id}"
     info "Runtime ARN: $runtime_arn"
 
     local payload='{"sessionId":"cli-test-001","inputText":"site_id=site_tax_13_001","sessionAttributes":{"site_id":"site_tax_13_001","pipeline_run_id":"cli-test-001"}}'
