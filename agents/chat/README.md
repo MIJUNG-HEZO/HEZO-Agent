@@ -389,7 +389,7 @@ SK = GUARDRAIL#{created_at}#{target}
 
 ## S3 Artifact Storage
 
-`s3_artifact_store.py`는 S3 bucket/key 설계를 기준으로 원문/대용량 artifact 저장 경계를 정의하는 adapter 스켈레톤입니다.
+`s3_artifact_store.py`는 S3 bucket/key 설계를 기준으로 원문/대용량 artifact 저장 경계를 정의합니다.
 
 저장 대상:
 
@@ -402,9 +402,9 @@ SK = GUARDRAIL#{created_at}#{target}
 물리 bucket 기준:
 
 ```text
-dev-hezo-chat-transcripts
-dev-hezo-p2-markdowns
-dev-hezo-p4-contracts
+hezo-chat
+hezo-wiki
+hezo-artifacts
 ```
 
 key 설계:
@@ -421,9 +421,9 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 
 ```json
 {
-  "bucket": "dev-hezo-p4-contracts",
+  "bucket": "hezo-artifacts",
   "key": "sites/site_001/contracts/draft/000001.json",
-  "uri": "s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json",
+  "uri": "s3://hezo-artifacts/sites/site_001/contracts/draft/000001.json",
   "artifact_kind": "contract_draft",
   "content_type": "application/json"
 }
@@ -434,10 +434,19 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 - bucket/key 생성 규칙을 코드 상수로 고정
 - `build_artifact_ref`, `put_artifact`, `get_artifact` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryS3ArtifactStore`로 저장/조회 검증
+- AWS dev smoke test에서는 `Boto3S3ArtifactStore`로 `hezo-chat` write/read/delete 검증
 - `store_allowed=false` 또는 `guardrail_action != NONE`이면 저장을 거부
-- 실제 S3 bucket, boto3 client, IAM, KMS/SSE, lifecycle policy는 후속 infra 이슈에서 처리
+- 실제 S3 bucket, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
+- KMS/SSE, lifecycle policy 고도화는 후속 운영 이슈에서 처리
 
-이번 범위에서는 실제 AWS S3 호출, bucket 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 AgentCore Runtime 연결을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_s3_aws_smoke.py
+```
 
 ## Bedrock Claude Invocation
 
