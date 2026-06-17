@@ -13,7 +13,7 @@ GuardrailSource = Literal["INPUT", "OUTPUT"]
 GuardrailAction = Literal["NONE", "GUARDRAIL_INTERVENED"]
 GuardrailStatus = Literal["succeeded", "failed"]
 
-DEFAULT_GUARDRAIL_ID = "hezo-dev-guardrail"
+DEFAULT_GUARDRAIL_ID = "q8dcjc2um846"
 DEFAULT_GUARDRAIL_VERSION = "DRAFT"
 
 PROMPT_INJECTION_PATTERNS = [

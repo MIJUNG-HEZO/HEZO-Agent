@@ -3,14 +3,24 @@
 
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/env.example" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/env.example"
+  set +a
+fi
+
 REGION="${AWS_REGION:-ap-northeast-2}"
 PROFILE="${AWS_PROFILE:-}"
 TABLE_NAME="${HEZO_AGENT_DYNAMODB_TABLE:-hezo_agent_chat}"
 CHAT_BUCKET="${HEZO_CHAT_BUCKET:-hezo-chat}"
 P2_MARKDOWNS_BUCKET="${HEZO_P2_MARKDOWNS_BUCKET:-hezo-wiki}"
 CONTRACTS_BUCKET="${HEZO_CONTRACTS_BUCKET:-hezo-artifacts}"
-MODEL_ID="${HEZO_BEDROCK_MODEL_ID:-anthropic.claude-sonnet-4-5-20251001}"
-GUARDRAIL_ID="${HEZO_BEDROCK_GUARDRAIL_ID:-hezo-dev-guardrail}"
+MODEL_ID="${HEZO_BEDROCK_MODEL_ID:-anthropic.claude-sonnet-4-5-20250929-v1:0}"
+GUARDRAIL_NAME="${HEZO_BEDROCK_GUARDRAIL_NAME:-hezo-dev-guardrail}"
+GUARDRAIL_ID="${HEZO_BEDROCK_GUARDRAIL_ID:-q8dcjc2um846}"
+GUARDRAIL_VERSION="${HEZO_BEDROCK_GUARDRAIL_VERSION:-DRAFT}"
 ECR_REPOSITORY="${HEZO_ECR_REPOSITORY:-hezo-chat-agent}"
 
 AWS_ARGS=(--region "$REGION")
@@ -72,10 +82,13 @@ check_bedrock_model() {
 }
 
 check_guardrail() {
-  if aws bedrock list-guardrails "${AWS_ARGS[@]}" >/dev/null 2>&1; then
-    ok "Bedrock guardrails API 접근 가능: $GUARDRAIL_ID 존재 여부는 콘솔 또는 상세 조회로 확인"
+  if aws bedrock get-guardrail \
+    --guardrail-identifier "$GUARDRAIL_ID" \
+    --guardrail-version "$GUARDRAIL_VERSION" \
+    "${AWS_ARGS[@]}" >/dev/null 2>&1; then
+    ok "Bedrock guardrail: $GUARDRAIL_NAME ($GUARDRAIL_ID/$GUARDRAIL_VERSION)"
   else
-    warn "Bedrock guardrails API 확인 실패: CLI 버전/권한/리전 지원 여부를 확인하세요"
+    warn "Bedrock guardrail 확인 실패: $GUARDRAIL_NAME ($GUARDRAIL_ID/$GUARDRAIL_VERSION)"
   fi
 }
 
