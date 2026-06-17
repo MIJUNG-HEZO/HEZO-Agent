@@ -6,13 +6,12 @@ set -u
 REGION="${AWS_REGION:-ap-northeast-2}"
 PROFILE="${AWS_PROFILE:-}"
 TABLE_NAME="${HEZO_AGENT_DYNAMODB_TABLE:-hezo_agent_chat}"
-TRANSCRIPTS_BUCKET="${HEZO_CHAT_TRANSCRIPTS_BUCKET:-dev-hezo-chat-transcripts}"
-P2_MARKDOWNS_BUCKET="${HEZO_P2_MARKDOWNS_BUCKET:-dev-hezo-p2-markdowns}"
-CONTRACTS_BUCKET="${HEZO_CONTRACTS_BUCKET:-dev-hezo-p4-contracts}"
+CHAT_BUCKET="${HEZO_CHAT_BUCKET:-hezo-chat}"
+P2_MARKDOWNS_BUCKET="${HEZO_P2_MARKDOWNS_BUCKET:-hezo-wiki}"
+CONTRACTS_BUCKET="${HEZO_CONTRACTS_BUCKET:-hezo-artifacts}"
 MODEL_ID="${HEZO_BEDROCK_MODEL_ID:-anthropic.claude-sonnet-4-5-20251001}"
 GUARDRAIL_ID="${HEZO_BEDROCK_GUARDRAIL_ID:-hezo-dev-guardrail}"
 ECR_REPOSITORY="${HEZO_ECR_REPOSITORY:-hezo-chat-agent}"
-AGENTCORE_LOG_GROUP="${HEZO_AGENTCORE_LOG_GROUP:-/aws/bedrock-agentcore/hezo-chat-agent-dev}"
 
 AWS_ARGS=(--region "$REGION")
 if [ -n "$PROFILE" ]; then
@@ -88,14 +87,6 @@ check_ecr() {
   fi
 }
 
-check_cloudwatch_log_group() {
-  if aws logs describe-log-groups --log-group-name-prefix "$AGENTCORE_LOG_GROUP" "${AWS_ARGS[@]}" >/dev/null 2>&1; then
-    ok "CloudWatch log group prefix 조회 가능: $AGENTCORE_LOG_GROUP"
-  else
-    missing "CloudWatch log group prefix 조회 실패: $AGENTCORE_LOG_GROUP"
-  fi
-}
-
 main() {
   printf 'HEZO P1 Chat Agent dev infra verification\n'
   printf 'region=%s profile=%s\n\n' "$REGION" "${PROFILE:-default}"
@@ -103,13 +94,12 @@ main() {
   check_aws_cli
   check_identity
   check_dynamodb
-  check_bucket "$TRANSCRIPTS_BUCKET"
+  check_bucket "$CHAT_BUCKET"
   check_bucket "$P2_MARKDOWNS_BUCKET"
   check_bucket "$CONTRACTS_BUCKET"
   check_bedrock_model
   check_guardrail
   check_ecr
-  check_cloudwatch_log_group
 
   printf '\n검증 완료: MISSING 항목은 후속 AWS 생성 이슈에서 생성해야 합니다.\n'
 }
