@@ -3,10 +3,13 @@ Lambda 함수: hezo-p4-render-spec-saver
 Bedrock Agent Action Group - RenderSpecSaver
 
 역할:
-- Generation Agent가 생성한 render_spec (dict)을 S3에 저장
+- Generation Agent가 생성한 render_spec (dict)을 S3 아티팩트 버킷에 저장
 - sites/{site_id}/render_spec.json 경로에 저장
 - CloudWatch 메트릭 기록 (P5 텔레메트리)
 - 저장 완료 후 s3_key와 status를 에이전트에 반환
+
+GEO 파일 4종(llms.txt, llms-full.txt, sitemap.xml, robots.txt)은 P3 렌더링 워커가 생성.
+supplementary_files는 render_spec.json 안에 포함되어 P3에 전달되는 입력 명세임.
 
 입력 (Bedrock Agent Action Group 이벤트 형식):
   - apiPath: "/save-render-spec"
@@ -56,93 +59,6 @@ def _get_cloudwatch() -> Any:
 
 # ─── 환경변수 ────────────────────────────────────────────────────────────────
 ARTIFACTS_BUCKET = os.environ.get("ARTIFACTS_BUCKET", "hezo-artifacts")
-SITE_BUCKET      = os.environ.get("SITE_BUCKET", "hezo-sites")
-
-
-# =============================================================================
-# GEO 파일 생성 헬퍼
-# =============================================================================
-
-def _build_sitemap_xml(sitemap_pages: list[dict], base_url: str) -> str:
-    """sitemap_pages 배열 → sitemap.xml 문자열"""
-    base = base_url.rstrip("/")
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    ]
-    for page in sitemap_pages:
-        path = page.get("path", "/")
-        loc = base + path
-        priority = page.get("priority", 0.5)
-        changefreq = page.get("changefreq", "monthly")
-        lines += [
-            "  <url>",
-            f"    <loc>{loc}</loc>",
-            f"    <priority>{priority}</priority>",
-            f"    <changefreq>{changefreq}</changefreq>",
-            "  </url>",
-        ]
-    lines.append("</urlset>")
-    return "\n".join(lines)
-
-
-def _save_geo_files(s3: Any, site_id: str, render_spec: dict) -> list[str]:
-    """
-    supplementary_files → hezo-sites/{site_id}/ 에 GEO 파일 4종 저장.
-    저장된 S3 키 목록을 반환.
-    """
-    supp = render_spec.get("supplementary_files", {})
-    if not supp:
-        logger.warning("supplementary_files 없음 — GEO 파일 저장 건너뜀")
-        return []
-
-    # base URL: pages[0].seo.canonical 에서 파싱
-    try:
-        canonical = render_spec["pages"][0]["seo"]["canonical"]
-        from urllib.parse import urlparse
-        parsed = urlparse(canonical)
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-    except (KeyError, IndexError, TypeError):
-        base_url = f"https://{site_id}.hezo.io"
-        logger.warning("canonical URL 파싱 실패 — fallback base_url 사용: %s", base_url)
-
-    saved_keys: list[str] = []
-    prefix = f"sites/{site_id}"
-
-    def _put(key: str, body: str, content_type: str) -> None:
-        s3.put_object(
-            Bucket=SITE_BUCKET,
-            Key=key,
-            Body=body.encode("utf-8"),
-            ContentType=f"{content_type}; charset=utf-8",
-            Metadata={"site-id": site_id, "generated-by": "hezo-p4-render-spec-saver"},
-        )
-        saved_keys.append(key)
-        logger.info("GEO 파일 저장: s3://%s/%s", SITE_BUCKET, key)
-
-    # llms.txt
-    llms_txt = supp.get("llms_txt", "")
-    if llms_txt:
-        _put(f"{prefix}/llms.txt", llms_txt, "text/plain")
-
-    # llms-full.txt
-    llms_full = supp.get("llms_full_txt", "")
-    if llms_full:
-        _put(f"{prefix}/llms-full.txt", llms_full, "text/plain")
-
-    # sitemap.xml (array → XML)
-    sitemap_pages = supp.get("sitemap_pages", [])
-    if sitemap_pages:
-        sitemap_xml = _build_sitemap_xml(sitemap_pages, base_url)
-        _put(f"{prefix}/sitemap.xml", sitemap_xml, "application/xml")
-
-    # robots.txt (array → newline-joined)
-    robots_rules = supp.get("robots_rules", [])
-    if robots_rules:
-        robots_txt = "\n".join(robots_rules)
-        _put(f"{prefix}/robots.txt", robots_txt, "text/plain")
-
-    return saved_keys
 
 
 # =============================================================================
@@ -314,16 +230,6 @@ def _handle_save_render_spec(
         logger.exception("S3 저장 실패: %s", exc)
         return _error_response(action_group, api_path, 500, "S3_WRITE_ERROR", f"S3 저장 실패: {error_code}")
 
-    # GEO 파일 저장 (hezo-sites 버킷)
-    geo_files: list[str] = []
-    try:
-        geo_files = _save_geo_files(s3, site_id, render_spec)
-        logger.info("GEO 파일 %d종 저장 완료: %s", len(geo_files), geo_files)
-    except ClientError as exc:
-        error_code = exc.response["Error"]["Code"]
-        logger.exception("GEO 파일 S3 저장 실패: %s", exc)
-        return _error_response(action_group, api_path, 500, "GEO_FILE_WRITE_ERROR", f"GEO 파일 저장 실패: {error_code}")
-
     # P5 텔레메트리: CloudWatch 메트릭 기록 (fire-and-forget)
     try:
         _get_cloudwatch().put_metric_data(
@@ -335,8 +241,8 @@ def _handle_save_render_spec(
 
     page_count = len(render_spec.get("pages", []))
     logger.info(
-        "render_spec 저장 완료 - site_id=%s, pages=%d, size=%d bytes, geo_files=%d",
-        site_id, page_count, byte_size, len(geo_files),
+        "render_spec 저장 완료 - site_id=%s, pages=%d, size=%d bytes",
+        site_id, page_count, byte_size,
     )
 
     return _bedrock_response(
@@ -352,8 +258,6 @@ def _handle_save_render_spec(
             "size_bytes": byte_size,
             "page_count": page_count,
             "saved_at": render_spec["_saved_at"],
-            "geo_files": geo_files,
-            "geo_bucket": SITE_BUCKET,
         },
     )
 
