@@ -14,7 +14,12 @@ import pathlib
 import re
 import sys
 
-from bedrock_claude_adapter import ClaudeInvocationInput, ClaudeMessage, MockClaudeInvoker
+from bedrock_claude_adapter import (
+    Boto3BedrockClaudeInvoker,
+    ClaudeInvocationInput,
+    ClaudeMessage,
+    MockClaudeInvoker,
+)
 from bedrock_guardrails_adapter import (
     GuardrailsApplyInput,
     MockBedrockGuardrailsClient,
@@ -967,6 +972,17 @@ def _validate_claude_invocation_cases() -> list[str]:
     if reply_result.status != "succeeded" or "도와드리겠습니다" not in reply_result.text:
         errors.append("assistant_reply mock 응답은 사용자 응답 문구를 반환해야 합니다.")
 
+    aws_invoker = Boto3BedrockClaudeInvoker(client=_FakeBedrockRuntimeClient())
+    aws_result = aws_invoker.invoke(_sample_claude_input())
+    if aws_result.status != "succeeded":
+        errors.append("Boto3 Bedrock Claude adapter 호출은 succeeded 상태여야 합니다.")
+    if "보완 질문" not in aws_result.text:
+        errors.append("Boto3 Bedrock Claude adapter는 response text를 정규화해야 합니다.")
+    if aws_result.usage.input_tokens != 11 or aws_result.usage.output_tokens != 7:
+        errors.append("Boto3 Bedrock Claude adapter는 usage를 정규화해야 합니다.")
+    if aws_result.reasons != ("bedrock_invocation_succeeded", "question_enrichment"):
+        errors.append("Boto3 Bedrock Claude adapter는 성공 reasons를 반환해야 합니다.")
+
     invalid_cases = [
         (
             "invalid_use_case",
@@ -1017,6 +1033,37 @@ def _validate_claude_invocation_cases() -> list[str]:
             errors.append(f"{name}: 실패 응답 usage total_tokens는 0이어야 합니다.")
 
     return errors
+
+
+class _FakeBedrockRuntimeClient:
+    def converse(
+        self,
+        *,
+        modelId: str,
+        system: list[dict[str, str]],
+        messages: list[dict[str, object]],
+        inferenceConfig: dict[str, object],
+    ) -> dict[str, object]:
+        if not modelId:
+            raise ValueError("model_id_missing")
+        if not system or not messages or not inferenceConfig:
+            raise ValueError("converse_payload_invalid")
+        return {
+            "output": {
+                "message": {
+                    "content": [
+                        {"text": "부족한 슬롯을 확인하기 위한 보완 질문입니다."},
+                    ],
+                },
+            },
+            "usage": {
+                "inputTokens": 11,
+                "outputTokens": 7,
+            },
+            "metrics": {
+                "latencyMs": 31,
+            },
+        }
 
 
 def _sample_bedrock_guardrails_input(**overrides: object) -> GuardrailsApplyInput:
