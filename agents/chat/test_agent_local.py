@@ -21,6 +21,7 @@ from bedrock_guardrails_adapter import (
 )
 from chat_graph import CHAT_GRAPH_NODE_ORDER, ChatGraphState, run_chat_graph
 from chat_state_store import (
+    Boto3ChatStateStore,
     ChatCheckpoint,
     ChatMessage,
     GuardrailSummary,
@@ -630,6 +631,42 @@ def _validate_chat_state_store_cases() -> list[str]:
             "session_001에는 metadata/message/checkpoint 2개/guardrail 총 5개가 있어야 합니다."
         )
 
+    fake_table = _FakeDynamoDBTable()
+    aws_store = Boto3ChatStateStore(table=fake_table)
+    aws_store.save_session_metadata(
+        SessionMetadata(
+            session_id="session_aws_001",
+            user_id="user_aws_001",
+            site_id="site_aws_001",
+            stage="slot_answer_state",
+        )
+    )
+    aws_store.append_message(
+        ChatMessage(
+            session_id="session_aws_001",
+            message_id="msg_001",
+            role="assistant",
+            content="다음 질문입니다.",
+            created_at="2026-06-16T10:00:00Z",
+        )
+    )
+    aws_store.save_checkpoint(
+        ChatCheckpoint(
+            session_id="session_aws_001",
+            stage="slot_answer_state",
+            version=1,
+            state={"missing_slots": ["contact_method"]},
+        )
+    )
+    aws_latest = aws_store.load_latest_checkpoint("session_aws_001")
+    if aws_latest is None or aws_latest.stage != "slot_answer_state":
+        errors.append("Boto3 DynamoDB adapter가 latest checkpoint를 조회해야 합니다.")
+    if len(aws_store.list_items("session_aws_001")) != 3:
+        errors.append("Boto3 DynamoDB adapter가 session item 목록을 조회해야 합니다.")
+    aws_store.delete_session_items("session_aws_001")
+    if aws_store.list_items("session_aws_001"):
+        errors.append("Boto3 DynamoDB adapter가 session item을 삭제해야 합니다.")
+
     invalid_cases = [
         ("empty_session_id", lambda: session_pk(" "), "session_id_missing"),
         (
@@ -674,6 +711,34 @@ def _validate_chat_state_store_cases() -> list[str]:
             errors.append(f"{name}: ValueError가 발생해야 합니다.")
 
     return errors
+
+
+class _FakeDynamoDBTable:
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str], dict[str, object]] = {}
+
+    def put_item(self, *, Item: dict[str, object]) -> None:
+        self._items[(str(Item["pk"]), str(Item["sk"]))] = Item
+
+    def query(
+        self,
+        *,
+        KeyConditionExpression: str,
+        ExpressionAttributeValues: dict[str, str],
+        ScanIndexForward: bool = True,
+    ) -> dict[str, list[dict[str, object]]]:
+        pk = ExpressionAttributeValues[":pk"]
+        sk_prefix = ExpressionAttributeValues.get(":sk_prefix")
+        items = [
+            item
+            for (item_pk, item_sk), item in self._items.items()
+            if item_pk == pk and (sk_prefix is None or item_sk.startswith(sk_prefix))
+        ]
+        items.sort(key=lambda item: str(item["sk"]), reverse=not ScanIndexForward)
+        return {"Items": items}
+
+    def delete_item(self, *, Key: dict[str, str]) -> None:
+        self._items.pop((Key["pk"], Key["sk"]), None)
 
 
 def _validate_s3_artifact_store_cases() -> list[str]:
