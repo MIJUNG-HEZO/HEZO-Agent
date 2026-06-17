@@ -28,17 +28,22 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Contract JSON draft compile 순수 로직
 - Contract draft quality check 순수 로직
 - 저장 전 Guardrails adapter 스켈레톤
+- DynamoDB chat state/checkpoint 저장소 스켈레톤
+- S3 artifact storage adapter 스켈레톤
+- Bedrock Claude invocation adapter 스켈레톤
+- Bedrock Guardrails ApplyGuardrail adapter 스켈레톤
+- LangGraph chat graph 스켈레톤
 - 로컬 smoke test
 
 제외:
 
-- 실제 LangGraph graph 구현
-- Bedrock 호출
+- 실제 LangGraph `StateGraph` 구현
+- 실제 Bedrock 호출
 - 실제 P2 API 호출
 - 실제 사용자 대화 API 라우터
 - 실제 Bedrock Guardrails 호출
-- DynamoDB custom checkpointer
-- S3 3개 물리 버킷 연동
+- 실제 DynamoDB custom checkpointer
+- 실제 S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
 
 ## Stage 흐름
@@ -52,6 +57,11 @@ domain_selection
 -> contract_compile
 -> contract_quality_check
 -> storage_guardrails
+-> chat_state_checkpoint
+-> s3_artifact_storage
+-> bedrock_claude_invocation
+-> bedrock_guardrails_apply
+-> chat_graph
 ```
 
 ## Rule-based Logic and Guardrails
@@ -328,6 +338,268 @@ domain_selection
 - dict 형태의 Contract draft는 JSON string으로 직렬화해 검사
 
 이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail id/version env 설정, S3 저장 adapter 연결을 포함하지 않습니다.
+
+## Chat State Checkpoint Store
+
+`chat_state_store.py`는 DynamoDB single-table 설계를 기준으로 세션 상태와 체크포인트 저장 경계를 정의하는 adapter 스켈레톤입니다.
+
+저장 대상:
+
+- session metadata
+- chat message
+- checkpoint state
+- guardrail summary
+- contract draft reference/state
+
+키 설계:
+
+```text
+PK = SESSION#{session_id}
+SK = META
+SK = MESSAGE#{created_at}#{message_id}
+SK = CHECKPOINT#{stage}#{version}
+SK = CONTRACT#{version}
+SK = GUARDRAIL#{created_at}#{target}
+```
+
+출력 기준:
+
+```json
+{
+  "pk": "SESSION#session_001",
+  "sk": "CHECKPOINT#contract_quality_check#000001",
+  "item_type": "checkpoint",
+  "data": {
+    "session_id": "session_001",
+    "stage": "contract_quality_check",
+    "version": 1
+  }
+}
+```
+
+저장 기준:
+
+- DynamoDB PK/SK 생성 규칙을 코드 상수로 고정
+- `save_session_metadata`, `append_message`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
+- 로컬 smoke test에서는 `InMemoryChatStateStore`로 저장/조회 검증
+- 실제 DynamoDB table, boto3 client, IAM, TTL, GSI 설정은 후속 infra 이슈에서 처리
+- LangGraph custom checkpointer 연결은 후속 이슈에서 처리
+
+이번 범위에서는 실제 AWS DynamoDB 호출, table 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## S3 Artifact Storage
+
+`s3_artifact_store.py`는 S3 bucket/key 설계를 기준으로 원문/대용량 artifact 저장 경계를 정의하는 adapter 스켈레톤입니다.
+
+저장 대상:
+
+- chat transcript
+- P2 markdown
+- Contract draft
+- Contract final
+- guardrail report
+
+물리 bucket 기준:
+
+```text
+dev-hezo-chat-transcripts
+dev-hezo-p2-markdowns
+dev-hezo-p4-contracts
+```
+
+key 설계:
+
+```text
+sessions/{session_id}/transcripts/{version}.json
+domains/{domain}/question_guides/{version}.md
+sites/{site_id}/contracts/draft/{version}.json
+sites/{site_id}/contract_final.json
+sessions/{session_id}/guardrails/{target}/{timestamp}.json
+```
+
+출력 기준:
+
+```json
+{
+  "bucket": "dev-hezo-p4-contracts",
+  "key": "sites/site_001/contracts/draft/000001.json",
+  "uri": "s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json",
+  "artifact_kind": "contract_draft",
+  "content_type": "application/json"
+}
+```
+
+저장 기준:
+
+- bucket/key 생성 규칙을 코드 상수로 고정
+- `build_artifact_ref`, `put_artifact`, `get_artifact` repository 경계 제공
+- 로컬 smoke test에서는 `InMemoryS3ArtifactStore`로 저장/조회 검증
+- `store_allowed=false` 또는 `guardrail_action != NONE`이면 저장을 거부
+- 실제 S3 bucket, boto3 client, IAM, KMS/SSE, lifecycle policy는 후속 infra 이슈에서 처리
+
+이번 범위에서는 실제 AWS S3 호출, bucket 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## Bedrock Claude Invocation
+
+`bedrock_claude_adapter.py`는 Bedrock Claude 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+
+호출 대상:
+
+- `question_enrichment`
+- `contract_enrichment`
+- `assistant_reply`
+
+입력 기준:
+
+- `use_case`
+- `system_prompt`
+- `messages`
+- `context`
+- `model_id`
+- `max_tokens`
+- `temperature`
+
+출력 기준:
+
+```json
+{
+  "status": "succeeded",
+  "text": "부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.",
+  "model_id": "anthropic.claude-sonnet-4-5-20251001",
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 7,
+    "total_tokens": 19
+  },
+  "latency_ms": 25,
+  "reasons": ["mock_invocation_succeeded", "question_enrichment"]
+}
+```
+
+호출 기준:
+
+- Claude는 HEZO 비즈니스 규칙의 source of truth가 아니라 Rule Engine 결과를 보완하는 역할로 제한
+- 빈 메시지, 빈 system prompt, 잘못된 use case는 실패 결과로 정규화
+- prompt injection 의심 문구가 포함된 입력은 mock 단계에서도 실패 처리
+- LLM 출력은 저장 전 Guardrails adapter의 검사 대상
+- 실제 Bedrock Runtime, boto3 client, retry/backoff, streaming은 후속 이슈에서 처리
+
+이번 범위에서는 실제 AWS Bedrock 호출, model permission 설정, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## Bedrock Guardrails ApplyGuardrail
+
+`bedrock_guardrails_adapter.py`는 Bedrock Guardrails `ApplyGuardrail` 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+
+검사 대상:
+
+- `user_input`
+- `p2_markdown`
+- `contract_draft`
+- `llm_output`
+
+입력 기준:
+
+- `target`
+- `content`
+- `source`
+- `guardrail_id`
+- `guardrail_version`
+- `metadata`
+
+출력 기준:
+
+```json
+{
+  "status": "succeeded",
+  "target": "llm_output",
+  "source": "OUTPUT",
+  "action": "NONE",
+  "store_allowed": true,
+  "masked_output": null,
+  "reasons": ["guardrail_passed"],
+  "assessments": [
+    {
+      "policy": "mock_guardrail",
+      "reason": "guardrail_passed",
+      "blocked": false
+    }
+  ],
+  "latency_ms": 18
+}
+```
+
+검사 기준:
+
+- safe content는 `action=NONE`, `store_allowed=true`
+- prompt injection 의심 문구는 `GUARDRAIL_INTERVENED`
+- 이메일/전화번호/주민등록번호 형태의 PII 의심 패턴은 `GUARDRAIL_INTERVENED`
+- guardrail id/version 누락, 빈 content는 실패 결과로 정규화
+- 기존 `storage_guardrails.py`와 호환되도록 `action`, `store_allowed`, `reasons` 구조 유지
+
+이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail 생성/정책 설정, boto3 client 연결을 포함하지 않습니다.
+
+## Chat Graph Skeleton
+
+`chat_graph.py`는 P1 채팅 에이전트 stage들을 deterministic graph 순서로 연결하는 스켈레톤입니다.
+
+이번 범위에서는 실제 `langgraph` package 의존이나 `StateGraph` 런타임 연결을 포함하지 않고, 후속 전환을 위한 state shape와 node boundary를 먼저 고정합니다.
+
+graph node 순서:
+
+```text
+p2_markdown_request
+-> p2_markdown_review
+-> proactive_questioning
+-> slot_answer_state
+-> contract_compile
+-> contract_quality_check
+-> bedrock_guardrails
+-> chat_state_checkpoint
+-> s3_artifact_storage
+```
+
+state 기준:
+
+- `session_id`
+- `domain`
+- `slot_registry`
+- `known_answers`
+- `missing_slots`
+- `contract_draft`
+- `quality_check`
+- `guardrail_result`
+- `checkpoint_ref`
+- `artifact_refs`
+
+출력 기준:
+
+```json
+{
+  "stage": "s3_artifact_storage",
+  "contract_draft": {
+    "site_id": "site_001",
+    "domain": "tax_accounting"
+  },
+  "quality_check": {
+    "quality_status": "needs_enrichment"
+  },
+  "guardrail_result": {
+    "action": "NONE",
+    "store_allowed": true
+  },
+  "checkpoint_ref": {
+    "pk": "SESSION#session_001",
+    "sk": "CHECKPOINT#bedrock_guardrails#000001"
+  },
+  "artifact_refs": [
+    {
+      "uri": "s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json"
+    }
+  ]
+}
+```
+
+이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB/S3/Boto3 호출, Bedrock 호출, AgentCore Runtime 연결을 포함하지 않습니다.
 
 ## Local Smoke Test
 

@@ -328,9 +328,22 @@ def _fix_css_paths(soup: BeautifulSoup) -> None:
 # 메인 렌더 함수
 # =============================================================================
 
-def render(template_html: str, render_spec: dict) -> str:
+def _inject_noindex(soup: BeautifulSoup) -> None:
+    head = soup.find("head")
+    if not head:
+        return
+    existing = soup.find("meta", attrs={"name": "robots"})
+    if existing:
+        existing["content"] = "noindex,nofollow"
+    else:
+        tag = soup.new_tag("meta", attrs={"name": "robots", "content": "noindex,nofollow"})
+        head.insert(0, tag)
+
+
+def render(template_html: str, render_spec: dict, is_preview: bool = False) -> str:
     """
-    render_spec.json + 템플릿 HTML → 데이터가 baked-in된 정적 HTML
+    render_spec.json + 템플릿 HTML → 데이터가 baked-in된 정적 HTML.
+    is_preview=True 시 <meta name="robots" content="noindex,nofollow"> 삽입.
     """
     soup = BeautifulSoup(template_html, "html.parser")
     page = render_spec["pages"][0]
@@ -381,5 +394,9 @@ def render(template_html: str, render_spec: dict) -> str:
 
     # 9. CSS 경로 패치
     _fix_css_paths(soup)
+
+    # 10. 프리뷰 noindex (검색 색인 차단)
+    if is_preview:
+        _inject_noindex(soup)
 
     return str(soup)

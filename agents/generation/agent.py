@@ -12,7 +12,7 @@ AgentCore Runtime HTTP 핸들러:
   4. Claude Sonnet 호출 → render_spec JSON 생성
   5. 평가기 (최대 2회 재시도)
   6. 가드레일 검사
-  7. render_spec.json + GEO 파일 4종 → S3 저장
+  7. render_spec.json → S3 저장 (GEO 파일 4종은 P3 렌더링 워커가 생성)
 """
 from __future__ import annotations
 
@@ -287,15 +287,14 @@ def run_generation(site_id: str) -> dict:
     # 5. S3 저장
     save_result = save_render_spec(site_id, render_spec)
     logger.info(
-        "생성 완료 — site_id=%s, score=%d, s3_key=%s, geo_files=%d",
-        site_id, eval_result.get("score", 0), save_result["s3_key"], len(save_result["geo_files"]),
+        "생성 완료 — site_id=%s, score=%d, s3_key=%s",
+        site_id, eval_result.get("score", 0), save_result["s3_key"],
     )
 
     return {
         "status": "complete",
         "site_id": site_id,
         "render_spec_key": save_result["s3_key"],
-        "geo_files": save_result["geo_files"],
         "eval_score": eval_result.get("score", 0),
         "page_count": save_result["page_count"],
         "saved_at": save_result["saved_at"],
@@ -326,9 +325,7 @@ async def _handle_invoke(request: Request) -> JSONResponse:
         site_id = parse_site_id(input_text, session_attrs)
         result = run_generation(site_id)
         output_text = (
-            f"render_spec_saved — site_id: {site_id}, "
-            f"eval_score: {result.get('eval_score', 0)}, "
-            f"geo_files: {len(result.get('geo_files', []))}"
+            f"render_spec_saved — site_id: {site_id}, eval_score: {result.get('eval_score', 0)}"
             if result.get("status") == "complete"
             else f"generation_skipped — {result.get('reason', '')}"
         )

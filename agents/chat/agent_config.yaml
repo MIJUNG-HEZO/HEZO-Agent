@@ -79,6 +79,53 @@ Stages:
       - store_allowed
       - guardrail_reasons
 
+  - name: chat_state_checkpoint
+    description: DynamoDB single-table 기준으로 세션 상태와 체크포인트 저장 경계를 정의한다.
+    required_fields:
+      - session_pk
+      - metadata_sk
+      - message_sk
+      - checkpoint_sk
+      - latest_checkpoint
+
+  - name: s3_artifact_storage
+    description: S3 bucket/key 기준으로 P2 markdown, transcript, Contract artifact 저장 경계를 정의한다.
+    required_fields:
+      - transcript_bucket
+      - p2_markdown_bucket
+      - contract_bucket
+      - transcript_key
+      - contract_draft_key
+      - contract_final_key
+
+  - name: bedrock_claude_invocation
+    description: Bedrock Claude 호출 입력/출력 경계를 정의하고 LLM 보완 결과를 정규화한다.
+    required_fields:
+      - use_case
+      - model_id
+      - invocation_status
+      - output_text
+      - usage
+      - latency_ms
+
+  - name: bedrock_guardrails_apply
+    description: Bedrock Guardrails ApplyGuardrail 입력/출력 경계를 정의한다.
+    required_fields:
+      - guardrail_id
+      - guardrail_version
+      - guardrail_source
+      - guardrail_action
+      - guardrail_status
+      - assessments
+
+  - name: chat_graph
+    description: P1 채팅 에이전트 stage들을 deterministic graph 순서로 연결한다.
+    required_fields:
+      - graph_node_order
+      - graph_final_stage
+      - graph_checkpoint_ref
+      - graph_artifact_refs
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -187,11 +234,76 @@ MockState:
     masked_output:
     guardrail_reasons:
       - guardrail_passed
+  chat_state_checkpoint:
+    table_name: hezo_agent_chat
+    session_pk: SESSION#session_001
+    metadata_sk: META
+    message_sk: MESSAGE#2026-06-16T10:00:00Z#msg_001
+    checkpoint_sk: CHECKPOINT#contract_quality_check#000001
+    latest_checkpoint:
+      stage: contract_quality_check
+      version: 1
+      state_ref: in_memory
+    guardrail_sk: GUARDRAIL#2026-06-16T10:00:01Z#contract_draft
+  s3_artifact_storage:
+    transcript_bucket: dev-hezo-chat-transcripts
+    p2_markdown_bucket: dev-hezo-p2-markdowns
+    contract_bucket: dev-hezo-p4-contracts
+    transcript_key: sessions/session_001/transcripts/000001.json
+    p2_markdown_key: domains/tax_accounting/question_guides/v001.md
+    contract_draft_key: sites/site_001/contracts/draft/000001.json
+    contract_final_key: sites/site_001/contract_final.json
+    guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
+  bedrock_claude_invocation:
+    use_case: question_enrichment
+    model_id: anthropic.claude-sonnet-4-5-20251001
+    invocation_status: succeeded
+    output_text: 부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.
+    usage:
+      input_tokens: 12
+      output_tokens: 7
+      total_tokens: 19
+    latency_ms: 25
+    reasons:
+      - mock_invocation_succeeded
+  bedrock_guardrails_apply:
+    guardrail_id: hezo-dev-guardrail
+    guardrail_version: DRAFT
+    guardrail_target: llm_output
+    guardrail_source: OUTPUT
+    guardrail_status: succeeded
+    guardrail_action: NONE
+    store_allowed: true
+    masked_output:
+    latency_ms: 18
+    reasons:
+      - guardrail_passed
+    assessments:
+      - policy: mock_guardrail
+        reason: guardrail_passed
+        blocked: false
+  chat_graph:
+    graph_node_order:
+      - p2_markdown_request
+      - p2_markdown_review
+      - proactive_questioning
+      - slot_answer_state
+      - contract_compile
+      - contract_quality_check
+      - bedrock_guardrails
+      - chat_state_checkpoint
+      - s3_artifact_storage
+    graph_final_stage: s3_artifact_storage
+    graph_checkpoint_ref:
+      pk: SESSION#session_001
+      sk: CHECKPOINT#bedrock_guardrails#000001
+    graph_artifact_refs:
+      - uri: s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json
 
 OutOfScope:
-  - LangGraph graph implementation
-  - Bedrock invocation
-  - Bedrock Guardrails ApplyGuardrail integration
-  - DynamoDB custom checkpointer
-  - S3 physical bucket integration
+  - Real LangGraph StateGraph implementation
+  - Real Bedrock invocation
+  - Real Bedrock Guardrails ApplyGuardrail integration
+  - Real DynamoDB custom checkpointer
+  - Real S3 physical bucket integration
   - AgentCore Runtime deployment
