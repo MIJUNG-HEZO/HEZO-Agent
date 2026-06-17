@@ -565,13 +565,69 @@ python3 agents/chat/test_bedrock_claude_aws_smoke.py
 - AWS dev smoke test에서는 `Boto3BedrockGuardrailsClient`로 Bedrock Runtime `ApplyGuardrail` API 호출 검증
 - `GUARDRAIL_INTERVENED` 응답은 저장을 막기 위해 `store_allowed=false`로 정규화
 
-이번 범위에서는 guardrail 생성/정책 설정, Claude 호출과 Guardrail을 한 요청 흐름으로 묶는 작업을 포함하지 않습니다.
+이번 범위에서는 guardrail 생성/정책 설정을 포함하지 않습니다.
 
 AWS smoke test:
 
 ```bash
 python3 -m pip install -r agents/chat/requirements.txt
 python3 agents/chat/test_bedrock_guardrails_aws_smoke.py
+```
+
+## Guarded Claude Reply Flow
+
+`guarded_claude_flow.py`는 사용자 입력을 Claude에 전달하기 전후로 Guardrails를 적용하는 요청 단위 흐름을 정의합니다.
+
+흐름:
+
+```text
+user_input
+-> Guardrail INPUT
+-> Claude assistant_reply
+-> Guardrail OUTPUT
+-> final_text
+```
+
+분기 기준:
+
+- 입력 Guardrail이 `GUARDRAIL_INTERVENED` 또는 `failed`이면 Claude를 호출하지 않음
+- Claude 호출이 실패하면 출력 Guardrail을 수행하지 않고 실패 결과로 정규화
+- 출력 Guardrail이 `GUARDRAIL_INTERVENED`이면 masked output 또는 기본 차단 문구를 `final_text`로 반환
+- 모든 단계가 통과하면 Claude 응답 text를 `final_text`로 반환
+
+출력 기준:
+
+```json
+{
+  "status": "succeeded",
+  "stage": "completed",
+  "final_text": "OK",
+  "input_guardrail": {
+    "action": "NONE",
+    "store_allowed": true
+  },
+  "claude_result": {
+    "status": "succeeded"
+  },
+  "output_guardrail": {
+    "action": "NONE",
+    "store_allowed": true
+  },
+  "reasons": [
+    "input_guardrail_passed",
+    "claude_invocation_succeeded",
+    "output_guardrail_passed"
+  ]
+}
+```
+
+이번 범위에서는 실제 LangGraph `StateGraph` 런타임 연결, DynamoDB/S3 저장 연결, 사용자 대화 API 연결을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_guarded_claude_aws_smoke.py
 ```
 
 ## Chat Graph Skeleton
