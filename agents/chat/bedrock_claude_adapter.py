@@ -9,7 +9,7 @@ from typing import Any, Literal, Protocol
 ClaudeUseCase = Literal["question_enrichment", "contract_enrichment", "assistant_reply"]
 InvocationStatus = Literal["succeeded", "failed"]
 
-DEFAULT_MODEL_ID = "anthropic.claude-sonnet-4-5-20251001"
+DEFAULT_MODEL_ID = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.2
 

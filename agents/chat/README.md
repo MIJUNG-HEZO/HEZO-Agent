@@ -465,7 +465,7 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 {
   "status": "succeeded",
   "text": "부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.",
-  "model_id": "anthropic.claude-sonnet-4-5-20251001",
+  "model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0",
   "usage": {
     "input_tokens": 12,
     "output_tokens": 7,

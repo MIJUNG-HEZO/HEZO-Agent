@@ -10,7 +10,7 @@ Description: >
   P2 markdown을 요청/수신 검수한 뒤 적극적 질의를 통해
   G slot-based Contract JSON 초안을 구성한다.
 
-FoundationModel: anthropic.claude-sonnet-4-5-20251001
+FoundationModel: anthropic.claude-sonnet-4-5-20250929-v1:0
 IdleSessionTTLInSeconds: 600
 
 Stages:
@@ -256,7 +256,7 @@ MockState:
     guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
   bedrock_claude_invocation:
     use_case: question_enrichment
-    model_id: anthropic.claude-sonnet-4-5-20251001
+    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
     invocation_status: succeeded
     output_text: 부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.
     usage:
@@ -267,7 +267,8 @@ MockState:
     reasons:
       - mock_invocation_succeeded
   bedrock_guardrails_apply:
-    guardrail_id: hezo-dev-guardrail
+    guardrail_name: hezo-dev-guardrail
+    guardrail_id: q8dcjc2um846
     guardrail_version: DRAFT
     guardrail_target: llm_output
     guardrail_source: OUTPUT
