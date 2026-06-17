@@ -1,8 +1,10 @@
-"""Chat state/checkpoint store skeleton for the HEZO chat agent."""
+"""Chat state/checkpoint store adapters for the HEZO chat agent."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
+import os
 from typing import Any, Literal, Protocol
 
 
@@ -14,6 +16,7 @@ MESSAGE_SK_PREFIX = "MESSAGE#"
 CHECKPOINT_SK_PREFIX = "CHECKPOINT#"
 CONTRACT_SK_PREFIX = "CONTRACT#"
 GUARDRAIL_SK_PREFIX = "GUARDRAIL#"
+DEFAULT_DYNAMODB_TABLE = "hezo_agent_chat"
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,9 @@ class ChatStateStore(Protocol):
         ...
 
     def save_guardrail_result(self, summary: GuardrailSummary) -> StoredItem:
+        ...
+
+    def delete_session_items(self, session_id: str) -> None:
         ...
 
 
@@ -203,10 +209,112 @@ class InMemoryChatStateStore:
 
         _require_text("session_id", session_id)
         pk = session_pk(session_id)
-        return [item for (item_pk, _), item in self._items.items() if item_pk == pk]
+        return sorted(
+            [item for (item_pk, _), item in self._items.items() if item_pk == pk],
+            key=lambda item: item.sk,
+        )
+
+    def delete_session_items(self, session_id: str) -> None:
+        _require_text("session_id", session_id)
+        pk = session_pk(session_id)
+        keys = [key for key in self._items if key[0] == pk]
+        for key in keys:
+            del self._items[key]
 
     def _put(self, item: StoredItem) -> StoredItem:
         self._items[(item.pk, item.sk)] = item
+        return item
+
+
+class Boto3ChatStateStore:
+    """AWS DynamoDB implementation used by dev/integration smoke tests."""
+
+    def __init__(
+        self,
+        table: Any | None = None,
+        table_name: str | None = None,
+        region_name: str | None = None,
+    ) -> None:
+        self._table_name = table_name or os.environ.get(
+            "HEZO_AGENT_DYNAMODB_TABLE",
+            DEFAULT_DYNAMODB_TABLE,
+        )
+        if table is not None:
+            self._table = table
+            return
+
+        try:
+            import boto3  # type: ignore[import-not-found]
+        except ImportError as error:
+            raise RuntimeError("boto3_required_for_chat_state_store") from error
+
+        session_kwargs: dict[str, str] = {}
+        profile_name = os.environ.get("AWS_PROFILE")
+        if profile_name:
+            session_kwargs["profile_name"] = profile_name
+        session = boto3.Session(**session_kwargs)
+        dynamodb = session.resource(
+            "dynamodb",
+            region_name=region_name or os.environ.get("AWS_REGION"),
+        )
+        self._table = dynamodb.Table(self._table_name)
+
+    def save_session_metadata(self, metadata: SessionMetadata) -> StoredItem:
+        item = InMemoryChatStateStore().save_session_metadata(metadata)
+        return self._put(item)
+
+    def append_message(self, message: ChatMessage) -> StoredItem:
+        item = InMemoryChatStateStore().append_message(message)
+        return self._put(item)
+
+    def save_checkpoint(self, checkpoint: ChatCheckpoint) -> StoredItem:
+        item = InMemoryChatStateStore().save_checkpoint(checkpoint)
+        return self._put(item)
+
+    def load_latest_checkpoint(self, session_id: str) -> ChatCheckpoint | None:
+        _require_text("session_id", session_id)
+        response = self._table.query(
+            KeyConditionExpression="pk = :pk AND begins_with(sk, :sk_prefix)",
+            ExpressionAttributeValues={
+                ":pk": session_pk(session_id),
+                ":sk_prefix": CHECKPOINT_SK_PREFIX,
+            },
+            ScanIndexForward=False,
+        )
+        items = response.get("Items", [])
+        if not items:
+            return None
+
+        latest = max(items, key=lambda item: int(item["data"]["version"]))
+        data = latest["data"]
+        return ChatCheckpoint(
+            session_id=str(data["session_id"]),
+            stage=str(data["stage"]),
+            version=int(data["version"]),
+            state=dict(data["state"]),
+        )
+
+    def save_guardrail_result(self, summary: GuardrailSummary) -> StoredItem:
+        item = InMemoryChatStateStore().save_guardrail_result(summary)
+        return self._put(item)
+
+    def list_items(self, session_id: str) -> list[StoredItem]:
+        _require_text("session_id", session_id)
+        response = self._table.query(
+            KeyConditionExpression="pk = :pk",
+            ExpressionAttributeValues={":pk": session_pk(session_id)},
+        )
+        return sorted(
+            [_stored_item_from_dynamodb(item) for item in response.get("Items", [])],
+            key=lambda item: item.sk,
+        )
+
+    def delete_session_items(self, session_id: str) -> None:
+        for item in self.list_items(session_id):
+            self._table.delete_item(Key={"pk": item.pk, "sk": item.sk})
+
+    def _put(self, item: StoredItem) -> StoredItem:
+        self._table.put_item(Item=_stored_item_to_dynamodb(item))
         return item
 
 
@@ -243,3 +351,43 @@ def guardrail_sk(created_at: str, target: str) -> str:
 def _require_text(field_name: str, value: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name}_missing")
+
+
+def _stored_item_to_dynamodb(item: StoredItem) -> dict[str, Any]:
+    return {
+        "pk": item.pk,
+        "sk": item.sk,
+        "item_type": item.item_type,
+        "data": _to_dynamodb_value(item.data),
+    }
+
+
+def _stored_item_from_dynamodb(item: dict[str, Any]) -> StoredItem:
+    return StoredItem(
+        pk=str(item["pk"]),
+        sk=str(item["sk"]),
+        item_type=str(item["item_type"]),
+        data=dict(_from_dynamodb_value(item.get("data", {}))),
+    )
+
+
+def _to_dynamodb_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {str(key): _to_dynamodb_value(inner) for key, inner in value.items()}
+    if isinstance(value, list):
+        return [_to_dynamodb_value(inner) for inner in value]
+    return value
+
+
+def _from_dynamodb_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        if value % 1 == 0:
+            return int(value)
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _from_dynamodb_value(inner) for key, inner in value.items()}
+    if isinstance(value, list):
+        return [_from_dynamodb_value(inner) for inner in value]
+    return value

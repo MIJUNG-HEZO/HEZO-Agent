@@ -341,7 +341,7 @@ domain_selection
 
 ## Chat State Checkpoint Store
 
-`chat_state_store.py`는 DynamoDB single-table 설계를 기준으로 세션 상태와 체크포인트 저장 경계를 정의하는 adapter 스켈레톤입니다.
+`chat_state_store.py`는 DynamoDB single-table 설계를 기준으로 세션 상태와 체크포인트 저장 경계를 정의합니다.
 
 저장 대상:
 
@@ -382,10 +382,19 @@ SK = GUARDRAIL#{created_at}#{target}
 - DynamoDB PK/SK 생성 규칙을 코드 상수로 고정
 - `save_session_metadata`, `append_message`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryChatStateStore`로 저장/조회 검증
-- 실제 DynamoDB table, boto3 client, IAM, TTL, GSI 설정은 후속 infra 이슈에서 처리
+- AWS dev smoke test에서는 `Boto3ChatStateStore`로 `hezo_agent_chat` write/read/delete 검증
+- 실제 DynamoDB table, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
+- TTL, GSI 설정은 후속 운영 이슈에서 처리
 - LangGraph custom checkpointer 연결은 후속 이슈에서 처리
 
-이번 범위에서는 실제 AWS DynamoDB 호출, table 생성, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 LangGraph custom checkpointer, AgentCore Runtime 연결을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_dynamodb_aws_smoke.py
+```
 
 ## S3 Artifact Storage
 
