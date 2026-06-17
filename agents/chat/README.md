@@ -459,7 +459,7 @@ python3 agents/chat/test_s3_aws_smoke.py
 
 ## Bedrock Claude Invocation
 
-`bedrock_claude_adapter.py`는 Bedrock Claude 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+`bedrock_claude_adapter.py`는 Bedrock Claude 호출 입력/출력 경계를 정의합니다.
 
 호출 대상:
 
@@ -483,7 +483,7 @@ python3 agents/chat/test_s3_aws_smoke.py
 {
   "status": "succeeded",
   "text": "부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다.",
-  "model_id": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "model_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
   "usage": {
     "input_tokens": 12,
     "output_tokens": 7,
@@ -500,9 +500,18 @@ python3 agents/chat/test_s3_aws_smoke.py
 - 빈 메시지, 빈 system prompt, 잘못된 use case는 실패 결과로 정규화
 - prompt injection 의심 문구가 포함된 입력은 mock 단계에서도 실패 처리
 - LLM 출력은 저장 전 Guardrails adapter의 검사 대상
-- 실제 Bedrock Runtime, boto3 client, retry/backoff, streaming은 후속 이슈에서 처리
+- AWS dev smoke test에서는 `Boto3BedrockClaudeInvoker`로 Bedrock Runtime Converse API 호출 검증
+- 서울 리전 dev 호출은 `HEZO_BEDROCK_INFERENCE_PROFILE_ID`를 우선 사용하고, 값이 없으면 `HEZO_BEDROCK_MODEL_ID`로 fallback
+- retry/backoff, streaming은 후속 이슈에서 처리
 
-이번 범위에서는 실제 AWS Bedrock 호출, model permission 설정, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 AgentCore Runtime 연결을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_bedrock_claude_aws_smoke.py
+```
 
 ## Bedrock Guardrails ApplyGuardrail
 
