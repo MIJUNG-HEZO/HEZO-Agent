@@ -34,6 +34,7 @@ from agents.generation.guardrails.content_guardrail import (
 )
 from agents.generation.tools.contract_loader import load_contract
 from agents.generation.tools.render_spec_saver import save_render_spec
+from libs.telemetry import init_telemetry, record_llm_usage
 
 # ─── 로깅 ────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -43,6 +44,9 @@ logger = logging.getLogger("hezo.generation")
 REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 QUALITY_THRESHOLD = int(os.environ.get("QUALITY_THRESHOLD", "70"))
+
+# ─── 관측 (P5 telemetry) — 에이전트별 토큰·비용을 CloudWatch로 직접 전송 ───
+init_telemetry("generation", region=REGION)
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "2"))
 
 # ─── FastAPI 앱 ───────────────────────────────────────────────────────────────
@@ -208,6 +212,16 @@ def call_claude(contract: dict, crawl_snapshot: dict | None, issues_hint: list[s
     logger.info("Claude 호출 완료: %.0f ms", elapsed)
 
     result = json.loads(resp["body"].read())
+
+    # 토큰·비용 기록 (에이전트별 → CloudWatch HEZO/Agents)
+    _usage = result.get("usage", {})
+    record_llm_usage(
+        "generation", "sonnet",
+        _usage.get("input_tokens", 0),
+        _usage.get("output_tokens", 0),
+        ms=elapsed,
+    )
+
     text = result["content"][0]["text"].strip()
 
     # JSON 추출 (마크다운 코드 블록 처리)
