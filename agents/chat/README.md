@@ -515,7 +515,7 @@ python3 agents/chat/test_bedrock_claude_aws_smoke.py
 
 ## Bedrock Guardrails ApplyGuardrail
 
-`bedrock_guardrails_adapter.py`는 Bedrock Guardrails `ApplyGuardrail` 호출 입력/출력 경계를 정의하는 adapter 스켈레톤입니다.
+`bedrock_guardrails_adapter.py`는 Bedrock Guardrails `ApplyGuardrail` 호출 입력/출력 경계를 정의합니다.
 
 검사 대상:
 
@@ -562,8 +562,17 @@ python3 agents/chat/test_bedrock_claude_aws_smoke.py
 - 이메일/전화번호/주민등록번호 형태의 PII 의심 패턴은 `GUARDRAIL_INTERVENED`
 - guardrail id/version 누락, 빈 content는 실패 결과로 정규화
 - 기존 `storage_guardrails.py`와 호환되도록 `action`, `store_allowed`, `reasons` 구조 유지
+- AWS dev smoke test에서는 `Boto3BedrockGuardrailsClient`로 Bedrock Runtime `ApplyGuardrail` API 호출 검증
+- `GUARDRAIL_INTERVENED` 응답은 저장을 막기 위해 `store_allowed=false`로 정규화
 
-이번 범위에서는 실제 AWS Bedrock Guardrails `ApplyGuardrail` 호출, guardrail 생성/정책 설정, boto3 client 연결을 포함하지 않습니다.
+이번 범위에서는 guardrail 생성/정책 설정, Claude 호출과 Guardrail을 한 요청 흐름으로 묶는 작업을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_bedrock_guardrails_aws_smoke.py
+```
 
 ## Chat Graph Skeleton
 

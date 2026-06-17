@@ -1,10 +1,12 @@
-"""Bedrock Guardrails adapter skeleton for the HEZO chat agent."""
+"""Bedrock Guardrails adapters for the HEZO chat agent."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 import re
+import time
 from typing import Any, Literal, Protocol
 
 
@@ -13,8 +15,13 @@ GuardrailSource = Literal["INPUT", "OUTPUT"]
 GuardrailAction = Literal["NONE", "GUARDRAIL_INTERVENED"]
 GuardrailStatus = Literal["succeeded", "failed"]
 
-DEFAULT_GUARDRAIL_ID = "q8dcjc2um846"
-DEFAULT_GUARDRAIL_VERSION = "DRAFT"
+FALLBACK_GUARDRAIL_ID = "q8dcjc2um846"
+FALLBACK_GUARDRAIL_VERSION = "DRAFT"
+DEFAULT_GUARDRAIL_ID = os.environ.get("HEZO_BEDROCK_GUARDRAIL_ID", FALLBACK_GUARDRAIL_ID)
+DEFAULT_GUARDRAIL_VERSION = os.environ.get(
+    "HEZO_BEDROCK_GUARDRAIL_VERSION",
+    FALLBACK_GUARDRAIL_VERSION,
+)
 
 PROMPT_INJECTION_PATTERNS = [
     "이전 지시 무시",
@@ -33,6 +40,14 @@ PII_PATTERNS = {
 }
 
 
+def _default_guardrail_id() -> str:
+    return os.environ.get("HEZO_BEDROCK_GUARDRAIL_ID", FALLBACK_GUARDRAIL_ID)
+
+
+def _default_guardrail_version() -> str:
+    return os.environ.get("HEZO_BEDROCK_GUARDRAIL_VERSION", FALLBACK_GUARDRAIL_VERSION)
+
+
 @dataclass(frozen=True)
 class GuardrailsApplyInput:
     """Input boundary for future Bedrock ApplyGuardrail calls."""
@@ -40,8 +55,8 @@ class GuardrailsApplyInput:
     target: GuardrailTarget
     content: str | dict[str, Any]
     source: GuardrailSource
-    guardrail_id: str = DEFAULT_GUARDRAIL_ID
-    guardrail_version: str = DEFAULT_GUARDRAIL_VERSION
+    guardrail_id: str = field(default_factory=_default_guardrail_id)
+    guardrail_version: str = field(default_factory=_default_guardrail_version)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -136,6 +151,83 @@ class MockBedrockGuardrailsClient:
         )
 
 
+class Boto3BedrockGuardrailsClient:
+    """AWS Bedrock Runtime Guardrails client using ApplyGuardrail."""
+
+    def __init__(self, client: Any | None = None, region_name: str | None = None) -> None:
+        if client is not None:
+            self._client = client
+            return
+
+        try:
+            import boto3  # type: ignore[import-not-found]
+        except ImportError as error:
+            raise RuntimeError("boto3_required_for_bedrock_guardrails_client") from error
+
+        session_kwargs: dict[str, str] = {}
+        profile_name = os.environ.get("AWS_PROFILE")
+        if profile_name:
+            session_kwargs["profile_name"] = profile_name
+        session = boto3.Session(**session_kwargs)
+        self._client = session.client(
+            "bedrock-runtime",
+            region_name=region_name or os.environ.get("AWS_REGION"),
+        )
+
+    def apply_guardrail(self, guardrail_input: GuardrailsApplyInput) -> GuardrailsApplyResult:
+        validation_error = _validate_guardrail_input(guardrail_input)
+        if validation_error:
+            return _failed_result(guardrail_input, validation_error)
+
+        started = time.perf_counter()
+        try:
+            response = self._client.apply_guardrail(
+                guardrailIdentifier=guardrail_input.guardrail_id,
+                guardrailVersion=guardrail_input.guardrail_version,
+                source=guardrail_input.source,
+                content=[
+                    {
+                        "text": {
+                            "text": _content_to_text(guardrail_input.content),
+                        },
+                    }
+                ],
+            )
+        except Exception as error:
+            return _failed_result(
+                guardrail_input,
+                _bedrock_error_reason(error),
+            )
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        action = _normalize_action(response.get("action"))
+        assessments = tuple(_normalize_bedrock_assessments(response.get("assessments", []), action))
+        if not assessments:
+            assessments = (
+                GuardrailAssessment(
+                    policy="bedrock_guardrail",
+                    reason="guardrail_passed",
+                    blocked=False,
+                ),
+            )
+
+        blocking_reasons = tuple(
+            assessment.reason for assessment in assessments if assessment.blocked
+        )
+        reasons = blocking_reasons or ("guardrail_passed",)
+        return GuardrailsApplyResult(
+            status="succeeded",
+            target=guardrail_input.target,
+            source=guardrail_input.source,
+            action=action,
+            store_allowed=action == "NONE",
+            masked_output=_extract_guardrail_output_text(response),
+            reasons=reasons,
+            assessments=assessments,
+            latency_ms=latency_ms,
+        )
+
+
 def _validate_guardrail_input(guardrail_input: GuardrailsApplyInput) -> str | None:
     if guardrail_input.target not in {"user_input", "p2_markdown", "contract_draft", "llm_output"}:
         return "guardrail_target_invalid"
@@ -213,3 +305,175 @@ def _content_to_text(content: str | dict[str, Any]) -> str:
 def _detect_prompt_injection(content_text: str) -> bool:
     lowered = content_text.lower()
     return any(pattern.lower() in lowered for pattern in PROMPT_INJECTION_PATTERNS)
+
+
+def _normalize_action(action: Any) -> GuardrailAction:
+    if action == "GUARDRAIL_INTERVENED":
+        return "GUARDRAIL_INTERVENED"
+    return "NONE"
+
+
+def _extract_guardrail_output_text(response: dict[str, Any]) -> str | None:
+    output_texts: list[str] = []
+    for output in response.get("outputs", []):
+        if isinstance(output, dict):
+            text = output.get("text")
+            if isinstance(text, str) and text.strip():
+                output_texts.append(text.strip())
+    if not output_texts:
+        return None
+    return "\n".join(output_texts)
+
+
+def _normalize_bedrock_assessments(
+    assessments: list[dict[str, Any]],
+    action: GuardrailAction,
+) -> list[GuardrailAssessment]:
+    normalized: list[GuardrailAssessment] = []
+    for assessment in assessments:
+        if not isinstance(assessment, dict):
+            continue
+        normalized.extend(_content_policy_assessments(assessment))
+        normalized.extend(_sensitive_information_assessments(assessment))
+        normalized.extend(_topic_policy_assessments(assessment))
+        normalized.extend(_word_policy_assessments(assessment))
+        normalized.extend(_prompt_attack_assessments(assessment))
+        normalized.extend(_contextual_grounding_assessments(assessment))
+
+    if action == "GUARDRAIL_INTERVENED" and not any(item.blocked for item in normalized):
+        normalized.append(
+            GuardrailAssessment(
+                policy="bedrock_guardrail",
+                reason="guardrail_intervened",
+                blocked=True,
+            )
+        )
+    return normalized
+
+
+def _content_policy_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("contentPolicy", {})
+    filters = policy.get("filters", []) if isinstance(policy, dict) else []
+    return [
+        GuardrailAssessment(
+            policy="content_policy",
+            reason=str(item.get("type", "content_filter")).lower(),
+            blocked=_is_blocked_action(item.get("action")),
+        )
+        for item in filters
+        if isinstance(item, dict)
+    ]
+
+
+def _sensitive_information_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("sensitiveInformationPolicy", {})
+    if not isinstance(policy, dict):
+        return []
+
+    normalized: list[GuardrailAssessment] = []
+    for item in policy.get("piiEntities", []):
+        if isinstance(item, dict):
+            normalized.append(
+                GuardrailAssessment(
+                    policy="sensitive_information",
+                    reason=str(item.get("type", "pii_entity")).lower(),
+                    blocked=_is_blocked_action(item.get("action")),
+                )
+            )
+    for item in policy.get("regexes", []):
+        if isinstance(item, dict):
+            normalized.append(
+                GuardrailAssessment(
+                    policy="sensitive_information",
+                    reason=str(item.get("name", "regex")).lower(),
+                    blocked=_is_blocked_action(item.get("action")),
+                )
+            )
+    return normalized
+
+
+def _topic_policy_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("topicPolicy", {})
+    topics = policy.get("topics", []) if isinstance(policy, dict) else []
+    return [
+        GuardrailAssessment(
+            policy="topic_policy",
+            reason=str(item.get("name", item.get("type", "topic"))).lower(),
+            blocked=_is_blocked_action(item.get("action")),
+        )
+        for item in topics
+        if isinstance(item, dict)
+    ]
+
+
+def _word_policy_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("wordPolicy", {})
+    if not isinstance(policy, dict):
+        return []
+
+    normalized: list[GuardrailAssessment] = []
+    for item in policy.get("customWords", []):
+        if isinstance(item, dict):
+            normalized.append(
+                GuardrailAssessment(
+                    policy="word_policy",
+                    reason=str(item.get("match", "custom_word")).lower(),
+                    blocked=_is_blocked_action(item.get("action")),
+                )
+            )
+    for item in policy.get("managedWordLists", []):
+        if isinstance(item, dict):
+            normalized.append(
+                GuardrailAssessment(
+                    policy="word_policy",
+                    reason=str(item.get("type", "managed_word_list")).lower(),
+                    blocked=_is_blocked_action(item.get("action")),
+                )
+            )
+    return normalized
+
+
+def _prompt_attack_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("promptAttackPolicy", {})
+    filters = policy.get("filters", []) if isinstance(policy, dict) else []
+    return [
+        GuardrailAssessment(
+            policy="prompt_attack",
+            reason=str(item.get("type", "prompt_attack")).lower(),
+            blocked=_is_blocked_action(item.get("action")),
+        )
+        for item in filters
+        if isinstance(item, dict)
+    ]
+
+
+def _contextual_grounding_assessments(assessment: dict[str, Any]) -> list[GuardrailAssessment]:
+    policy = assessment.get("contextualGroundingPolicy", {})
+    filters = policy.get("filters", []) if isinstance(policy, dict) else []
+    return [
+        GuardrailAssessment(
+            policy="contextual_grounding",
+            reason=str(item.get("type", "contextual_grounding")).lower(),
+            blocked=_is_blocked_action(item.get("action")),
+        )
+        for item in filters
+        if isinstance(item, dict)
+    ]
+
+
+def _is_blocked_action(action: Any) -> bool:
+    return action in {"BLOCKED", "ANONYMIZED"}
+
+
+def _bedrock_error_reason(error: Exception) -> str:
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        error_info = response.get("Error", {})
+        code = error_info.get("Code")
+        if code:
+            message = str(error_info.get("Message", "")).strip()
+            if message:
+                normalized_message = "_".join(message.lower().split())[:80]
+                return f"bedrock_{str(code).lower()}_{normalized_message}"
+            return f"bedrock_{str(code).lower()}"
+    return "bedrock_apply_guardrail_failed"

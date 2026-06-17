@@ -21,6 +21,7 @@ from bedrock_claude_adapter import (
     MockClaudeInvoker,
 )
 from bedrock_guardrails_adapter import (
+    Boto3BedrockGuardrailsClient,
     GuardrailsApplyInput,
     MockBedrockGuardrailsClient,
 )
@@ -1124,6 +1125,29 @@ def _validate_bedrock_guardrails_cases() -> list[str]:
     if contract_result.action != "NONE" or contract_result.store_allowed is not True:
         errors.append("안전한 contract draft dict는 Guardrails 통과여야 합니다.")
 
+    aws_client = Boto3BedrockGuardrailsClient(client=_FakeBedrockGuardrailsRuntimeClient())
+    aws_safe = aws_client.apply_guardrail(_sample_bedrock_guardrails_input())
+    if aws_safe.status != "succeeded" or aws_safe.action != "NONE":
+        errors.append("Boto3 Bedrock Guardrails adapter safe 응답은 succeeded/NONE이어야 합니다.")
+    if aws_safe.store_allowed is not True:
+        errors.append("Boto3 Bedrock Guardrails adapter safe 응답은 store_allowed=true여야 합니다.")
+
+    aws_blocked = aws_client.apply_guardrail(
+        _sample_bedrock_guardrails_input(content="차단 테스트 문구입니다.")
+    )
+    if aws_blocked.action != "GUARDRAIL_INTERVENED" or aws_blocked.store_allowed is not False:
+        errors.append("Boto3 Bedrock Guardrails adapter 차단 응답은 store_allowed=false여야 합니다.")
+    if "harmful_content" not in aws_blocked.reasons:
+        errors.append("Boto3 Bedrock Guardrails adapter 차단 사유가 정규화되어야 합니다.")
+    if aws_blocked.masked_output != "죄송합니다. 요청을 처리할 수 없습니다.":
+        errors.append("Boto3 Bedrock Guardrails adapter outputs text를 masked_output으로 정규화해야 합니다.")
+
+    aws_failed = Boto3BedrockGuardrailsClient(
+        client=_FailingBedrockGuardrailsRuntimeClient()
+    ).apply_guardrail(_sample_bedrock_guardrails_input())
+    if aws_failed.status != "failed" or aws_failed.store_allowed is not False:
+        errors.append("Boto3 Bedrock Guardrails adapter 호출 실패는 failed/store_allowed=false여야 합니다.")
+
     invalid_cases = [
         (
             "missing_guardrail_id",
@@ -1162,6 +1186,47 @@ def _validate_bedrock_guardrails_cases() -> list[str]:
             errors.append(f"{name}: 실패 응답은 store_allowed=false여야 합니다.")
 
     return errors
+
+
+class _FakeBedrockGuardrailsRuntimeClient:
+    def apply_guardrail(
+        self,
+        *,
+        guardrailIdentifier: str,
+        guardrailVersion: str,
+        source: str,
+        content: list[dict[str, object]],
+    ) -> dict[str, object]:
+        if not guardrailIdentifier or not guardrailVersion or source not in {"INPUT", "OUTPUT"}:
+            raise ValueError("apply_guardrail_payload_invalid")
+        text = str(content[0]["text"]["text"])
+        if "차단" in text:
+            return {
+                "action": "GUARDRAIL_INTERVENED",
+                "outputs": [{"text": "죄송합니다. 요청을 처리할 수 없습니다."}],
+                "assessments": [
+                    {
+                        "contentPolicy": {
+                            "filters": [
+                                {
+                                    "type": "harmful_content",
+                                    "action": "BLOCKED",
+                                }
+                            ]
+                        }
+                    }
+                ],
+            }
+        return {
+            "action": "NONE",
+            "outputs": [{"text": text}],
+            "assessments": [],
+        }
+
+
+class _FailingBedrockGuardrailsRuntimeClient:
+    def apply_guardrail(self, **_: object) -> dict[str, object]:
+        raise RuntimeError("bedrock_unavailable")
 
 
 def _sample_chat_graph_state(**overrides: object) -> ChatGraphState:
