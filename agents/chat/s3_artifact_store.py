@@ -1,9 +1,10 @@
-"""S3 artifact storage adapter skeleton for the HEZO chat agent."""
+"""S3 artifact storage adapters for the HEZO chat agent."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 from typing import Any, Literal, Protocol
 
 
@@ -15,9 +16,10 @@ ArtifactKind = Literal[
     "guardrail_report",
 ]
 
-CHAT_TRANSCRIPTS_BUCKET = "dev-hezo-chat-transcripts"
-P2_MARKDOWNS_BUCKET = "dev-hezo-p2-markdowns"
-CONTRACTS_BUCKET = "dev-hezo-p4-contracts"
+CHAT_BUCKET = os.environ.get("HEZO_CHAT_BUCKET", "hezo-chat")
+CHAT_TRANSCRIPTS_BUCKET = CHAT_BUCKET
+P2_MARKDOWNS_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+CONTRACTS_BUCKET = os.environ.get("HEZO_CONTRACTS_BUCKET", "hezo-artifacts")
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,9 @@ class S3ArtifactStore(Protocol):
         ...
 
     def get_artifact(self, ref: ArtifactRef) -> str:
+        ...
+
+    def delete_artifact(self, ref: ArtifactRef) -> None:
         ...
 
 
@@ -141,6 +146,71 @@ class InMemoryS3ArtifactStore:
         except KeyError as error:
             raise ValueError("artifact_not_found") from error
 
+    def delete_artifact(self, ref: ArtifactRef) -> None:
+        _require_text("bucket", ref.bucket)
+        _require_text("key", ref.key)
+        self._objects.pop((ref.bucket, ref.key), None)
+
+
+class Boto3S3ArtifactStore:
+    """AWS S3 implementation used by dev/integration smoke tests."""
+
+    def __init__(self, client: Any | None = None, region_name: str | None = None) -> None:
+        if client is not None:
+            self._client = client
+            return
+
+        try:
+            import boto3  # type: ignore[import-not-found]
+        except ImportError as error:
+            raise RuntimeError("boto3_required_for_s3_artifact_store") from error
+
+        session_kwargs: dict[str, str] = {}
+        profile_name = os.environ.get("AWS_PROFILE")
+        if profile_name:
+            session_kwargs["profile_name"] = profile_name
+        session = boto3.Session(**session_kwargs)
+        self._client = session.client("s3", region_name=region_name or os.environ.get("AWS_REGION"))
+
+    def build_artifact_ref(self, artifact_kind: ArtifactKind, **kwargs: Any) -> ArtifactRef:
+        return InMemoryS3ArtifactStore().build_artifact_ref(artifact_kind, **kwargs)
+
+    def put_artifact(self, payload: ArtifactPayload) -> ArtifactRef:
+        if not payload.store_allowed:
+            raise ValueError("artifact_store_blocked_by_guardrail")
+        if payload.guardrail_action != "NONE":
+            raise ValueError("artifact_guardrail_action_not_clear")
+
+        body = _serialize_body(payload.body)
+        self._client.put_object(
+            Bucket=payload.ref.bucket,
+            Key=payload.ref.key,
+            Body=body.encode("utf-8"),
+            ContentType=payload.ref.content_type,
+            Metadata=dict(payload.ref.metadata),
+        )
+        return payload.ref
+
+    def get_artifact(self, ref: ArtifactRef) -> str:
+        _require_text("bucket", ref.bucket)
+        _require_text("key", ref.key)
+        try:
+            response = self._client.get_object(Bucket=ref.bucket, Key=ref.key)
+        except Exception as error:
+            if _is_s3_not_found_error(error):
+                raise ValueError("artifact_not_found") from error
+            raise
+
+        body = response["Body"].read()
+        if isinstance(body, bytes):
+            return body.decode("utf-8")
+        return str(body)
+
+    def delete_artifact(self, ref: ArtifactRef) -> None:
+        _require_text("bucket", ref.bucket)
+        _require_text("key", ref.key)
+        self._client.delete_object(Bucket=ref.bucket, Key=ref.key)
+
 
 def chat_transcript_key(session_id: str, version: int) -> str:
     _require_text("session_id", session_id)
@@ -192,3 +262,11 @@ def _require_text(field_name: str, value: str) -> None:
 def _require_positive_version(version: int, field_name: str) -> None:
     if version <= 0:
         raise ValueError(f"{field_name}_must_be_positive")
+
+
+def _is_s3_not_found_error(error: Exception) -> bool:
+    response = getattr(error, "response", None)
+    if not isinstance(response, dict):
+        return False
+    error_code = response.get("Error", {}).get("Code")
+    return error_code in {"NoSuchKey", "404", "NotFound"}

@@ -39,6 +39,8 @@ from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
 from s3_artifact_store import (
     ArtifactPayload,
+    Boto3S3ArtifactStore,
+    CHAT_BUCKET,
     CHAT_TRANSCRIPTS_BUCKET,
     CONTRACTS_BUCKET,
     InMemoryS3ArtifactStore,
@@ -700,6 +702,8 @@ def _validate_s3_artifact_store_cases() -> list[str]:
     )
     if transcript_ref.bucket != CHAT_TRANSCRIPTS_BUCKET:
         errors.append("chat transcript bucket이 올바르지 않습니다.")
+    if CHAT_TRANSCRIPTS_BUCKET != CHAT_BUCKET:
+        errors.append("chat transcript bucket은 HEZO_CHAT_BUCKET 기준이어야 합니다.")
     store.put_artifact(
         ArtifactPayload(
             ref=transcript_ref,
@@ -757,6 +761,30 @@ def _validate_s3_artifact_store_cases() -> list[str]:
     if "store_allowed" not in store.get_artifact(guardrail_ref):
         errors.append("guardrail report artifact를 저장 후 조회할 수 있어야 합니다.")
 
+    fake_client = _FakeS3Client()
+    aws_store = Boto3S3ArtifactStore(client=fake_client)
+    aws_ref = aws_store.build_artifact_ref(
+        "chat_transcript",
+        session_id="session_aws_001",
+        version=1,
+    )
+    aws_store.put_artifact(
+        ArtifactPayload(
+            ref=aws_ref,
+            body={"messages": [{"role": "user", "content": "hello"}]},
+        )
+    )
+    if "messages" not in aws_store.get_artifact(aws_ref):
+        errors.append("Boto3 S3 adapter가 put/get 경계를 제공해야 합니다.")
+    aws_store.delete_artifact(aws_ref)
+    try:
+        aws_store.get_artifact(aws_ref)
+    except ValueError as error:
+        if str(error) != "artifact_not_found":
+            errors.append(f"Boto3 S3 adapter 삭제 후 error={error!s}")
+    else:
+        errors.append("Boto3 S3 adapter 삭제 후 artifact_not_found가 발생해야 합니다.")
+
     invalid_cases = [
         ("empty_session_id", lambda: chat_transcript_key(" ", 1), "session_id_missing"),
         (
@@ -795,6 +823,47 @@ def _validate_s3_artifact_store_cases() -> list[str]:
             errors.append(f"{name}: ValueError가 발생해야 합니다.")
 
     return errors
+
+
+class _FakeS3Body:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+
+class _FakeS3Client:
+    def __init__(self) -> None:
+        self._objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(
+        self,
+        *,
+        Bucket: str,
+        Key: str,
+        Body: bytes,
+        ContentType: str,
+        Metadata: dict[str, str],
+    ) -> None:
+        if not ContentType:
+            raise ValueError("content_type_missing")
+        if not isinstance(Metadata, dict):
+            raise ValueError("metadata_invalid")
+        self._objects[(Bucket, Key)] = Body
+
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, _FakeS3Body]:
+        key = (Bucket, Key)
+        if key not in self._objects:
+            raise _FakeS3NotFound()
+        return {"Body": _FakeS3Body(self._objects[key])}
+
+    def delete_object(self, *, Bucket: str, Key: str) -> None:
+        self._objects.pop((Bucket, Key), None)
+
+
+class _FakeS3NotFound(Exception):
+    response = {"Error": {"Code": "NoSuchKey"}}
 
 
 def _sample_claude_input(**overrides: object) -> ClaudeInvocationInput:
