@@ -101,13 +101,6 @@ async def invoke_root(request: Request) -> JSONResponse:
     return await _handle_invoke(request)
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def catch_all(path: str, request: Request) -> JSONResponse:
-    if request.method == "POST":
-        return await _handle_invoke(request)
-    return JSONResponse({"path": path, "method": request.method}, status_code=200)
-
-
 @app.get("/ping")
 async def ping() -> JSONResponse:
     return JSONResponse({"status": "ok"})
@@ -116,6 +109,13 @@ async def ping() -> JSONResponse:
 @app.get("/health")
 async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "agent": "hezo-p3-build-worker"})
+
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def catch_all(path: str, request: Request) -> JSONResponse:
+    if request.method == "POST":
+        return await _handle_invoke(request)
+    return JSONResponse({"path": path, "method": request.method}, status_code=200)
 
 
 if __name__ == "__main__":
