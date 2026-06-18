@@ -28,9 +28,15 @@ from agents.validation.rule_engine.layer2_requirements import check_layer2
 from agents.validation.rule_engine.layer3_ai_friendly import check_layer3
 from agents.validation.tools.artifact_fetcher import fetch_artifacts
 from agents.validation.tools.validation_saver import save_validation_report
+from libs.telemetry import init_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("hezo.validation")
+
+REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2")
+
+# ─── 관측 (P5 telemetry) — 에이전트별 토큰·비용을 CloudWatch로 직접 전송 ───
+init_telemetry("validation", region=REGION)
 
 app = FastAPI(title="HEZO Validation Agent")
 
