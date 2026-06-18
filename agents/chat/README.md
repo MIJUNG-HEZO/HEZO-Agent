@@ -50,6 +50,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 
 ```text
 domain_selection
+-> chat_session_start
 -> p2_markdown_request
 -> p2_markdown_load
 -> p2_markdown_parse
@@ -111,6 +112,52 @@ domain_selection
 - `missing_slots`가 비어 있어도 payload 생성 가능
 
 이번 범위에서는 실제 P2 API 호출, S3 저장, Bedrock/LangGraph 호출을 포함하지 않습니다.
+
+## Chat Session Start Pipeline
+
+`chat_session_start.py`는 도메인 선택 이후 첫 채팅 턴에 필요한 내부 파이프라인을 묶습니다.
+
+처리 순서:
+
+```text
+P2 markdown S3 load
+-> P2 markdown parse
+-> P1 markdown review
+-> proactive question candidates
+-> LLM 보완 필요 여부 판단
+```
+
+입력 기준:
+
+- `session_id`, `site_id`, `user_id`
+- `domain`, `domain_label`, `selected_template`
+- `slot_registry`, `known_answers`, `missing_slots`
+- `source_s3_key`, `version`
+
+출력 기준:
+
+```json
+{
+  "status": "ready_for_user_question",
+  "next_stage": "proactive_questioning",
+  "llm_required": false,
+  "question_candidates": [
+    {
+      "slot": "core_services",
+      "question": "핵심 세무 서비스는 무엇인가요?",
+      "source": "p2_markdown"
+    }
+  ]
+}
+```
+
+판단 기준:
+
+- P2 markdown parse/review가 모두 `passed`이고 P2 기반 질문 후보가 충분하면 LLM 호출을 생략합니다.
+- P2 markdown이 일부 부족하거나 fallback 질문이 섞이면 `llm_required=true`로 표시합니다.
+- P2 markdown review가 실패하면 `next_stage=p2_retry`로 정규화합니다.
+
+이번 범위에서는 실제 HTTP API 라우터, 사용자 세션 저장, AgentCore Runtime 배포, Claude 호출 실행을 포함하지 않습니다.
 
 ## P2 Markdown S3 Loader
 
