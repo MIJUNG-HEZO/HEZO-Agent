@@ -35,6 +35,16 @@ TTL_DAYS: dict[str, int | None] = {"high": 7, "mid": 30, "low": None}
 # low(만료 없음): due-index에는 남되 절대 만료로 안 잡히도록 먼 미래 epoch 사용.
 NEVER_REFRESH = 9_999_999_999
 
+# 검수 미달 재시도 백오프: attempts별 다음 시도까지 지연(일). 4회+부터 30일 고정.
+# 무인 운영 — 포기(failed) 대신 status=pending 유지 + 간격만 벌려 비용을 통제한다.
+# (일시적 실패는 곧 풀리고, 구조적 실패도 한 달에 한 번 정도만 헛돌아 비용 미미)
+_BACKOFF_DAYS: dict[int, int] = {1: 1, 2: 3, 3: 7}
+_BACKOFF_DEFAULT_DAYS = 30
+
+
+def _backoff_days(attempts: int) -> int:
+    return _BACKOFF_DAYS.get(attempts, _BACKOFF_DEFAULT_DAYS)
+
 
 def _now_epoch() -> int:
     return int(time.time())
@@ -178,12 +188,30 @@ class WikiIndexStore:
         )
         return _to_native(resp.get("Attributes", {}))
 
-    def reject(self, domain: str) -> int:
-        """검수 미달: attempts 증가(status 유지). 새 attempts 반환."""
-        resp = self._table.update_item(
+    def reject(self, domain: str, *, now: int | None = None) -> int:
+        """검수 미달: 무인 백오프 재시도. 새 attempts 반환.
+
+        status를 pending으로 되돌리고(다음 PickDomains 쿼리에 다시 잡히게) next_refresh_at을
+        attempts별 백오프(1·3·7·30일)만큼 미래로 민다. 사람 개입 없이 자동 재시도하되,
+        실패가 쌓일수록 간격이 벌어져 비용이 통제된다(포기/failed 전이 없음).
+
+        재큐잉 메커니즘 = SQS가 아니라 DDB 속성 변경 — pending + (지난) next_refresh_at이면
+        due-index 쿼리에 다시 포함된다. 백오프 동안은 next_refresh_at이 미래라 안 잡힌다.
+        """
+        now = _now_epoch() if now is None else now
+        item = self._table.get_item(Key={"domain": domain}).get("Item") or {}
+        attempts = int(_to_native(item.get("attempts", 0))) + 1
+        self._table.update_item(
             Key={"domain": domain},
-            UpdateExpression="SET last_updated = :lu ADD attempts :one",
-            ExpressionAttributeValues={":one": 1, ":lu": _now_iso()},
-            ReturnValues="ALL_NEW",
+            UpdateExpression=(
+                "SET #st = :pending, attempts = :a, next_refresh_at = :nra, last_updated = :lu"
+            ),
+            ExpressionAttributeNames={"#st": "status"},
+            ExpressionAttributeValues={
+                ":pending": STATUS_PENDING,
+                ":a": attempts,
+                ":nra": now + _backoff_days(attempts) * _DAY,
+                ":lu": _now_iso(),
+            },
         )
-        return int(_to_native(resp.get("Attributes", {})).get("attempts", 0))
+        return attempts
