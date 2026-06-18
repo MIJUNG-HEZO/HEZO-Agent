@@ -34,6 +34,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Bedrock Claude invocation adapter 스켈레톤
 - Bedrock Guardrails ApplyGuardrail adapter 스켈레톤
 - LangGraph chat graph 스켈레톤
+- AgentCore 호환 HTTP wrapper
 - 로컬 smoke test
 
 제외:
@@ -41,7 +42,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - 실제 LangGraph `StateGraph` 구현
 - 실제 Bedrock 호출
 - 실제 P2 API 호출
-- 실제 사용자 대화 API 라우터
+- 실제 Backend 사용자 대화 API 라우터 연동
 - 실제 Bedrock Guardrails 호출
 - 실제 DynamoDB custom checkpointer
 - 실제 S3 3개 물리 버킷 연동
@@ -893,6 +894,52 @@ state 기준:
 ```
 
 이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB/S3/Boto3 호출, Bedrock 호출, AgentCore Runtime 연결을 포함하지 않습니다.
+
+## Chat HTTP Wrapper
+
+`agent.py`는 P1 Chat Agent를 AgentCore/로컬 HTTP 호출 규격으로 노출하는 얇은 FastAPI wrapper입니다.
+
+엔드포인트:
+
+- `POST /invoke`
+- `POST /invocations`
+- `POST /`
+- `GET /ping`
+- `GET /health`
+
+요청 기준:
+
+```json
+{
+  "sessionId": "session_001",
+  "inputText": "",
+  "sessionAttributes": {
+    "action": "graph_smoke"
+  }
+}
+```
+
+지원 action:
+
+- `session_start`: `start_chat_session()` 호출
+- `chat_turn`: `handle_chat_turn()` 호출
+- `graph_smoke`: `run_chat_graph()` 호출
+
+응답 기준:
+
+```json
+{
+  "output": "chat_graph_smoke_complete — stage: s3_artifact_storage",
+  "sessionState": {
+    "sessionId": "session_001",
+    "action": "graph_smoke",
+    "stage": "s3_artifact_storage"
+  },
+  "metadata": {}
+}
+```
+
+이번 범위에서는 실제 Backend 사용자 대화 API 라우터, AgentCore Runtime 배포, ECR 이미지 빌드를 포함하지 않습니다.
 
 ## Local Smoke Test
 
