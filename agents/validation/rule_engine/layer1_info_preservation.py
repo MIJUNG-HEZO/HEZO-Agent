@@ -7,9 +7,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any
 
 import boto3
+
+from libs.telemetry import record_llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +74,22 @@ def check_layer1(
             "max_tokens": 512,
             "messages": [{"role": "user", "content": prompt}],
         })
+        start = time.monotonic()
         resp = bedrock.invoke_model(
             modelId=MODEL_ID, body=body,
             contentType="application/json", accept="application/json",
         )
+        elapsed = (time.monotonic() - start) * 1000
         result = json.loads(resp["body"].read())
+
+        _usage = result.get("usage", {})
+        record_llm_usage(
+            "validation", "sonnet",
+            _usage.get("input_tokens", 0),
+            _usage.get("output_tokens", 0),
+            ms=elapsed,
+        )
+
         text = result["content"][0]["text"].strip()
         check = json.loads(text)
     except Exception as exc:
