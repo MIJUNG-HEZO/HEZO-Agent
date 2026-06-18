@@ -29,6 +29,7 @@ from bedrock_guardrails_adapter import (
 )
 from chat_graph import CHAT_GRAPH_NODE_ORDER, ChatGraphState, run_chat_graph
 from chat_session_start import ChatSessionStartInput, start_chat_session
+from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from chat_state_store import (
     Boto3ChatStateStore,
     ChatCheckpoint,
@@ -77,6 +78,7 @@ CONFIG_FILE = pathlib.Path(__file__).parent / "agent_config.yaml"
 REQUIRED_STAGES = [
     "domain_selection",
     "chat_session_start",
+    "chat_turn_handler",
     "p2_markdown_request",
     "p2_markdown_load",
     "p2_markdown_parse",
@@ -199,6 +201,15 @@ REQUIRED_SESSION_START_FIELDS = [
     "next_stage",
     "llm_required",
     "source_s3_key",
+    "question_candidates",
+]
+
+REQUIRED_CHAT_TURN_FIELDS = [
+    "turn_status",
+    "next_stage",
+    "answered_slot",
+    "known_answers",
+    "missing_slots",
     "question_candidates",
 ]
 
@@ -374,6 +385,28 @@ def _sample_chat_session_start_input(**overrides: object) -> ChatSessionStartInp
     }
     data.update(overrides)
     return ChatSessionStartInput(**data)
+
+
+def _sample_chat_turn_input(**overrides: object) -> ChatTurnInput:
+    request_input = _sample_request_input()
+    data = {
+        "session_id": "session_001",
+        "site_id": request_input.site_id,
+        "user_id": request_input.user_id,
+        "domain": request_input.domain,
+        "domain_label": request_input.domain_label,
+        "slot_registry": request_input.slot_registry,
+        "known_answers": request_input.known_answers,
+        "missing_slots": request_input.missing_slots,
+        "answered_slot": "core_services",
+        "answer": "기장 대리, 종합소득세 신고, 법인세 신고",
+        "p1_markdown_review_status": "passed",
+        "p2_markdown_usable_for_questions": True,
+        "p2_knowledge_summary": "핵심 서비스 범위, 상담 전환 정보",
+        "max_questions": 3,
+    }
+    data.update(overrides)
+    return ChatTurnInput(**data)
 
 
 def _sample_p2_markdown_content() -> str:
@@ -715,6 +748,78 @@ confidence: 0.82
     for name, session_input, expected_error in invalid_cases:
         try:
             start_chat_session(session_input, store)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    return errors
+
+
+def _validate_chat_turn_handler_cases() -> list[str]:
+    errors: list[str] = []
+
+    next_question = handle_chat_turn(_sample_chat_turn_input())
+    next_question_dict = next_question.to_dict()
+    if next_question.turn_status != "answer_accepted":
+        errors.append("답변 반영 후 남은 slot이 있으면 answer_accepted 상태여야 합니다.")
+    if next_question.next_stage != "proactive_questioning":
+        errors.append("답변 반영 후 남은 slot이 있으면 proactive_questioning으로 진행해야 합니다.")
+    if next_question.known_answers.get("core_services") != "기장 대리, 종합소득세 신고, 법인세 신고":
+        errors.append("대화 턴 처리 결과는 새 답변을 known_answers에 반영해야 합니다.")
+    if next_question.missing_slots != ("contact_method",):
+        errors.append("대화 턴 처리 결과는 answered_slot을 missing_slots에서 제거해야 합니다.")
+    if not next_question.question_candidates or next_question.question_candidates[0].slot != "contact_method":
+        errors.append("대화 턴 처리 결과는 다음 missing slot 질문을 생성해야 합니다.")
+    if next_question_dict["question_candidates"][0]["source"] != "p2_markdown":
+        errors.append("다음 질문은 P2 도메인 지식 기반 source를 유지해야 합니다.")
+
+    ready = handle_chat_turn(
+        _sample_chat_turn_input(
+            known_answers={
+                "business_name": "한빛 세무회계",
+                "core_services": "기장 대리",
+            },
+            missing_slots=("contact_method",),
+            answered_slot="contact_method",
+            answer="전화 상담",
+        )
+    )
+    if ready.turn_status != "ready_for_contract_compile":
+        errors.append("마지막 필수 slot 답변 후 ready_for_contract_compile 상태여야 합니다.")
+    if ready.next_stage != "contract_compile":
+        errors.append("마지막 필수 slot 답변 후 contract_compile로 진행해야 합니다.")
+    if ready.question_candidates:
+        errors.append("Contract compile 준비 상태에서는 추가 질문 후보가 없어야 합니다.")
+    if "required_slots_filled" not in ready.reasons:
+        errors.append("필수 slot 완료 사유가 reasons에 포함되어야 합니다.")
+
+    rejected = handle_chat_turn(_sample_chat_turn_input(answer=" "))
+    if rejected.turn_status != "answer_rejected" or rejected.next_stage != "retry_answer":
+        errors.append("빈 답변은 answer_rejected/retry_answer 상태여야 합니다.")
+    if rejected.reasons != ("answer_empty",):
+        errors.append("빈 답변 거절 사유는 answer_empty여야 합니다.")
+
+    unknown = handle_chat_turn(_sample_chat_turn_input(answered_slot="unknown_slot"))
+    if unknown.turn_status != "answer_rejected" or unknown.reasons != ("unknown_slot",):
+        errors.append("존재하지 않는 slot 답변은 unknown_slot로 거절되어야 합니다.")
+
+    invalid_cases = [
+        (
+            "missing_session_id",
+            _sample_chat_turn_input(session_id=" "),
+            "required_fields_missing:session_id",
+        ),
+        (
+            "invalid_max_questions",
+            _sample_chat_turn_input(max_questions=0),
+            "max_questions_must_be_positive",
+        ),
+    ]
+    for name, turn_input, expected_error in invalid_cases:
+        try:
+            handle_chat_turn(turn_input)
         except ValueError as error:
             if str(error) != expected_error:
                 errors.append(f"{name}: error={error!s}, expected={expected_error}")
@@ -2092,7 +2197,20 @@ def main() -> None:
     else:
         print("  [OK] chat session start 필드 확인")
 
-    print("\n[15] P2 markdown request 케이스 검증")
+    print("\n[15] chat turn handler 필드 검증")
+    chat_turn_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_CHAT_TURN_FIELDS,
+        "chat turn handler field",
+    )
+    if chat_turn_field_errors:
+        errors.extend(chat_turn_field_errors)
+        for error in chat_turn_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] chat turn handler 필드 확인")
+
+    print("\n[16] P2 markdown request 케이스 검증")
     request_case_errors = _validate_request_cases()
     if request_case_errors:
         errors.extend(request_case_errors)
@@ -2101,7 +2219,7 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[16] P2 markdown S3 loader 케이스 검증")
+    print("\n[17] P2 markdown S3 loader 케이스 검증")
     loader_case_errors = _validate_p2_markdown_loader_cases()
     if loader_case_errors:
         errors.extend(loader_case_errors)
@@ -2110,7 +2228,7 @@ def main() -> None:
     else:
         print("  [OK] S3 ref 생성 / read / parser 연결 / 오류 케이스 확인")
 
-    print("\n[17] chat session start 케이스 검증")
+    print("\n[18] chat session start 케이스 검증")
     session_start_case_errors = _validate_chat_session_start_cases()
     if session_start_case_errors:
         errors.extend(session_start_case_errors)
@@ -2119,7 +2237,16 @@ def main() -> None:
     else:
         print("  [OK] load / parse / review / 첫 질문 / LLM 필요 여부 확인")
 
-    print("\n[18] P2 markdown parser 케이스 검증")
+    print("\n[19] chat turn handler 케이스 검증")
+    chat_turn_case_errors = _validate_chat_turn_handler_cases()
+    if chat_turn_case_errors:
+        errors.extend(chat_turn_case_errors)
+        for error in chat_turn_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] 답변 반영 / 다음 질문 / compile 진입 / 거절 케이스 확인")
+
+    print("\n[20] P2 markdown parser 케이스 검증")
     parser_case_errors = _validate_p2_markdown_parse_cases()
     if parser_case_errors:
         errors.extend(parser_case_errors)
@@ -2128,7 +2255,7 @@ def main() -> None:
     else:
         print("  [OK] slot 질문 / 근거 / 누락 / malformed 케이스 확인")
 
-    print("\n[19] proactive questioning 케이스 검증")
+    print("\n[21] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -2137,7 +2264,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[20] slot answer state 케이스 검증")
+    print("\n[22] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -2146,7 +2273,7 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[21] contract compile 케이스 검증")
+    print("\n[23] contract compile 케이스 검증")
     contract_case_errors = _validate_contract_cases()
     if contract_case_errors:
         errors.extend(contract_case_errors)
@@ -2155,7 +2282,7 @@ def main() -> None:
     else:
         print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
 
-    print("\n[22] contract quality check 케이스 검증")
+    print("\n[24] contract quality check 케이스 검증")
     quality_case_errors = _validate_quality_cases()
     if quality_case_errors:
         errors.extend(quality_case_errors)
@@ -2164,7 +2291,7 @@ def main() -> None:
     else:
         print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
 
-    print("\n[23] storage guardrails 케이스 검증")
+    print("\n[25] storage guardrails 케이스 검증")
     guardrail_case_errors = _validate_guardrail_cases()
     if guardrail_case_errors:
         errors.extend(guardrail_case_errors)
@@ -2173,7 +2300,7 @@ def main() -> None:
     else:
         print("  [OK] 저장 허용 / injection 차단 / PII 차단 / dict 직렬화 케이스 확인")
 
-    print("\n[24] chat state checkpoint 케이스 검증")
+    print("\n[26] chat state checkpoint 케이스 검증")
     checkpoint_case_errors = _validate_chat_state_store_cases()
     if checkpoint_case_errors:
         errors.extend(checkpoint_case_errors)
@@ -2182,7 +2309,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / metadata / message / checkpoint / guardrail 저장 조회 확인")
 
-    print("\n[25] S3 artifact storage 케이스 검증")
+    print("\n[27] S3 artifact storage 케이스 검증")
     s3_artifact_case_errors = _validate_s3_artifact_store_cases()
     if s3_artifact_case_errors:
         errors.extend(s3_artifact_case_errors)
@@ -2191,7 +2318,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / transcript / P2 markdown / contract / guardrail 저장 조회 확인")
 
-    print("\n[26] Bedrock Claude invocation 케이스 검증")
+    print("\n[28] Bedrock Claude invocation 케이스 검증")
     claude_case_errors = _validate_claude_invocation_cases()
     if claude_case_errors:
         errors.extend(claude_case_errors)
@@ -2200,7 +2327,7 @@ def main() -> None:
     else:
         print("  [OK] use case / 실패 정규화 / usage / latency metadata 확인")
 
-    print("\n[27] Bedrock Guardrails ApplyGuardrail 케이스 검증")
+    print("\n[29] Bedrock Guardrails ApplyGuardrail 케이스 검증")
     bedrock_guardrails_case_errors = _validate_bedrock_guardrails_cases()
     if bedrock_guardrails_case_errors:
         errors.extend(bedrock_guardrails_case_errors)
@@ -2209,7 +2336,7 @@ def main() -> None:
     else:
         print("  [OK] safe / injection / PII / 실패 정규화 / assessment 확인")
 
-    print("\n[28] guarded Claude reply flow 케이스 검증")
+    print("\n[30] guarded Claude reply flow 케이스 검증")
     guarded_flow_case_errors = _validate_guarded_claude_flow_cases()
     if guarded_flow_case_errors:
         errors.extend(guarded_flow_case_errors)
@@ -2218,7 +2345,7 @@ def main() -> None:
     else:
         print("  [OK] 입력 차단 / Claude 실패 / 출력 차단 / 정상 통과 케이스 확인")
 
-    print("\n[29] chat graph 케이스 검증")
+    print("\n[31] chat graph 케이스 검증")
     chat_graph_case_errors = _validate_chat_graph_cases()
     if chat_graph_case_errors:
         errors.extend(chat_graph_case_errors)
@@ -2227,7 +2354,7 @@ def main() -> None:
     else:
         print("  [OK] graph run / 최종 state / checkpoint / artifact ref 확인")
 
-    print("\n[30] review policy mock 값 검증")
+    print("\n[32] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -2236,7 +2363,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[31] P2 markdown review 케이스 검증")
+    print("\n[33] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)

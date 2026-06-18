@@ -70,6 +70,16 @@ Stages:
       - source
       - fallback
 
+  - name: chat_turn_handler
+    description: 사용자 답변 1턴을 반영하고 다음 질문 또는 contract_compile 진입 여부를 판단한다.
+    required_fields:
+      - turn_status
+      - next_stage
+      - answered_slot
+      - known_answers
+      - missing_slots
+      - question_candidates
+
   - name: slot_answer_state
     description: 사용자 답변을 known_answers에 반영하고 missing_slots를 갱신한다.
     required_fields:
@@ -247,6 +257,24 @@ MockState:
         priority: 2
         source: p2_markdown
         fallback: false
+  chat_turn_handler:
+    turn_status: answer_accepted
+    next_stage: proactive_questioning
+    answered_slot: core_services
+    known_answers:
+      business_name: 한빛 세무회계
+      core_services: 기장 대리, 종합소득세 신고, 법인세 신고
+    missing_slots:
+      - contact_method
+    question_candidates:
+      - slot: contact_method
+        question: 세무/회계 도메인 지식 기준으로 홈페이지에 담을 상담 방식을 알려주세요.
+        priority: 1
+        source: p2_markdown
+        fallback: false
+    reasons:
+      - answer_applied
+      - next_question_candidates_built
   slot_answer_state:
     answered_slot: core_services
     answer_status: accepted

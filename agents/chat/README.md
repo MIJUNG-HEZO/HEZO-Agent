@@ -24,6 +24,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - P2 markdown 수신 검수 필드
 - P2 markdown 수신 검수 순수 로직
 - 적극적 질의 후보 생성 순수 로직
+- 대화 1턴 답변 반영/다음 stage 판단 순수 로직
 - 사용자 답변 slot state 반영 순수 로직
 - Contract JSON draft compile 순수 로직
 - Contract draft quality check 순수 로직
@@ -56,6 +57,7 @@ domain_selection
 -> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning
+-> chat_turn_handler
 -> slot_answer_state
 -> contract_compile
 -> contract_quality_check
@@ -332,6 +334,57 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 - `max_questions`를 초과하지 않음
 
 이번 범위에서는 실제 LangGraph node 연결, Bedrock/LLM 질문 보완, 사용자 답변 저장, Contract JSON 반영을 포함하지 않습니다.
+
+## Chat Turn Handler
+
+`chat_turn_handler.py`는 사용자 답변 1턴을 처리하는 orchestration 경계입니다.
+
+처리 순서:
+
+```text
+사용자 답변 수신
+-> slot_answer_state 적용
+-> missing_slots 갱신
+-> 다음 질문 후보 생성 또는 contract_compile 진입 판단
+```
+
+입력 기준:
+
+- `session_id`, `site_id`, `user_id`
+- `domain`, `domain_label`
+- `slot_registry`, `known_answers`, `missing_slots`
+- `answered_slot`, `answer`
+- `p1_markdown_review_status`, `p2_markdown_usable_for_questions`
+- `p2_knowledge_summary`
+
+출력 기준:
+
+```json
+{
+  "turn_status": "answer_accepted",
+  "next_stage": "proactive_questioning",
+  "known_answers": {
+    "business_name": "한빛 세무회계",
+    "core_services": "기장 대리, 종합소득세 신고, 법인세 신고"
+  },
+  "missing_slots": ["contact_method"],
+  "question_candidates": [
+    {
+      "slot": "contact_method",
+      "source": "p2_markdown"
+    }
+  ]
+}
+```
+
+판단 기준:
+
+- 답변이 유효하면 `known_answers`와 `missing_slots`를 갱신합니다.
+- 남은 필수 slot이 있으면 `next_stage=proactive_questioning`으로 다음 질문 후보를 반환합니다.
+- 모든 필수 slot이 채워지면 `next_stage=contract_compile`로 전환합니다.
+- 빈 답변이나 알 수 없는 slot은 `next_stage=retry_answer`로 정규화합니다.
+
+이번 범위에서는 실제 HTTP API 라우터, DynamoDB message/checkpoint 저장, LangGraph node 연결을 포함하지 않습니다.
 
 ## Slot Answer State
 
