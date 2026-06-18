@@ -13,15 +13,46 @@ from agents.shared.s3_utils import (
     read_json,
     validate_site_id,
 )
+from agents.wiki.constants import WIKI_BUCKET, industry_key
+from agents.validation.tools.wiki_parser import parse_wiki_md
 
 logger = logging.getLogger(__name__)
+
+
+def _load_wiki_snapshot(s3, domain: str) -> dict | None:
+    """
+    hezo-wiki 버킷에서 업종 MD를 읽어 wiki_snapshot으로 변환.
+    키 경로: industries/{domain}.md  (industry_key() 헬퍼 사용)
+    """
+    if not domain:
+        return None
+    key = industry_key(domain)
+    try:
+        resp = s3.get_object(Bucket=WIKI_BUCKET, Key=key)
+        md_content = resp["Body"].read().decode("utf-8")
+        snapshot = parse_wiki_md(md_content)
+        logger.info(
+            "wiki_snapshot 로드: domain=%s topics=%d confidence=%.2f",
+            domain, len(snapshot.get("topics", [])), snapshot.get("confidence", 0),
+        )
+        return snapshot
+    except ClientError as exc:
+        code = exc.response["Error"]["Code"]
+        if code in ("NoSuchKey", "404"):
+            logger.info("hezo-wiki MD 없음: bucket=%s key=%s", WIKI_BUCKET, key)
+            return None
+        raise
+    except Exception as exc:
+        logger.warning("wiki_snapshot 파싱 실패 — 건너뜀: %s", exc)
+        return None
 
 
 def fetch_artifacts(site_id: str) -> dict[str, Any]:
     """
     검증에 필요한 모든 산출물 로드.
     반환:
-      contract, render_spec, crawl_snapshot (선택),
+      contract, render_spec,
+      wiki_snapshot (hezo-wiki MD 파싱 결과, 없으면 None),
       html (index.html 문자열), file_list (dist/ 파일 키 목록)
     """
     site_id = validate_site_id(site_id)
@@ -31,13 +62,9 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
     contract = read_json(ARTIFACTS_BUCKET, f"{prefix}/contract_final.json")
     render_spec = read_json(ARTIFACTS_BUCKET, f"{prefix}/render_spec.json")
 
-    crawl_snapshot: dict | None = None
-    try:
-        crawl_snapshot = read_json(ARTIFACTS_BUCKET, f"{prefix}/crawl_snapshot.json")
-    except ClientError as exc:
-        if exc.response["Error"]["Code"] not in ("NoSuchKey", "404"):
-            raise
-        logger.info("crawl_snapshot.json 없음 (선택적) — site_id=%s", site_id)
+    # contract의 business_type → hezo-wiki 업종 MD 로드
+    domain = contract.get("slots", {}).get("business_type", "")
+    wiki_snapshot = _load_wiki_snapshot(s3, domain)
 
     # dist/index.html 로드
     html_key = f"{prefix}/dist/index.html"
@@ -66,7 +93,7 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
         "site_id": site_id,
         "contract": contract,
         "render_spec": render_spec,
-        "crawl_snapshot": crawl_snapshot,
+        "wiki_snapshot": wiki_snapshot,
         "html": html_content,
         "file_list": file_list,
     }
