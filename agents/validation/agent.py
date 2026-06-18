@@ -31,11 +31,16 @@ from agents.validation.tools.validation_saver import (
     save_validation_feedback,
     save_validation_report,
 )
+from libs.telemetry import init_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("hezo.validation")
 
+REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2")
 MAX_PATCH_ATTEMPTS = int(os.environ.get("MAX_PATCH_ATTEMPTS", "3"))
+
+# ─── 관측 (P5 telemetry) — 에이전트별 토큰·비용을 CloudWatch로 직접 전송 ───
+init_telemetry("validation", region=REGION)
 
 app = FastAPI(title="HEZO Validation Agent")
 
