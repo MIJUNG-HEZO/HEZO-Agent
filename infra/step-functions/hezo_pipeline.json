@@ -1,304 +1,336 @@
 {
-  "Comment": "HEZO 홈페이지 생성 파이프라인 v2.0 — AgentCore Runtime: P4 Generation → P3 Build → (P4 Validation: P2 완료 후 활성화)",
-  "StartAt": "InvokeGenerationAgent",
+  "Comment": "HEZO Site Generation Pipeline v3.0 — CheckIdempotency → Generation → Build(ECS) → Validation → Publish",
+  "StartAt": "CheckIdempotency",
   "States": {
+
+    "CheckIdempotency": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "ProjectionExpression": "publish_status"
+      },
+      "ResultPath": "$.idempotency",
+      "Next": "IsAlreadyPublished",
+      "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "IsAlreadyPublished": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            {
+              "Variable": "$.idempotency.Item.publish_status.S",
+              "IsPresent": true
+            },
+            {
+              "Variable": "$.idempotency.Item.publish_status.S",
+              "StringEquals": "published"
+            }
+          ],
+          "Next": "AlreadyPublished"
+        }
+      ],
+      "Default": "MarkBuilding"
+    },
+
+    "AlreadyPublished": {
+      "Type": "Succeed"
+    },
+
+    "MarkBuilding": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET publish_status = :building",
+        "ConditionExpression": "attribute_not_exists(publish_status) OR publish_status <> :published",
+        "ExpressionAttributeValues": {
+          ":building": { "S": "building" },
+          ":published": { "S": "published" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "InvokeGenerationAgent",
+      "Catch": [
+        {
+          "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"],
+          "Next": "AlreadyPublished",
+          "ResultPath": null
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
 
     "InvokeGenerationAgent": {
       "Type": "Task",
-      "Comment": "P4 생성 에이전트 — contract_final.json 읽기 → render_spec.json + GEO 4종 → S3 저장",
       "Resource": "arn:aws:states:::http:invoke",
       "Parameters": {
-        "ApiEndpoint": "${GENERATION_AGENT_ENDPOINT}/invoke",
+        "ApiEndpoint": "${GENERATION_AGENT_ENDPOINT}/invocations",
         "Method": "POST",
         "Headers": {
           "Content-Type": "application/json"
         },
         "RequestBody": {
-          "sessionId.$": "$$.Execution.Name",
-          "inputText.$": "States.Format('site_id={}', $.site_id)",
-          "sessionAttributes": {
-            "site_id.$": "$.site_id",
-            "pipeline_run_id.$": "$$.Execution.Name"
-          }
+          "site_id.$": "$.site_id",
+          "pipeline_run_id.$": "$$.Execution.Name"
         },
         "Authentication": {
           "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
         }
       },
-      "ResultSelector": {
-        "output.$": "$.ResponseBody.output",
-        "metadata.$": "$.ResponseBody.metadata",
-        "status_code.$": "$.StatusCode"
-      },
       "ResultPath": "$.generation_result",
-      "TimeoutSeconds": 600,
+      "Next": "InvokeBuildWorker",
+      "TimeoutSeconds": 300,
       "Retry": [
         {
-          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503"],
+          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503", "States.Timeout"],
           "IntervalSeconds": 15,
           "MaxAttempts": 2,
-          "BackoffRate": 2.0,
+          "BackoffRate": 2,
           "JitterStrategy": "FULL"
         }
       ],
       "Catch": [
         {
-          "ErrorEquals": ["States.Http.StatusCode422"],
-          "Comment": "가드레일 위반 — 즉시 실패",
-          "ResultPath": "$.error_info",
-          "Next": "MarkFailed"
-        },
-        {
-          "ErrorEquals": ["States.Timeout", "States.ALL"],
-          "ResultPath": "$.error_info",
-          "Next": "MarkFailed"
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
         }
-      ],
-      "Next": "CheckGenerationResult"
+      ]
     },
 
-    "CheckGenerationResult": {
+    "InvokeBuildWorker": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "Cluster": "${ECS_CLUSTER}",
+        "TaskDefinition": "hezo-build-worker",
+        "LaunchType": "FARGATE",
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "build-worker",
+              "Environment": [
+                { "Name": "SITE_ID", "Value.$": "$.site_id" },
+                { "Name": "MODE", "Value": "publish" }
+              ]
+            }
+          ]
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": ["${ECS_SUBNET_1}", "${ECS_SUBNET_2}"],
+            "SecurityGroups": ["${ECS_SECURITY_GROUP}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        }
+      },
+      "ResultPath": "$.build_result",
+      "Next": "MarkValidating",
+      "TimeoutSeconds": 600,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "ECS.EcsException"],
+          "IntervalSeconds": 15,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "MarkValidating": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET publish_status = :validating",
+        "ExpressionAttributeValues": {
+          ":validating": { "S": "validating" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "InvokeValidationAgent"
+    },
+
+    "InvokeValidationAgent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::http:invoke",
+      "Parameters": {
+        "ApiEndpoint": "${VALIDATION_AGENT_ENDPOINT}/invocations",
+        "Method": "POST",
+        "Headers": {
+          "Content-Type": "application/json"
+        },
+        "RequestBody": {
+          "site_id.$": "$.site_id",
+          "pipeline_run_id.$": "$$.Execution.Name"
+        },
+        "Authentication": {
+          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
+        }
+      },
+      "ResultPath": "$.validation_result",
+      "Next": "CheckValidationResult",
+      "TimeoutSeconds": 1800,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "CheckValidationResult": {
       "Type": "Choice",
-      "Comment": "생성 에이전트 output에 'render_spec_saved' 포함 여부로 성공 판정",
       "Choices": [
         {
-          "Variable": "$.generation_result.output",
-          "StringMatches": "*render_spec_saved*",
-          "Next": "MarkGenerationComplete"
+          "Or": [
+            {
+              "Variable": "$.validation_result.ResponseBody.validation_status",
+              "StringEquals": "PASS"
+            },
+            {
+              "Variable": "$.validation_result.ResponseBody.validation_status",
+              "StringEquals": "PASS_WITH_WARNINGS"
+            }
+          ],
+          "Next": "MarkPublished"
         },
         {
-          "Variable": "$.generation_result.output",
-          "StringMatches": "*generation_skipped*",
+          "Variable": "$.validation_result.ResponseBody.validation_status",
+          "StringEquals": "FAIL_BLOCKING",
           "Next": "MarkFailed"
         }
       ],
       "Default": "MarkFailed"
     },
 
-    "MarkGenerationComplete": {
+    "MarkPublished": {
       "Type": "Task",
-      "Comment": "DynamoDB에 generation_complete 상태 기록",
       "Resource": "arn:aws:states:::dynamodb:updateItem",
       "Parameters": {
-        "TableName": "hezo_pipeline_state",
+        "TableName": "pipeline_state",
         "Key": {
           "site_id": { "S.$": "$.site_id" }
         },
-        "UpdateExpression": "SET pipeline_status = :s, render_spec_s3_key = :r, pipeline_run_id = :p, updated_at = :t",
+        "UpdateExpression": "SET publish_status = :published",
         "ExpressionAttributeValues": {
-          ":s": { "S": "generation_complete" },
-          ":r": { "S.$": "States.Format('sites/{}/render_spec.json', $.site_id)" },
-          ":p": { "S.$": "$$.Execution.Name" },
-          ":t": { "S.$": "$$.State.EnteredTime" }
+          ":published": { "S": "published" }
         }
       },
       "ResultPath": null,
-      "Retry": [
-        {
-          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 3,
-          "BackoffRate": 2.0
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.error_info",
-          "Next": "PipelineFinalFailure"
-        }
-      ],
-      "Next": "InvokeBuildAgent"
+      "Next": "PublishSiteEvent"
     },
 
-    "InvokeBuildAgent": {
+    "PublishSiteEvent": {
       "Type": "Task",
-      "Comment": "P3 빌드 에이전트 — render_spec.json 읽기 → HTML 렌더링 → S3 dist/ 업로드",
-      "Resource": "arn:aws:states:::http:invoke",
+      "Resource": "arn:aws:states:::events:putEvents",
       "Parameters": {
-        "ApiEndpoint": "${BUILD_AGENT_ENDPOINT}/invoke",
-        "Method": "POST",
-        "Headers": {
-          "Content-Type": "application/json"
-        },
-        "RequestBody": {
-          "sessionId.$": "$$.Execution.Name",
-          "inputText.$": "States.Format('site_id={}', $.site_id)",
-          "sessionAttributes": {
-            "site_id.$": "$.site_id",
-            "pipeline_run_id.$": "$$.Execution.Name"
+        "Entries": [
+          {
+            "EventBusName": "default",
+            "Source": "hezo.pipeline",
+            "DetailType": "site-published",
+            "Detail": {
+              "site_id.$": "$.site_id",
+              "execution_name.$": "$$.Execution.Name",
+              "ai_score.$": "$.validation_result.ResponseBody.ai_score"
+            }
           }
-        },
-        "Authentication": {
-          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
-        }
-      },
-      "ResultSelector": {
-        "output.$": "$.ResponseBody.output",
-        "metadata.$": "$.ResponseBody.metadata",
-        "status_code.$": "$.StatusCode"
-      },
-      "ResultPath": "$.build_result",
-      "TimeoutSeconds": 300,
-      "Retry": [
-        {
-          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503"],
-          "IntervalSeconds": 10,
-          "MaxAttempts": 2,
-          "BackoffRate": 2.0,
-          "JitterStrategy": "FULL"
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.Timeout", "States.ALL"],
-          "ResultPath": "$.error_info",
-          "Next": "MarkBuildFailed"
-        }
-      ],
-      "Next": "CheckBuildResult"
-    },
-
-    "CheckBuildResult": {
-      "Type": "Choice",
-      "Comment": "빌드 에이전트 output에 'build_complete' 포함 여부로 성공 판정",
-      "Choices": [
-        {
-          "Variable": "$.build_result.output",
-          "StringMatches": "*build_complete*",
-          "Next": "MarkBuildComplete"
-        }
-      ],
-      "Default": "MarkBuildFailed"
-    },
-
-    "MarkBuildComplete": {
-      "Type": "Task",
-      "Comment": "DynamoDB에 build_complete 상태 기록",
-      "Resource": "arn:aws:states:::dynamodb:updateItem",
-      "Parameters": {
-        "TableName": "hezo_pipeline_state",
-        "Key": {
-          "site_id": { "S.$": "$.site_id" }
-        },
-        "UpdateExpression": "SET pipeline_status = :s, dist_s3_key = :d, pipeline_run_id = :p, updated_at = :t",
-        "ExpressionAttributeValues": {
-          ":s": { "S": "build_complete" },
-          ":d": { "S.$": "States.Format('sites/{}/dist/index.html', $.site_id)" },
-          ":p": { "S.$": "$$.Execution.Name" },
-          ":t": { "S.$": "$$.State.EnteredTime" }
-        }
+        ]
       },
       "ResultPath": null,
-      "Retry": [
-        {
-          "ErrorEquals": ["DynamoDB.DynamoDbException", "DynamoDB.ProvisionedThroughputExceededException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 3,
-          "BackoffRate": 2.0
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.error_info",
-          "Next": "PipelineFinalFailure"
-        }
-      ],
-      "Next": "ValidationPlaceholder"
+      "Next": "PipelineSuccess"
     },
 
-    "ValidationPlaceholder": {
-      "Type": "Pass",
-      "Comment": "TODO [P2 완료 후 활성화]: P4 검증 에이전트 — P3 HTML vs P2 크롤링 MD 비교 검증",
-      "Result": {
-        "validation_status": "skipped_pending_p2",
-        "publish_ready": true,
-        "message": "P2 크롤링 에이전트 구현 완료 후 InvokeValidationAgent로 교체"
-      },
-      "ResultPath": "$.validation_result",
-      "Next": "PipelineSuccess"
+    "PipelineSuccess": {
+      "Type": "Succeed"
     },
 
     "MarkFailed": {
       "Type": "Task",
-      "Comment": "DynamoDB에 pipeline_failed 상태 기록 (생성 단계 실패)",
       "Resource": "arn:aws:states:::dynamodb:updateItem",
       "Parameters": {
-        "TableName": "hezo_pipeline_state",
+        "TableName": "pipeline_state",
         "Key": {
           "site_id": { "S.$": "$.site_id" }
         },
-        "UpdateExpression": "SET pipeline_status = :s, pipeline_run_id = :p, updated_at = :t",
+        "UpdateExpression": "SET publish_status = :failed",
         "ExpressionAttributeValues": {
-          ":s": { "S": "generation_failed" },
-          ":p": { "S.$": "$$.Execution.Name" },
-          ":t": { "S.$": "$$.State.EnteredTime" }
+          ":failed": { "S": "failed" }
         }
       },
       "ResultPath": null,
-      "Retry": [
-        {
-          "ErrorEquals": ["DynamoDB.DynamoDbException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 2,
-          "BackoffRate": 2.0
-        }
-      ],
+      "Next": "HandleFailure",
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.double_failure",
-          "Next": "PipelineFinalFailure"
+          "Next": "PipelineFailed",
+          "ResultPath": null
         }
-      ],
-      "Next": "PipelineFinalFailure"
+      ]
     },
 
-    "MarkBuildFailed": {
+    "HandleFailure": {
       "Type": "Task",
-      "Comment": "DynamoDB에 build_failed 상태 기록 (빌드 단계 실패)",
-      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
-        "TableName": "hezo_pipeline_state",
-        "Key": {
-          "site_id": { "S.$": "$.site_id" }
-        },
-        "UpdateExpression": "SET pipeline_status = :s, pipeline_run_id = :p, updated_at = :t",
-        "ExpressionAttributeValues": {
-          ":s": { "S": "build_failed" },
-          ":p": { "S.$": "$$.Execution.Name" },
-          ":t": { "S.$": "$$.State.EnteredTime" }
-        }
+        "TopicArn": "arn:aws:sns:ap-northeast-2:${AWS_ACCOUNT_ID}:hezo-pipeline-alerts",
+        "Subject": "HEZO Pipeline Failed",
+        "Message.$": "States.Format('Pipeline failed for site_id={}, execution={}', $.site_id, $$.Execution.Name)"
       },
       "ResultPath": null,
-      "Retry": [
-        {
-          "ErrorEquals": ["DynamoDB.DynamoDbException"],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 2,
-          "BackoffRate": 2.0
-        }
-      ],
+      "Next": "PipelineFailed",
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "ResultPath": "$.double_failure",
-          "Next": "PipelineFinalFailure"
+          "Next": "PipelineFailed",
+          "ResultPath": null
         }
-      ],
-      "Next": "PipelineFinalFailure"
+      ]
     },
 
-    "PipelineFinalFailure": {
+    "PipelineFailed": {
       "Type": "Fail",
-      "Error": "HezoPipelineFailed",
-      "Cause": "파이프라인 실패. CloudWatch Logs에서 상세 오류를 확인하세요."
-    },
-
-    "PipelineSuccess": {
-      "Type": "Succeed",
-      "Comment": "파이프라인 완료. dist/index.html이 S3에 저장되었습니다."
+      "Error": "PipelineFailed",
+      "Cause": "Site generation pipeline failed. Check SNS alert and CloudWatch Logs."
     }
 
   }

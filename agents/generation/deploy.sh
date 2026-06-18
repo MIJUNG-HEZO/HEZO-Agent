@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HEZO P4/P3 — AgentCore Runtime 배포 스크립트 (v3.0)
+# HEZO P4/P3 — AgentCore Runtime 배포 스크립트 (v4.0)
 #
-# 변경사항 (v3.0):
-#   - bedrock-agentcore → bedrock-agentcore-control (컨트롤 플레인 CLI 수정)
-#   - P3 빌드 에이전트 추가 (generation|build|validation|report|all)
-#   - deploy_agentcore: 런타임 생성 후 엔드포인트 생성 + READY 대기
-#   - 엔드포인트 ARN → SSM hezo-{agent}-agent-endpoint-arn 저장
+# 변경사항 (v4.0):
+#   - arm64 빌드: docker buildx build --platform linux/arm64 (AgentCore 필수)
+#   - 전체 에이전트 배포: generation|build|validation|report|all
+#   - validation: ECS_CLUSTER/BUILD_TASK_DEFINITION/WIKI_BUCKET 환경변수 추가
+#   - report: SSM_FLAG_KEY 제거 → REPORTS_BUCKET/PIPELINE_STATE_TABLE/WIKI_BUCKET 추가
 #
 # 사용법:
 #   bash deploy.sh --agent generation        # generation 에이전트만
-#   bash deploy.sh --agent build             # build 에이전트만
-#   bash deploy.sh --agent all               # 전체 (generation, build)
+#   bash deploy.sh --agent validation        # validation 에이전트만
+#   bash deploy.sh --agent report            # report 에이전트만
+#   bash deploy.sh --agent all               # 전체 (generation, build, validation, report)
 #   bash deploy.sh --setup-iam               # IAM 역할만 설정
 #   bash deploy.sh --setup-ecr               # ECR 리포지터리만 생성
 #   bash deploy.sh --test generation         # 배포된 에이전트 CLI 테스트
@@ -32,9 +33,15 @@ ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
 
 ARTIFACTS_BUCKET="hezo-artifacts"
 SITE_BUCKET="hezo-sites"
+WIKI_BUCKET="hezo-wiki"
+REPORTS_BUCKET="hezo-reports"
+PIPELINE_STATE_TABLE="pipeline_state"
+ECS_CLUSTER="${ECS_CLUSTER:-hezo-cluster}"
+BUILD_TASK_DEFINITION="${BUILD_TASK_DEFINITION:-hezo-build-worker}"
+ECS_SUBNETS="${ECS_SUBNETS:-}"
+ECS_SECURITY_GROUPS="${ECS_SECURITY_GROUPS:-}"
 ROLE_NAME="hezo-agentcore-execution-role"
-# MVP: generation + build 만 배포 (validation/report는 P2 완료 후)
-AGENTS=(generation build)
+AGENTS=(generation build validation report)
 
 info()    { echo "[INFO]  $*"; }
 success() { echo "[OK]    $*"; }
@@ -171,12 +178,15 @@ build_and_push() {
     aws_cmd ecr get-login-password --region "$REGION" | \
         docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-    info "Docker 이미지 빌드 중: $repo"
-    docker build -f "$dockerfile" -t "${repo}:latest" -t "${ecr_uri}:latest" "$context"
+    info "Docker 이미지 빌드 중 (arm64): $repo"
+    docker buildx build --platform linux/arm64 \
+        -f "$dockerfile" \
+        -t "${repo}:latest" \
+        -t "${ecr_uri}:latest" \
+        --push \
+        "$context"
 
-    info "ECR 푸시 중..."
-    docker push "${ecr_uri}:latest"
-    success "ECR 푸시 완료: ${ecr_uri}:latest"
+    success "ECR 빌드 & 푸시 완료 (arm64): ${ecr_uri}:latest"
 
     aws_cmd ssm put-parameter --name "hezo-${agent}-agent-image-uri" \
         --value "${ecr_uri}:latest" --type String --overwrite --region "$REGION" >/dev/null
@@ -203,18 +213,31 @@ deploy_agentcore() {
     esac
 
     local env_json
-    env_json=$(python3 - "$agent" "$model_id" "$ARTIFACTS_BUCKET" "$SITE_BUCKET" <<'PYENV'
+    env_json=$(python3 - "$agent" "$model_id" \
+        "$ARTIFACTS_BUCKET" "$SITE_BUCKET" "$WIKI_BUCKET" \
+        "$REPORTS_BUCKET" "$PIPELINE_STATE_TABLE" \
+        "$ECS_CLUSTER" "$BUILD_TASK_DEFINITION" "$ECS_SUBNETS" "$ECS_SECURITY_GROUPS" <<'PYENV'
 import sys, json
-agent, model_id, ab, sb = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+agent, model_id, ab, sb, wb, rb, pst, ecs_cluster, build_td, ecs_subnets, ecs_sg = sys.argv[1:]
 env = {
     "ARTIFACTS_BUCKET": ab,
     "SITE_BUCKET": sb,
-    "AWS_DEFAULT_REGION": "ap-northeast-2"
+    "WIKI_BUCKET": wb,
+    "AWS_DEFAULT_REGION": "ap-northeast-2",
 }
 if model_id:
     env["MODEL_ID"] = model_id
 if agent == "report":
-    env["SSM_FLAG_KEY"] = "hezo-report-enabled"
+    env["REPORTS_BUCKET"] = rb
+    env["PIPELINE_STATE_TABLE"] = pst
+if agent == "validation":
+    env["MAX_PATCH_ATTEMPTS"] = "3"
+    env["ECS_CLUSTER"] = ecs_cluster
+    env["BUILD_TASK_DEFINITION"] = build_td
+    if ecs_subnets:
+        env["ECS_SUBNETS"] = ecs_subnets
+    if ecs_sg:
+        env["ECS_SECURITY_GROUPS"] = ecs_sg
 print(json.dumps(env))
 PYENV
 )

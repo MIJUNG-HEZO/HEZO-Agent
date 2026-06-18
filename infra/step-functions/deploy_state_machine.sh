@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HEZO Step Functions 상태 머신 배포 스크립트 v2.0
+# HEZO Step Functions 상태 머신 배포 스크립트 v3.0
 #
-# 변경사항 (v2.0):
-#   - 구 Managed Bedrock Agent / Lambda 참조 제거
-#   - AgentCore Runtime HTTP 엔드포인트 기반으로 교체
-#   - 플레이스홀더: GENERATION_AGENT_ENDPOINT, BUILD_AGENT_ENDPOINT, EVENTBRIDGE_CONNECTION_ARN
+# 변경사항 (v3.0):
+#   - hezo_pipeline.json v3.0 반영 (CheckIdempotency → Generation → Build(ECS) → Validation → Publish)
+#   - BUILD_AGENT_ENDPOINT 제거 → VALIDATION_AGENT_ENDPOINT 추가 (검증 에이전트 활성화)
+#   - ECS 빌드 워커용 클러스터/서브넷/보안그룹 플레이스홀더 추가
+#   - DynamoDB 테이블명: hezo_pipeline_state → pipeline_state
 #
 # 사용법:
 #   bash deploy_state_machine.sh            # 생성 또는 업데이트
@@ -25,6 +26,12 @@ PROFILE="${AWS_PROFILE:-rapa-cm1-21}"
 STATE_MACHINE_NAME="hezo-homepage-pipeline"
 DEFINITION_FILE="$(dirname "$0")/hezo_pipeline.json"
 ROLE_NAME="hezo-step-functions-role"
+
+# ECS 빌드 워커 네트워크 설정 (없으면 경고 후 placeholder 사용)
+ECS_CLUSTER_VAL="${ECS_CLUSTER:-PLACEHOLDER_ECS_CLUSTER}"
+ECS_SUBNET_1_VAL="${ECS_SUBNET_1:-PLACEHOLDER_SUBNET_1}"
+ECS_SUBNET_2_VAL="${ECS_SUBNET_2:-PLACEHOLDER_SUBNET_2}"
+ECS_SECURITY_GROUP_VAL="${ECS_SECURITY_GROUP:-PLACEHOLDER_SG}"
 
 info()    { echo "[INFO]  $*"; }
 success() { echo "[OK]    $*"; }
@@ -84,7 +91,7 @@ fi
 # 1. 사전 조건 확인
 # =============================================================================
 echo "╔══════════════════════════════════════════════════════╗"
-echo "║  HEZO Step Functions 배포 v2.0                      ║"
+echo "║  HEZO Step Functions 배포 v3.0                      ║"
 echo "╚══════════════════════════════════════════════════════╝"
 
 command -v aws >/dev/null 2>&1 || error "AWS CLI 미설치"
@@ -103,20 +110,21 @@ success "Step Functions IAM 역할: $ROLE_ARN"
 info "SSM에서 에이전트 엔드포인트 조회 중..."
 
 GENERATION_AGENT_ENDPOINT=$(ssm_get "hezo-generation-agent-endpoint" "PLACEHOLDER_GENERATION_ENDPOINT")
-BUILD_AGENT_ENDPOINT=$(ssm_get "hezo-build-agent-endpoint" "PLACEHOLDER_BUILD_ENDPOINT")
+VALIDATION_AGENT_ENDPOINT=$(ssm_get "hezo-validation-agent-endpoint" "PLACEHOLDER_VALIDATION_ENDPOINT")
 EVENTBRIDGE_CONNECTION_ARN=$(ssm_get "hezo-eventbridge-connection-arn" "PLACEHOLDER_CONNECTION_ARN")
 
 if [[ "$GENERATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-generation-agent-endpoint SSM 없음 — placeholder 사용"
-    warn "  AgentCore Runtime 배포 후: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL>"
+    warn "  등록 방법: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
 else
     success "Generation Agent: $GENERATION_AGENT_ENDPOINT"
 fi
 
-if [[ "$BUILD_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
-    warn "hezo-build-agent-endpoint SSM 없음 — placeholder 사용"
+if [[ "$VALIDATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
+    warn "hezo-validation-agent-endpoint SSM 없음 — placeholder 사용"
+    warn "  등록 방법: aws ssm put-parameter --name hezo-validation-agent-endpoint --value <URL> --type String --overwrite"
 else
-    success "Build Agent: $BUILD_AGENT_ENDPOINT"
+    success "Validation Agent: $VALIDATION_AGENT_ENDPOINT"
 fi
 
 if [[ "$EVENTBRIDGE_CONNECTION_ARN" == PLACEHOLDER* ]]; then
@@ -125,6 +133,11 @@ if [[ "$EVENTBRIDGE_CONNECTION_ARN" == PLACEHOLDER* ]]; then
 else
     success "EventBridge Connection: $EVENTBRIDGE_CONNECTION_ARN"
 fi
+
+[[ "$ECS_CLUSTER_VAL" == PLACEHOLDER* ]] && \
+    warn "ECS_CLUSTER 환경변수 없음 — .env에 ECS_CLUSTER=hezo-cluster 추가 필요"
+[[ "$ECS_SUBNET_1_VAL" == PLACEHOLDER* ]] && \
+    warn "ECS_SUBNET_1/ECS_SUBNET_2 환경변수 없음 — VPC 서브넷 설정 필요"
 
 # =============================================================================
 # 3. 상태 머신 정의 파일 플레이스홀더 치환
@@ -135,15 +148,26 @@ DEFINITION_TEMP=$(python3 -c "import tempfile; tf=tempfile.NamedTemporaryFile(su
 trap "rm -f '$DEFINITION_TEMP'" EXIT
 
 python3 - "$DEFINITION_FILE" "$DEFINITION_TEMP" \
-    "$ACCOUNT_ID" "$GENERATION_AGENT_ENDPOINT" "$BUILD_AGENT_ENDPOINT" "$EVENTBRIDGE_CONNECTION_ARN" <<'PYEOF'
+    "$ACCOUNT_ID" \
+    "$GENERATION_AGENT_ENDPOINT" \
+    "$VALIDATION_AGENT_ENDPOINT" \
+    "$EVENTBRIDGE_CONNECTION_ARN" \
+    "$ECS_CLUSTER_VAL" \
+    "$ECS_SUBNET_1_VAL" \
+    "$ECS_SUBNET_2_VAL" \
+    "$ECS_SECURITY_GROUP_VAL" <<'PYEOF'
 import sys, json
 
-src, dst, account, gen_ep, build_ep, conn_arn = sys.argv[1:]
+src, dst, account, gen_ep, val_ep, conn_arn, ecs_cluster, subnet1, subnet2, sg = sys.argv[1:]
 content = open(src, encoding='utf-8').read()
 content = content.replace('${AWS_ACCOUNT_ID}', account)
 content = content.replace('${GENERATION_AGENT_ENDPOINT}', gen_ep)
-content = content.replace('${BUILD_AGENT_ENDPOINT}', build_ep)
+content = content.replace('${VALIDATION_AGENT_ENDPOINT}', val_ep)
 content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}', conn_arn)
+content = content.replace('${ECS_CLUSTER}', ecs_cluster)
+content = content.replace('${ECS_SUBNET_1}', subnet1)
+content = content.replace('${ECS_SUBNET_2}', subnet2)
+content = content.replace('${ECS_SECURITY_GROUP}', sg)
 
 # JSON 유효성 검증
 json.loads(content)
@@ -227,14 +251,21 @@ echo
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║  배포 완료                                           ║"
 echo "╚══════════════════════════════════════════════════════╝"
-echo "  상태 머신 ARN     : $STATE_MACHINE_ARN"
-echo "  Generation Agent  : $GENERATION_AGENT_ENDPOINT"
-echo "  Build Agent       : $BUILD_AGENT_ENDPOINT"
-echo "  EventBridge Conn  : $EVENTBRIDGE_CONNECTION_ARN"
+echo "  상태 머신 ARN      : $STATE_MACHINE_ARN"
+echo "  Generation Agent   : $GENERATION_AGENT_ENDPOINT"
+echo "  Validation Agent   : $VALIDATION_AGENT_ENDPOINT"
+echo "  ECS Cluster        : $ECS_CLUSTER_VAL"
+echo "  EventBridge Conn   : $EVENTBRIDGE_CONNECTION_ARN"
 echo
 echo "  [에이전트 엔드포인트 등록 방법]"
-echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
-echo "  aws ssm put-parameter --name hezo-build-agent-endpoint      --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint  --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-validation-agent-endpoint  --value <URL> --type String --overwrite"
+echo
+echo "  [ECS 설정 방법] .env 파일에 추가:"
+echo "  ECS_CLUSTER=hezo-cluster"
+echo "  ECS_SUBNET_1=subnet-xxxxxxxxxx"
+echo "  ECS_SUBNET_2=subnet-xxxxxxxxxx"
+echo "  ECS_SECURITY_GROUP=sg-xxxxxxxxxx"
 echo
 echo "  [파이프라인 테스트 실행]"
 echo "  aws stepfunctions start-execution \\"
