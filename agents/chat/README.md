@@ -58,7 +58,6 @@ domain_selection
 -> p2_markdown_review
 -> proactive_questioning
 -> chat_turn_handler
--> slot_answer_state
 -> contract_compile
 -> contract_quality_check
 -> storage_guardrails
@@ -844,7 +843,7 @@ p2_markdown_request
 -> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning
--> slot_answer_state
+-> chat_turn_handler
 -> contract_compile
 -> contract_quality_check
 -> bedrock_guardrails

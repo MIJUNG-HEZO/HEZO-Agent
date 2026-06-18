@@ -1805,7 +1805,7 @@ def _validate_chat_graph_cases() -> list[str]:
         "p2_markdown_parse",
         "p2_markdown_review",
         "proactive_questioning",
-        "slot_answer_state",
+        "chat_turn_handler",
         "contract_compile",
         "contract_quality_check",
         "bedrock_guardrails",
@@ -1827,6 +1827,8 @@ def _validate_chat_graph_cases() -> list[str]:
         errors.append("chat graph는 p2_markdown_parse 결과를 포함해야 합니다.")
     if final_dict["p2_markdown_parse"].get("parse_status") != "passed":
         errors.append("chat graph의 P2 markdown parse 결과는 passed여야 합니다.")
+    if final_dict["chat_turn"].get("turn_status") != "answer_accepted":
+        errors.append("chat graph는 chat_turn_handler 결과를 포함해야 합니다.")
     if not final_dict["question_candidates"]:
         errors.append("chat graph는 question candidates를 생성해야 합니다.")
     if final_dict["missing_slots"] != ["contact_method"]:

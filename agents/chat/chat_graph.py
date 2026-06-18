@@ -10,6 +10,7 @@ from bedrock_guardrails_adapter import (
     MockBedrockGuardrailsClient,
 )
 from chat_state_store import ChatCheckpoint, InMemoryChatStateStore
+from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from contract_compile import ContractDraftInput, compile_contract_draft
 from contract_quality_check import ContractQualityInput, check_contract_quality
 from p2_markdown_loader import P2MarkdownLoadInput, load_p2_markdown_from_s3
@@ -18,7 +19,6 @@ from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_reques
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
 from s3_artifact_store import ArtifactPayload, InMemoryS3ArtifactStore
-from slot_answer_state import SlotAnswerInput, apply_slot_answer
 
 
 GraphNode = Callable[["ChatGraphState"], "ChatGraphState"]
@@ -29,7 +29,7 @@ CHAT_GRAPH_NODE_ORDER = (
     "p2_markdown_parse",
     "p2_markdown_review",
     "proactive_questioning",
-    "slot_answer_state",
+    "chat_turn_handler",
     "contract_compile",
     "contract_quality_check",
     "bedrock_guardrails",
@@ -57,6 +57,7 @@ class ChatGraphState:
     p2_markdown_load: dict[str, Any] = field(default_factory=dict)
     p2_markdown_parse: dict[str, Any] = field(default_factory=dict)
     p2_markdown_review: dict[str, Any] = field(default_factory=dict)
+    chat_turn: dict[str, Any] = field(default_factory=dict)
     question_candidates: tuple[dict[str, Any], ...] = ()
     contract_draft: dict[str, Any] = field(default_factory=dict)
     quality_check: dict[str, Any] = field(default_factory=dict)
@@ -82,6 +83,7 @@ class ChatGraphState:
             "p2_markdown_load": self.p2_markdown_load,
             "p2_markdown_parse": self.p2_markdown_parse,
             "p2_markdown_review": self.p2_markdown_review,
+            "chat_turn": self.chat_turn,
             "question_candidates": list(self.question_candidates),
             "contract_draft": self.contract_draft,
             "quality_check": self.quality_check,
@@ -102,7 +104,7 @@ def run_chat_graph(initial_state: ChatGraphState) -> ChatGraphState:
         p2_markdown_parse_node,
         p2_markdown_review_node,
         proactive_questioning_node,
-        slot_answer_state_node,
+        chat_turn_handler_node,
         contract_compile_node,
         contract_quality_check_node,
         bedrock_guardrails_node,
@@ -274,30 +276,51 @@ def proactive_questioning_node(state: ChatGraphState) -> ChatGraphState:
     )
 
 
-def slot_answer_state_node(state: ChatGraphState) -> ChatGraphState:
+def chat_turn_handler_node(state: ChatGraphState) -> ChatGraphState:
     if not state.question_candidates:
         return _replace(
             state,
-            stage="slot_answer_state",
-            reasons=state.reasons + ("slot_answer_skipped",),
+            stage="chat_turn_handler",
+            reasons=state.reasons + ("chat_turn_skipped",),
         )
 
     first_question = state.question_candidates[0]
     answered_slot = str(first_question["slot"])
-    result = apply_slot_answer(
-        SlotAnswerInput(
+    result = handle_chat_turn(
+        ChatTurnInput(
+            session_id=state.session_id,
+            site_id=state.site_id,
+            user_id=state.user_id,
+            domain=state.domain,
+            domain_label=state.domain_label,
             slot_registry=state.slot_registry,
             known_answers=state.known_answers,
             missing_slots=state.missing_slots,
             answered_slot=answered_slot,
             answer=f"{state.slot_registry[answered_slot]['label']} 예시 답변",
+            p1_markdown_review_status=str(
+                state.p2_markdown_review.get("p1_markdown_review_status", "failed")
+            ),
+            p2_markdown_usable_for_questions=bool(
+                state.p2_markdown_review.get("p2_markdown_usable_for_questions", False)
+            ),
+            p2_knowledge_summary=", ".join(
+                str(section.get("title", ""))
+                for section in state.p2_markdown_parse.get("knowledge_sections", [])
+                if section.get("title")
+            ),
+            max_questions=3,
         )
     )
     return _replace(
         state,
-        stage="slot_answer_state",
+        stage="chat_turn_handler",
+        chat_turn=result.to_dict(),
         known_answers=result.known_answers,
         missing_slots=result.missing_slots,
+        question_candidates=tuple(
+            candidate.to_dict() for candidate in result.question_candidates
+        ),
         reasons=state.reasons + result.reasons,
     )
 
