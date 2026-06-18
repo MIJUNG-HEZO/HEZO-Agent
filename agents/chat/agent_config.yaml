@@ -17,6 +17,15 @@ Stages:
   - name: domain_selection
     description: 사용자 대화에서 도메인/업종을 확정한다.
 
+  - name: chat_session_start
+    description: 도메인 선택 이후 P2 markdown load/parse/review/첫 질문 후보 생성을 하나의 세션 시작 경계로 묶는다.
+    required_fields:
+      - session_start_status
+      - next_stage
+      - llm_required
+      - source_s3_key
+      - question_candidates
+
   - name: p2_markdown_request
     description: 확정된 도메인과 slot_registry를 기준으로 P2 markdown 요청 payload를 만든다.
     required_fields:
@@ -149,6 +158,17 @@ MockState:
   domain: tax_accounting
   domain_label: 세무/회계
   selected_template: landing/13-tax-accounting
+  chat_session_start:
+    session_start_status: ready_for_user_question
+    next_stage: proactive_questioning
+    llm_required: false
+    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    question_candidates:
+      - slot: core_services
+        question: 핵심 세무 서비스는 무엇인가요?
+        priority: 1
+        source: p2_markdown
+        fallback: false
   p2_markdown_request:
     payload_version: v0.1
     target_artifact: domain_question_guide_markdown
