@@ -1,16 +1,16 @@
 """HEZO Wiki (P2) 경로/버킷 상수 및 키 빌더.
 
-S3(hezo-wiki 버킷) 저장 형식:
-- 위키 지식(industries/, api_profiles/)은 **md**로 저장한다.
-- 내부 관리 파일(_internal/processed, pending_industries)은 **json**으로 저장한다.
+S3(hezo-wiki 버킷, 버전드 ON) 저장 형식 — 폴더 3개:
+- industries/{category}/{domain}.md   🟢 영구  위키 본문 (nested, 버전드)
+- pending/{category}/{domain}.md      🟠 임시  P1 보완 (보강 A 입력, S3 이벤트)
+- raw/{category}/{domain}/{date}.json 🟠 임시  크롤 원문 (Lifecycle 자동삭제)
 
-규칙:
-- 버킷명·리전·프로필은 환경변수로 주입한다 (credential은 코드/깃에 두지 않고
-  AWS 프로필로만 참조한다).
-- 키 prefix는 코드 상수로 고정한다.
+원칙:
+- 본문 읽기/쓰기 = 항상 S3 / "최신·상태·시드·만료" 메타 = 항상 DynamoDB(hezo_wiki_index).
+- 버킷명·리전·프로필은 환경변수로 주입 (credential은 코드/깃에 두지 않고 AWS 프로필만 참조).
+- 키 prefix는 코드 상수로 고정.
 
-실제 boto3 S3 입출력은 후속 이슈(저장 계층)에서 구현한다. 이 모듈은 스켈레톤
-범위로 상수와 키 빌더만 제공한다.
+상세 설계: 바탕화면 `HEZO_P2_위키저장소_PRD_v2_확정.md`.
 """
 from __future__ import annotations
 
@@ -21,14 +21,16 @@ WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki")
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "hezo-p2")
 
-# ─── 위키 저장소 키 prefix ──────────────────────────────────────────────────
-INDUSTRIES_PREFIX = "industries/"      # 업종 지식 (시드 3종 + 크롤링으로 채움)
-API_PROFILES_PREFIX = "api_profiles/"  # API 명세 시드 (크롤링하지 않음)
-INTERNAL_PREFIX = "_internal/"         # 내부 관리 파일
+# DynamoDB 색인 테이블 (본문 없음, 메타만) — 후속 이슈(index_store)에서 사용
+WIKI_INDEX_TABLE = os.environ.get("WIKI_INDEX_TABLE", "hezo_wiki_index")
 
-# ─── 내부 관리 파일 키 ──────────────────────────────────────────────────────
-PROCESSED_KEY = INTERNAL_PREFIX + "processed.json"                    # 처리 기록(중복·실패 방지)
-PENDING_INDUSTRIES_KEY = INTERNAL_PREFIX + "pending_industries.json"  # 신규 채우기 대기열
+# ─── 카테고리 (60 템플릿 = landing/blog/store 각 20) ────────────────────────
+CATEGORIES = ("landing", "blog", "store")
+
+# ─── 위키 저장소 키 prefix ──────────────────────────────────────────────────
+INDUSTRIES_PREFIX = "industries/"  # 업종 지식 본문 (nested, 버전드)
+PENDING_PREFIX = "pending/"        # P1 보완 md 임시 (보강 A 입력)
+RAW_PREFIX = "raw/"                # 크롤 원문 임시 (Lifecycle 자동삭제)
 
 
 def _validate_name(name: str, kind: str) -> str:
@@ -39,11 +41,38 @@ def _validate_name(name: str, kind: str) -> str:
     return name
 
 
-def industry_key(domain: str) -> str:
-    """업종 지식 md S3 키. 예: industry_key('tax_accounting') -> 'industries/tax_accounting.md'"""
-    return f"{INDUSTRIES_PREFIX}{_validate_name(domain, 'domain')}.md"
+def _validate_category(category: str) -> str:
+    """카테고리는 landing/blog/store 중 하나여야 한다."""
+    category = category.strip()
+    if category not in CATEGORIES:
+        raise ValueError(f"invalid category: {category!r} (expected one of {CATEGORIES})")
+    return category
 
 
-def api_profile_key(name: str) -> str:
-    """API 명세 md S3 키. 예: api_profile_key('landing_tax') -> 'api_profiles/landing_tax.md'"""
-    return f"{API_PROFILES_PREFIX}{_validate_name(name, 'api_profile')}.md"
+def industry_key(category: str, domain: str) -> str:
+    """업종 지식 md S3 키 (nested).
+
+    예: industry_key('store', 'wine_market') -> 'industries/store/wine_market.md'
+    """
+    cat = _validate_category(category)
+    return f"{INDUSTRIES_PREFIX}{cat}/{_validate_name(domain, 'domain')}.md"
+
+
+def pending_key(category: str, domain: str) -> str:
+    """P1 보완 md 임시 S3 키 (보강 A 입력, 비교 후 삭제).
+
+    예: pending_key('landing', 'tax_accounting') -> 'pending/landing/tax_accounting.md'
+    """
+    cat = _validate_category(category)
+    return f"{PENDING_PREFIX}{cat}/{_validate_name(domain, 'domain')}.md"
+
+
+def raw_key(category: str, domain: str, date: str) -> str:
+    """크롤 원문 json 임시 S3 키 (크롤 람다→생성 람다 전달, Lifecycle 자동삭제).
+
+    예: raw_key('store', 'wine_market', '2026-06-18')
+        -> 'raw/store/wine_market/2026-06-18.json'
+    """
+    cat = _validate_category(category)
+    domain = _validate_name(domain, "domain")
+    return f"{RAW_PREFIX}{cat}/{domain}/{_validate_name(date, 'date')}.json"
