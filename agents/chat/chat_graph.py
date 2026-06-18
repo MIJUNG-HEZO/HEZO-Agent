@@ -12,6 +12,7 @@ from bedrock_guardrails_adapter import (
 from chat_state_store import ChatCheckpoint, InMemoryChatStateStore
 from contract_compile import ContractDraftInput, compile_contract_draft
 from contract_quality_check import ContractQualityInput, check_contract_quality
+from p2_markdown_loader import P2MarkdownLoadInput, load_p2_markdown_from_s3
 from p2_markdown_parser import P2MarkdownParseInput, parse_p2_markdown
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
@@ -24,6 +25,7 @@ GraphNode = Callable[["ChatGraphState"], "ChatGraphState"]
 
 CHAT_GRAPH_NODE_ORDER = (
     "p2_markdown_request",
+    "p2_markdown_load",
     "p2_markdown_parse",
     "p2_markdown_review",
     "proactive_questioning",
@@ -51,6 +53,7 @@ class ChatGraphState:
     known_answers: dict[str, Any]
     missing_slots: tuple[str, ...]
     p2_markdown_request: dict[str, Any] = field(default_factory=dict)
+    p2_markdown_load: dict[str, Any] = field(default_factory=dict)
     p2_markdown_parse: dict[str, Any] = field(default_factory=dict)
     p2_markdown_review: dict[str, Any] = field(default_factory=dict)
     question_candidates: tuple[dict[str, Any], ...] = ()
@@ -74,6 +77,7 @@ class ChatGraphState:
             "known_answers": self.known_answers,
             "missing_slots": list(self.missing_slots),
             "p2_markdown_request": self.p2_markdown_request,
+            "p2_markdown_load": self.p2_markdown_load,
             "p2_markdown_parse": self.p2_markdown_parse,
             "p2_markdown_review": self.p2_markdown_review,
             "question_candidates": list(self.question_candidates),
@@ -92,6 +96,7 @@ def run_chat_graph(initial_state: ChatGraphState) -> ChatGraphState:
     state = initial_state
     for node in (
         p2_markdown_request_node,
+        p2_markdown_load_node,
         p2_markdown_parse_node,
         p2_markdown_review_node,
         proactive_questioning_node,
@@ -127,17 +132,52 @@ def p2_markdown_request_node(state: ChatGraphState) -> ChatGraphState:
     )
 
 
+def p2_markdown_load_node(state: ChatGraphState) -> ChatGraphState:
+    store = InMemoryS3ArtifactStore()
+    load_input = P2MarkdownLoadInput(
+        domain=state.domain,
+        expected_domain=state.domain,
+        slot_registry=state.slot_registry,
+        source_s3_key=f"domains/{state.domain}/question_guides/v001.md",
+        version="v001",
+        source_count=2,
+        source_grade="mid",
+    )
+    ref = store.build_artifact_ref("p2_markdown", domain=state.domain, version="v001")
+    store.put_artifact(
+        ArtifactPayload(
+            ref=ref,
+            body=_mock_p2_markdown_content(state),
+        )
+    )
+    result = load_p2_markdown_from_s3(load_input, store)
+    return _replace(
+        state,
+        stage="p2_markdown_load",
+        p2_markdown_load=result.to_dict(),
+        reasons=state.reasons + ("p2_markdown_loaded",),
+    )
+
+
 def p2_markdown_parse_node(state: ChatGraphState) -> ChatGraphState:
     result = parse_p2_markdown(
         P2MarkdownParseInput(
             domain=state.domain,
             expected_domain=state.domain,
-            content=_mock_p2_markdown_content(state),
+            content=str(state.p2_markdown_load.get("content", "")),
             slot_registry=state.slot_registry,
-            source_s3_key=f"domains/{state.domain}/question_guides/v001.md",
-            version="v001",
-            source_count=2,
-            source_grade="mid",
+            source_s3_key=str(
+                state.p2_markdown_load.get("ref", {}).get("key", "")
+            ),
+            version=str(
+                state.p2_markdown_load.get("parse_input", {}).get("version", "v001")
+            ),
+            source_count=int(
+                state.p2_markdown_load.get("parse_input", {}).get("source_count", 0)
+            ),
+            source_grade=str(
+                state.p2_markdown_load.get("parse_input", {}).get("source_grade", "unknown")
+            ),
         )
     )
     return _replace(

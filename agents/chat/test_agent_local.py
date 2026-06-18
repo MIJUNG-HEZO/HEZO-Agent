@@ -44,6 +44,11 @@ from chat_state_store import (
 from contract_compile import ContractDraftInput, compile_contract_draft
 from contract_quality_check import ContractQualityInput, check_contract_quality
 from guarded_claude_flow import GuardedClaudeReplyInput, run_guarded_claude_reply
+from p2_markdown_loader import (
+    P2MarkdownLoadInput,
+    build_p2_markdown_ref,
+    load_p2_markdown_from_s3,
+)
 from p2_markdown_parser import P2MarkdownParseInput, parse_p2_markdown
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
@@ -71,6 +76,7 @@ CONFIG_FILE = pathlib.Path(__file__).parent / "agent_config.yaml"
 REQUIRED_STAGES = [
     "domain_selection",
     "p2_markdown_request",
+    "p2_markdown_load",
     "p2_markdown_parse",
     "p2_markdown_review",
     "proactive_questioning",
@@ -86,6 +92,7 @@ REQUIRED_STAGES = [
 ]
 
 REQUIRED_REVIEW_FIELDS = [
+    "source_s3_key",
     "parse_status",
     "slot_question_hints",
     "evidence_refs",
@@ -341,6 +348,41 @@ confidence: 0.82
     return P2MarkdownParseInput(**data)
 
 
+def _sample_p2_markdown_load_input(**overrides: object) -> P2MarkdownLoadInput:
+    request_input = _sample_request_input()
+    data = {
+        "domain": request_input.domain,
+        "expected_domain": request_input.domain,
+        "slot_registry": request_input.slot_registry,
+        "version": "v001",
+        "source_count": 2,
+        "source_grade": "mid",
+        "required_slots": ("business_name", "core_services", "contact_method"),
+    }
+    data.update(overrides)
+    return P2MarkdownLoadInput(**data)
+
+
+def _sample_p2_markdown_content() -> str:
+    return """
+# 세무/회계 질문 가이드
+confidence: 0.82
+
+## 업체명
+- 업체명: 사무소명은 무엇인가요?
+
+## 핵심 서비스
+- 핵심 서비스: 핵심 세무 서비스는 무엇인가요?
+
+## 상담 방식
+- 상담 방식: 상담 문의는 어떤 방식으로 받나요?
+
+## 근거
+- 국세청 세무 서비스 안내 페이지
+- 세무사무소 랜딩 페이지 공통 항목
+"""
+
+
 def _sample_slot_answer_input(**overrides: object) -> SlotAnswerInput:
     request_input = _sample_request_input()
     data = {
@@ -474,6 +516,75 @@ def _validate_p2_markdown_parse_cases() -> list[str]:
     )
     if malformed.parse_status != "failed" or "malformed_markdown" not in malformed.warnings:
         errors.append("질문/근거를 파싱할 수 없는 markdown은 malformed_markdown이어야 합니다.")
+
+    return errors
+
+
+def _validate_p2_markdown_loader_cases() -> list[str]:
+    errors: list[str] = []
+    store = InMemoryS3ArtifactStore()
+
+    load_input = _sample_p2_markdown_load_input()
+    ref = build_p2_markdown_ref(load_input)
+    store.put_artifact(ArtifactPayload(ref=ref, body=_sample_p2_markdown_content()))
+    loaded = load_p2_markdown_from_s3(load_input, store)
+    parsed = parse_p2_markdown(loaded.parse_input)
+    if loaded.ref.key != "domains/tax_accounting/question_guides/v001.md":
+        errors.append("domain/version 기준 P2 markdown key 생성이 올바르지 않습니다.")
+    if parsed.parse_status != "passed":
+        errors.append("S3 loader 결과는 parser에서 passed로 처리되어야 합니다.")
+
+    explicit_key_input = _sample_p2_markdown_load_input(
+        version=None,
+        source_s3_key="custom/p2/tax_accounting/latest.md",
+    )
+    explicit_ref = build_p2_markdown_ref(explicit_key_input)
+    store.put_artifact(ArtifactPayload(ref=explicit_ref, body=_sample_p2_markdown_content()))
+    explicit_loaded = load_p2_markdown_from_s3(explicit_key_input, store)
+    if explicit_loaded.ref.key != "custom/p2/tax_accounting/latest.md":
+        errors.append("source_s3_key가 있으면 explicit key를 우선 사용해야 합니다.")
+    if explicit_loaded.parse_input.source_s3_key != explicit_loaded.ref.key:
+        errors.append("loader는 parser input에 source_s3_key를 반영해야 합니다.")
+
+    invalid_cases = [
+        ("missing_domain", _sample_p2_markdown_load_input(domain=""), "required_fields_missing:domain"),
+        ("empty_slot_registry", _sample_p2_markdown_load_input(slot_registry={}), "slot_registry_empty"),
+        ("missing_version", _sample_p2_markdown_load_input(version=" "), "version_missing"),
+    ]
+    for name, case_input, expected_error in invalid_cases:
+        try:
+            build_p2_markdown_ref(case_input)
+        except ValueError as error:
+            if str(error) != expected_error:
+                errors.append(f"{name}: error={error!s}, expected={expected_error}")
+        else:
+            errors.append(f"{name}: ValueError가 발생해야 합니다.")
+
+    try:
+        load_p2_markdown_from_s3(
+            _sample_p2_markdown_load_input(source_s3_key="missing/object.md"),
+            store,
+        )
+    except ValueError as error:
+        if str(error) != "artifact_not_found":
+            errors.append(f"missing_object: error={error!s}, expected=artifact_not_found")
+    else:
+        errors.append("missing_object: ValueError가 발생해야 합니다.")
+
+    empty_ref = build_p2_markdown_ref(
+        _sample_p2_markdown_load_input(source_s3_key="empty/object.md")
+    )
+    store._objects[(empty_ref.bucket, empty_ref.key)] = " "
+    try:
+        load_p2_markdown_from_s3(
+            _sample_p2_markdown_load_input(source_s3_key="empty/object.md"),
+            store,
+        )
+    except ValueError as error:
+        if str(error) != "p2_markdown_body_empty":
+            errors.append(f"empty_body: error={error!s}, expected=p2_markdown_body_empty")
+    else:
+        errors.append("empty_body: ValueError가 발생해야 합니다.")
 
     return errors
 
@@ -1451,6 +1562,7 @@ def _validate_chat_graph_cases() -> list[str]:
 
     if CHAT_GRAPH_NODE_ORDER != (
         "p2_markdown_request",
+        "p2_markdown_load",
         "p2_markdown_parse",
         "p2_markdown_review",
         "proactive_questioning",
@@ -1470,6 +1582,8 @@ def _validate_chat_graph_cases() -> list[str]:
         errors.append("chat graph 최종 stage는 s3_artifact_storage여야 합니다.")
     if not final_dict["p2_markdown_request"]:
         errors.append("chat graph는 p2_markdown_request payload를 포함해야 합니다.")
+    if not final_dict["p2_markdown_load"]:
+        errors.append("chat graph는 p2_markdown_load 결과를 포함해야 합니다.")
     if not final_dict["p2_markdown_parse"]:
         errors.append("chat graph는 p2_markdown_parse 결과를 포함해야 합니다.")
     if final_dict["p2_markdown_parse"].get("parse_status") != "passed":
@@ -1851,7 +1965,16 @@ def main() -> None:
     else:
         print("  [OK] payload 생성 / 필수값 누락 / 빈 슬롯 케이스 확인")
 
-    print("\n[15] P2 markdown parser 케이스 검증")
+    print("\n[15] P2 markdown S3 loader 케이스 검증")
+    loader_case_errors = _validate_p2_markdown_loader_cases()
+    if loader_case_errors:
+        errors.extend(loader_case_errors)
+        for error in loader_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] S3 ref 생성 / read / parser 연결 / 오류 케이스 확인")
+
+    print("\n[16] P2 markdown parser 케이스 검증")
     parser_case_errors = _validate_p2_markdown_parse_cases()
     if parser_case_errors:
         errors.extend(parser_case_errors)
@@ -1860,7 +1983,7 @@ def main() -> None:
     else:
         print("  [OK] slot 질문 / 근거 / 누락 / malformed 케이스 확인")
 
-    print("\n[16] proactive questioning 케이스 검증")
+    print("\n[17] proactive questioning 케이스 검증")
     question_case_errors = _validate_question_cases()
     if question_case_errors:
         errors.extend(question_case_errors)
@@ -1869,7 +1992,7 @@ def main() -> None:
     else:
         print("  [OK] question_hint / fallback / 답변 제외 / max 제한 케이스 확인")
 
-    print("\n[17] slot answer state 케이스 검증")
+    print("\n[18] slot answer state 케이스 검증")
     slot_answer_case_errors = _validate_slot_answer_cases()
     if slot_answer_case_errors:
         errors.extend(slot_answer_case_errors)
@@ -1878,7 +2001,7 @@ def main() -> None:
     else:
         print("  [OK] 답변 반영 / 빈 답변 / 없는 slot / 업데이트 케이스 확인")
 
-    print("\n[18] contract compile 케이스 검증")
+    print("\n[19] contract compile 케이스 검증")
     contract_case_errors = _validate_contract_cases()
     if contract_case_errors:
         errors.extend(contract_case_errors)
@@ -1887,7 +2010,7 @@ def main() -> None:
     else:
         print("  [OK] ready / needs_enrichment / 외부 slot 제외 케이스 확인")
 
-    print("\n[19] contract quality check 케이스 검증")
+    print("\n[20] contract quality check 케이스 검증")
     quality_case_errors = _validate_quality_cases()
     if quality_case_errors:
         errors.extend(quality_case_errors)
@@ -1896,7 +2019,7 @@ def main() -> None:
     else:
         print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
 
-    print("\n[20] storage guardrails 케이스 검증")
+    print("\n[21] storage guardrails 케이스 검증")
     guardrail_case_errors = _validate_guardrail_cases()
     if guardrail_case_errors:
         errors.extend(guardrail_case_errors)
@@ -1905,7 +2028,7 @@ def main() -> None:
     else:
         print("  [OK] 저장 허용 / injection 차단 / PII 차단 / dict 직렬화 케이스 확인")
 
-    print("\n[21] chat state checkpoint 케이스 검증")
+    print("\n[22] chat state checkpoint 케이스 검증")
     checkpoint_case_errors = _validate_chat_state_store_cases()
     if checkpoint_case_errors:
         errors.extend(checkpoint_case_errors)
@@ -1914,7 +2037,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / metadata / message / checkpoint / guardrail 저장 조회 확인")
 
-    print("\n[22] S3 artifact storage 케이스 검증")
+    print("\n[23] S3 artifact storage 케이스 검증")
     s3_artifact_case_errors = _validate_s3_artifact_store_cases()
     if s3_artifact_case_errors:
         errors.extend(s3_artifact_case_errors)
@@ -1923,7 +2046,7 @@ def main() -> None:
     else:
         print("  [OK] key 생성 / transcript / P2 markdown / contract / guardrail 저장 조회 확인")
 
-    print("\n[23] Bedrock Claude invocation 케이스 검증")
+    print("\n[24] Bedrock Claude invocation 케이스 검증")
     claude_case_errors = _validate_claude_invocation_cases()
     if claude_case_errors:
         errors.extend(claude_case_errors)
@@ -1932,7 +2055,7 @@ def main() -> None:
     else:
         print("  [OK] use case / 실패 정규화 / usage / latency metadata 확인")
 
-    print("\n[24] Bedrock Guardrails ApplyGuardrail 케이스 검증")
+    print("\n[25] Bedrock Guardrails ApplyGuardrail 케이스 검증")
     bedrock_guardrails_case_errors = _validate_bedrock_guardrails_cases()
     if bedrock_guardrails_case_errors:
         errors.extend(bedrock_guardrails_case_errors)
@@ -1941,7 +2064,7 @@ def main() -> None:
     else:
         print("  [OK] safe / injection / PII / 실패 정규화 / assessment 확인")
 
-    print("\n[25] guarded Claude reply flow 케이스 검증")
+    print("\n[26] guarded Claude reply flow 케이스 검증")
     guarded_flow_case_errors = _validate_guarded_claude_flow_cases()
     if guarded_flow_case_errors:
         errors.extend(guarded_flow_case_errors)
@@ -1950,7 +2073,7 @@ def main() -> None:
     else:
         print("  [OK] 입력 차단 / Claude 실패 / 출력 차단 / 정상 통과 케이스 확인")
 
-    print("\n[26] chat graph 케이스 검증")
+    print("\n[27] chat graph 케이스 검증")
     chat_graph_case_errors = _validate_chat_graph_cases()
     if chat_graph_case_errors:
         errors.extend(chat_graph_case_errors)
@@ -1959,7 +2082,7 @@ def main() -> None:
     else:
         print("  [OK] graph run / 최종 state / checkpoint / artifact ref 확인")
 
-    print("\n[27] review policy mock 값 검증")
+    print("\n[28] review policy mock 값 검증")
     policy_errors = _validate_review_policy(config_text)
     if policy_errors:
         errors.extend(policy_errors)
@@ -1968,7 +2091,7 @@ def main() -> None:
     else:
         print("  [OK] review policy mock 값 확인")
 
-    print("\n[28] P2 markdown review 케이스 검증")
+    print("\n[29] P2 markdown review 케이스 검증")
     case_errors = _validate_review_cases()
     if case_errors:
         errors.extend(case_errors)
