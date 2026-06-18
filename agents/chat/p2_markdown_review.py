@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 
@@ -38,8 +38,6 @@ class P2MarkdownReviewInput:
     expected_domain: str
     p2_confidence: float
     content: str
-    required_slot_questions: dict[str, str] = field(default_factory=dict)
-    required_slots: tuple[str, ...] = ()
     source_count: int = 0
     source_grade: str = "unknown"
 
@@ -89,11 +87,6 @@ def review_p2_markdown(review_input: P2MarkdownReviewInput) -> P2MarkdownReviewR
             reasons=("p2_confidence_below_cutoff",),
         )
 
-    missing_slots = _missing_required_slots(review_input)
-    if missing_slots:
-        score -= min(0.30, 0.10 * len(missing_slots))
-        reasons.append("required_slot_questions_missing:" + ",".join(missing_slots))
-
     if _contains_any(content_lower, EXAGGERATION_PATTERNS):
         score -= 0.10
         reasons.append("exaggeration_risk")
@@ -123,15 +116,5 @@ def review_p2_markdown(review_input: P2MarkdownReviewInput) -> P2MarkdownReviewR
 
 def _contains_any(content_lower: str, patterns: list[str]) -> bool:
     return any(pattern.lower() in content_lower for pattern in patterns)
-
-
-def _missing_required_slots(review_input: P2MarkdownReviewInput) -> list[str]:
-    return [
-        slot
-        for slot in review_input.required_slots
-        if not review_input.required_slot_questions.get(slot)
-    ]
-
-
 def _has_blocking_reason(reasons: list[str]) -> bool:
     return "domain_mismatch" in reasons or "p2_confidence_below_cutoff" in reasons

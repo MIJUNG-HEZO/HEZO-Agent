@@ -52,6 +52,7 @@ class ChatGraphState:
     slot_registry: dict[str, dict[str, Any]]
     known_answers: dict[str, Any]
     missing_slots: tuple[str, ...]
+    category: str = "services"
     p2_markdown_request: dict[str, Any] = field(default_factory=dict)
     p2_markdown_load: dict[str, Any] = field(default_factory=dict)
     p2_markdown_parse: dict[str, Any] = field(default_factory=dict)
@@ -70,6 +71,7 @@ class ChatGraphState:
             "site_id": self.site_id,
             "user_id": self.user_id,
             "stage": self.stage,
+            "category": self.category,
             "domain": self.domain,
             "domain_label": self.domain_label,
             "selected_template": self.selected_template,
@@ -116,6 +118,7 @@ def p2_markdown_request_node(state: ChatGraphState) -> ChatGraphState:
         P2MarkdownRequestInput(
             site_id=state.site_id,
             user_id=state.user_id,
+            category=state.category,
             domain=state.domain,
             domain_label=state.domain_label,
             selected_template=state.selected_template,
@@ -135,15 +138,16 @@ def p2_markdown_request_node(state: ChatGraphState) -> ChatGraphState:
 def p2_markdown_load_node(state: ChatGraphState) -> ChatGraphState:
     store = InMemoryS3ArtifactStore()
     load_input = P2MarkdownLoadInput(
+        category=state.category,
         domain=state.domain,
         expected_domain=state.domain,
         slot_registry=state.slot_registry,
-        source_s3_key=f"domains/{state.domain}/question_guides/v001.md",
+        source_s3_key=f"industries/{state.category}/{state.domain}.md",
         version="v001",
         source_count=2,
         source_grade="mid",
     )
-    ref = store.build_artifact_ref("p2_markdown", domain=state.domain, version="v001")
+    ref = store.build_artifact_ref("p2_markdown", category=state.category, domain=state.domain)
     store.put_artifact(
         ArtifactPayload(
             ref=ref,
@@ -163,6 +167,7 @@ def p2_markdown_parse_node(state: ChatGraphState) -> ChatGraphState:
     result = parse_p2_markdown(
         P2MarkdownParseInput(
             domain=state.domain,
+            category=state.category,
             expected_domain=state.domain,
             content=str(state.p2_markdown_load.get("content", "")),
             slot_registry=state.slot_registry,
@@ -190,18 +195,12 @@ def p2_markdown_parse_node(state: ChatGraphState) -> ChatGraphState:
 
 
 def p2_markdown_review_node(state: ChatGraphState) -> ChatGraphState:
-    required_slot_questions = {
-        slot: str(question).strip()
-        for slot, question in state.p2_markdown_parse.get("required_slot_questions", {}).items()
-    }
     result = review_p2_markdown(
         P2MarkdownReviewInput(
             domain=state.domain,
             expected_domain=state.domain,
             p2_confidence=float(state.p2_markdown_parse.get("p2_confidence", 0.0)),
-            content=f"{state.domain_label} 홈페이지 질문 가이드입니다.",
-            required_slot_questions=required_slot_questions,
-            required_slots=tuple(required_slot_questions.keys()),
+            content=str(state.p2_markdown_load.get("content", "")),
             source_count=int(state.p2_markdown_parse.get("source_count", 0)),
             source_grade=str(state.p2_markdown_parse.get("source_grade", "unknown")),
         )
@@ -215,24 +214,32 @@ def p2_markdown_review_node(state: ChatGraphState) -> ChatGraphState:
 
 
 def _mock_p2_markdown_content(state: ChatGraphState) -> str:
-    question_lines = []
-    for slot, meta in state.slot_registry.items():
-        label = str(meta.get("label", slot)).strip()
-        hint = str(meta.get("question_hint", "")).strip()
-        if hint:
-            question_lines.append(f"- {label}: {hint}")
-
     return "\n".join(
         [
-            f"# {state.domain_label} 질문 가이드",
+            "---",
+            f"domain: {state.domain}",
+            f"category: {state.category}",
+            "template_no: 13",
+            f"label: {state.domain_label}",
             "confidence: 0.82",
+            "volatility: low",
+            "last_updated: 2026-06-18",
+            "source_urls:",
+            "  - https://example.com/source-1",
+            "  - https://example.com/source-2",
+            "---",
             "",
-            "## 질문 후보",
-            *question_lines,
+            f"# {state.domain_label} 도메인 지식",
             "",
-            "## 근거",
-            "- P2 domain markdown artifact",
-            "- HEZO MVP slot registry",
+            "## 1. 핵심 서비스 범위 [S1]",
+            "세무/회계 홈페이지는 기장, 세무 신고, 상담 방식, 신뢰 요소를 명확히 전달해야 합니다.",
+            "",
+            "## 2. 상담 전환 정보 [S2]",
+            "문의 방식과 상담 가능 시간을 쉽게 확인할 수 있어야 합니다.",
+            "",
+            "## 출처",
+            "- [S1] 세무 서비스 안내 자료",
+            "- [S2] 세무사무소 랜딩 페이지 공통 항목",
         ]
     )
 
@@ -251,6 +258,11 @@ def proactive_questioning_node(state: ChatGraphState) -> ChatGraphState:
             slot_registry=state.slot_registry,
             known_answers=state.known_answers,
             missing_slots=state.missing_slots,
+            p2_knowledge_summary=", ".join(
+                str(section.get("title", ""))
+                for section in state.p2_markdown_parse.get("knowledge_sections", [])
+                if section.get("title")
+            ),
             max_questions=3,
         )
     )

@@ -14,22 +14,19 @@ from s3_artifact_store import (
 )
 
 
-DEFAULT_P2_MARKDOWN_VERSION = "v001"
-
-
 @dataclass(frozen=True)
 class P2MarkdownLoadInput:
     """Context required to load a P2 markdown artifact from S3."""
 
+    category: str
     domain: str
     expected_domain: str
-    slot_registry: dict[str, dict[str, Any]]
+    slot_registry: dict[str, dict[str, Any]] | None = None
     version: str | None = None
     source_s3_key: str | None = None
     source_count: int = 0
     source_grade: str = "unknown"
     bucket: str = P2_MARKDOWNS_BUCKET
-    required_slots: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -46,12 +43,12 @@ class P2MarkdownLoadResult:
             "content": self.content,
             "parse_input": {
                 "domain": self.parse_input.domain,
+                "category": self.parse_input.category,
                 "expected_domain": self.parse_input.expected_domain,
                 "source_s3_key": self.parse_input.source_s3_key,
                 "version": self.parse_input.version,
                 "source_count": self.parse_input.source_count,
                 "source_grade": self.parse_input.source_grade,
-                "required_slots": list(self.parse_input.required_slots),
             },
         }
 
@@ -73,14 +70,14 @@ def load_p2_markdown_from_s3(
         content=content,
         parse_input=P2MarkdownParseInput(
             domain=load_input.domain.strip(),
+            category=load_input.category.strip(),
             expected_domain=load_input.expected_domain.strip(),
             content=content,
-            slot_registry=load_input.slot_registry,
+            slot_registry=load_input.slot_registry or {},
             source_s3_key=ref.key,
             version=load_input.version or _version_from_key(ref.key),
             source_count=load_input.source_count,
             source_grade=load_input.source_grade,
-            required_slots=load_input.required_slots,
         ),
     )
 
@@ -95,6 +92,7 @@ def build_p2_markdown_ref(load_input: P2MarkdownLoadInput) -> ArtifactRef:
 def _validate_load_input(load_input: P2MarkdownLoadInput) -> None:
     required_strings = {
         "domain": load_input.domain,
+        "category": load_input.category,
         "expected_domain": load_input.expected_domain,
         "bucket": load_input.bucket,
     }
@@ -105,19 +103,14 @@ def _validate_load_input(load_input: P2MarkdownLoadInput) -> None:
     ]
     if missing:
         raise ValueError("required_fields_missing:" + ",".join(missing))
-    if not load_input.slot_registry:
-        raise ValueError("slot_registry_empty")
-    if not load_input.source_s3_key and load_input.version is not None and not load_input.version.strip():
-        raise ValueError("version_missing")
-
 
 def _build_p2_markdown_ref(load_input: P2MarkdownLoadInput) -> ArtifactRef:
     key = (
         load_input.source_s3_key.strip()
         if load_input.source_s3_key and load_input.source_s3_key.strip()
         else p2_markdown_key(
+            load_input.category,
             load_input.domain,
-            load_input.version or DEFAULT_P2_MARKDOWN_VERSION,
         )
     )
     return ArtifactRef(
