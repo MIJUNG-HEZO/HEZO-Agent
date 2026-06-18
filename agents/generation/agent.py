@@ -1,18 +1,16 @@
 """
 생성 에이전트 — Amazon Bedrock AgentCore Runtime 진입점
 
-AgentCore Runtime HTTP 핸들러:
-  POST /invoke  { sessionId, inputText, sessionAttributes }
-  → { output, sessionState }
-
-흐름:
-  1. site_id 파싱 (inputText 또는 sessionAttributes)
-  2. contract_final.json 로드 (S3)
-  3. generation_ready 게이트 확인
-  4. Claude Sonnet 호출 → render_spec JSON 생성
-  5. 평가기 (최대 2회 재시도)
-  6. 가드레일 검사
-  7. render_spec.json → S3 저장 (GEO 파일 4종은 P3 렌더링 워커가 생성)
+흐름 (v2 에이전트 동작):
+  1. site_id 파싱
+  2. contract_final.json 로드 + generation_ready 게이트 확인
+  3. validation_feedback.json 로드 (재시도 경로용, 없으면 None)
+  4. Claude Sonnet → render_spec 생성
+  5. 규칙 기반 평가 (evaluate_render_spec)
+  6. [에이전트] LLM 자체 평가 — "AI 검색 인용 가능성" 점수화
+  7. 미달 섹션만 재생성 (전체 재생성 아님, 최대 2회)
+  8. 가드레일 검사
+  9. render_spec.json → S3 저장
 """
 from __future__ import annotations
 
@@ -33,26 +31,23 @@ from agents.generation.guardrails.content_guardrail import (
     check_guardrails,
 )
 from agents.generation.tools.contract_loader import load_contract
+from agents.generation.tools.feedback_loader import load_feedback
 from agents.generation.tools.render_spec_saver import save_render_spec
 from libs.telemetry import init_telemetry, record_llm_usage
 
-# ─── 로깅 ────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("hezo.generation")
 
-# ─── 환경변수 ────────────────────────────────────────────────────────────────
 REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 QUALITY_THRESHOLD = int(os.environ.get("QUALITY_THRESHOLD", "70"))
+LLM_EVAL_THRESHOLD = int(os.environ.get("LLM_EVAL_THRESHOLD", "70"))
 
-# ─── 관측 (P5 telemetry) — 에이전트별 토큰·비용을 CloudWatch로 직접 전송 ───
 init_telemetry("generation", region=REGION)
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "2"))
 
-# ─── FastAPI 앱 ───────────────────────────────────────────────────────────────
 app = FastAPI(title="HEZO Generation Agent")
 
-# ─── Bedrock 클라이언트 ───────────────────────────────────────────────────────
 _bedrock: Any = None
 
 
@@ -68,7 +63,6 @@ def get_bedrock():
 # =============================================================================
 
 def parse_site_id(input_text: str, session_attrs: dict) -> str:
-    """inputText 또는 sessionAttributes에서 site_id 추출"""
     if site_id := session_attrs.get("site_id"):
         return site_id.strip()
     m = re.search(r"site_id[=:\s]+([a-zA-Z0-9_\-]+)", input_text)
@@ -78,7 +72,7 @@ def parse_site_id(input_text: str, session_attrs: dict) -> str:
 
 
 # =============================================================================
-# Claude 호출 — render_spec 생성
+# Claude 호출 — render_spec 전체 생성
 # =============================================================================
 
 _SYSTEM_PROMPT = """당신은 HEZO의 AI 친화 홈페이지 생성 전문가입니다.
@@ -203,28 +197,20 @@ def call_claude(contract: dict, crawl_snapshot: dict | None, issues_hint: list[s
 
     start = time.monotonic()
     resp = bedrock.invoke_model(
-        modelId=MODEL_ID,
-        body=body,
-        contentType="application/json",
-        accept="application/json",
+        modelId=MODEL_ID, body=body,
+        contentType="application/json", accept="application/json",
     )
     elapsed = (time.monotonic() - start) * 1000
-    logger.info("Claude 호출 완료: %.0f ms", elapsed)
 
     result = json.loads(resp["body"].read())
-
-    # 토큰·비용 기록 (에이전트별 → CloudWatch HEZO/Agents)
     _usage = result.get("usage", {})
     record_llm_usage(
         "generation", "sonnet",
-        _usage.get("input_tokens", 0),
-        _usage.get("output_tokens", 0),
-        ms=elapsed,
+        _usage.get("input_tokens", 0), _usage.get("output_tokens", 0), ms=elapsed,
     )
+    logger.info("Claude 호출 완료: %.0f ms", elapsed)
 
     text = result["content"][0]["text"].strip()
-
-    # JSON 추출 (마크다운 코드 블록 처리)
     m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
     if m:
         text = m.group(1)
@@ -233,11 +219,187 @@ def call_claude(contract: dict, crawl_snapshot: dict | None, issues_hint: list[s
 
 
 # =============================================================================
+# [에이전트] LLM 자체 평가 — AI 인용 가능성 판단
+# =============================================================================
+
+def llm_self_eval(render_spec: dict, contract: dict) -> dict:
+    """
+    Claude가 스스로 생성한 render_spec의 AI 검색 인용 가능성 평가.
+    반환: {score: 0~100, weak_sections: [...], reason: str}
+    """
+    slots = contract.get("slots", {})
+    business_type = slots.get("business_type", "")
+    region = slots.get("address", "")
+
+    page = render_spec.get("pages", [{}])[0]
+    faq_items: list[dict] = []
+    quick_answer = ""
+    for block in page.get("blocks", []):
+        if block.get("type") == "FAQ":
+            faq_items = block.get("items", [])
+        elif block.get("type") == "QuickAnswer":
+            quick_answer = block.get("text", "")
+
+    prompt = f"""다음 홈페이지 콘텐츠가 '{business_type} {region} 추천' AI 검색 질의에서 인용될 가능성을 평가하세요.
+
+[QuickAnswer]
+{quick_answer}
+
+[FAQ {len(faq_items)}개]
+{json.dumps(faq_items[:5], ensure_ascii=False, indent=2)}
+
+[SEO 키워드]
+{json.dumps(page.get('seo', {}).get('target_keywords', []), ensure_ascii=False)}
+
+평가 기준 (각 20점):
+1. 구체적 수치·비용·기간 포함 여부
+2. FAQ가 실제 사용자 질문 형태인지
+3. QuickAnswer가 핵심 정보를 압축 전달하는지
+4. 업종 핵심 키워드 자연스럽게 포함했는지
+5. 경쟁사 대비 차별화 포인트 존재 여부
+
+반드시 다음 JSON만 출력하세요:
+{{
+  "score": <0~100 정수>,
+  "weak_sections": <["FAQ", "QuickAnswer", "SEO", "JSONLD"] 중 미달 항목 목록, 없으면 []>,
+  "reason": "<미달 이유 한 문장, 통과 시 빈 문자열>"
+}}"""
+
+    bedrock = get_bedrock()
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 512,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+    resp = bedrock.invoke_model(
+        modelId=MODEL_ID, body=body,
+        contentType="application/json", accept="application/json",
+    )
+    result = json.loads(resp["body"].read())
+    text = result["content"][0]["text"].strip()
+
+    m = re.search(r"\{[\s\S]+\}", text)
+    if m:
+        text = m.group()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("LLM 자체 평가 JSON 파싱 실패 — 기본값 사용")
+        return {"score": 75, "weak_sections": [], "reason": ""}
+
+
+def regenerate_weak_sections(
+    render_spec: dict, weak_sections: list[str], contract: dict, reason: str
+) -> dict:
+    """
+    미달 섹션만 Claude로 재생성 (전체 재생성 아님).
+    반환: 수정된 render_spec
+    """
+    import copy
+    patched = copy.deepcopy(render_spec)
+    slots = contract.get("slots", {})
+    business_type = slots.get("business_type", "")
+    business_name = slots.get("business_name", "")
+    region = slots.get("address", "")
+
+    page = patched.get("pages", [{}])[0]
+
+    if "FAQ" in weak_sections:
+        prompt = f"""'{business_name}'({business_type}, {region}) 홈페이지 FAQ 7개를 개선하여 재작성하세요.
+개선 방향: {reason}
+- 구체적 수치(비용·기간) 포함
+- 실제 사용자가 AI 검색에 물어볼 법한 질문 형태
+
+다음 JSON 배열만 출력:
+[{{"q": "질문", "a": "구체적 답변"}}]"""
+
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2048,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
+                                          contentType="application/json", accept="application/json")
+        text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        try:
+            m = re.search(r"\[[\s\S]+\]", text)
+            new_faq = json.loads(m.group() if m else text)
+            for block in page.get("blocks", []):
+                if block.get("type") == "FAQ":
+                    block["items"] = new_faq
+                    break
+            # FAQPage JSON-LD도 업데이트
+            for jld in page.get("jsonld", []):
+                if jld.get("@type") == "FAQPage":
+                    jld["mainEntity"] = [
+                        {"@type": "Question", "name": item["q"],
+                         "acceptedAnswer": {"@type": "Answer", "text": item["a"]}}
+                        for item in new_faq
+                    ]
+                    break
+            logger.info("FAQ 섹션 재생성 완료: %d개", len(new_faq))
+        except (json.JSONDecodeError, AttributeError) as exc:
+            logger.warning("FAQ 재생성 파싱 실패: %s", exc)
+
+    if "QuickAnswer" in weak_sections:
+        prompt = f"""'{business_name}'({business_type}, {region})의 QuickAnswer를 재작성하세요.
+조건: 50~120자, AI 검색 인용 최적화, 핵심 서비스·특징 압축.
+개선 방향: {reason}
+문자열만 출력 (따옴표 없이):"""
+
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 256,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
+                                          contentType="application/json", accept="application/json")
+        new_qa = json.loads(resp["body"].read())["content"][0]["text"].strip().strip('"')
+        for block in page.get("blocks", []):
+            if block.get("type") == "QuickAnswer":
+                block["text"] = new_qa[:120]
+                break
+        logger.info("QuickAnswer 재생성 완료")
+
+    if "SEO" in weak_sections:
+        seo = page.get("seo", {})
+        prompt = f"""'{business_name}'({business_type}, {region}) 홈페이지 SEO 메타데이터를 개선하세요.
+개선 방향: {reason}
+
+현재 키워드: {seo.get('target_keywords', [])}
+
+다음 JSON만 출력:
+{{
+  "title": "<60자 이내 SEO 타이틀>",
+  "description": "<160자 이내 메타 디스크립션>",
+  "target_keywords": ["<키워드 5개>"]
+}}"""
+
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 512,
+            "messages": [{"role": "user", "content": prompt}],
+        })
+        resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
+                                          contentType="application/json", accept="application/json")
+        text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        try:
+            m = re.search(r"\{[\s\S]+\}", text)
+            new_seo = json.loads(m.group() if m else text)
+            page.setdefault("seo", {}).update(new_seo)
+            logger.info("SEO 섹션 재생성 완료")
+        except (json.JSONDecodeError, AttributeError) as exc:
+            logger.warning("SEO 재생성 파싱 실패: %s", exc)
+
+    return patched
+
+
+# =============================================================================
 # 핵심 에이전트 로직
 # =============================================================================
 
 def run_generation(site_id: str) -> dict:
-    """생성 에이전트 메인 로직"""
     logger.info("생성 에이전트 시작 — site_id=%s", site_id)
 
     # 1. Contract 로드
@@ -250,10 +412,17 @@ def run_generation(site_id: str) -> dict:
         logger.warning("generation_ready=false — 생성 건너뜀")
         return {"status": "skipped", "reason": "generation_ready=false", "site_id": site_id}
 
-    # 3. Claude 호출 + 평가 루프
+    # 3. validation_feedback 로드 (재시도 경로 — 없으면 None)
+    feedback = load_feedback(site_id)
+    initial_hints: list[str] | None = None
+    if feedback:
+        initial_hints = [f"{i.get('code')}: {i.get('detail')}" for i in feedback.get("patch_hints", [])]
+        logger.info("validation_feedback 로드 — hint %d건", len(initial_hints))
+
+    # 4. Claude 호출 + 규칙 기반 평가 루프
     render_spec: dict | None = None
     eval_result: dict = {}
-    issues_hint: list[str] | None = None
+    issues_hint: list[str] | None = initial_hints
 
     for attempt in range(1, MAX_RETRIES + 1):
         logger.info("Claude 호출 시도 %d/%d", attempt, MAX_RETRIES)
@@ -267,28 +436,38 @@ def run_generation(site_id: str) -> dict:
             continue
 
         eval_result = evaluate_render_spec(render_spec, threshold=QUALITY_THRESHOLD)
-        logger.info("평가 결과: score=%d, issues=%d", eval_result["score"], eval_result["issue_count"])
+        logger.info("규칙 평가: score=%d, issues=%d", eval_result["score"], eval_result["issue_count"])
 
         if eval_result["passed"]:
             break
 
         if attempt < MAX_RETRIES:
             issues_hint = eval_result["issues"]
-            logger.warning("품질 임계값 미달 (score=%d) — 재시도", eval_result["score"])
+            logger.warning("규칙 점수 미달 (score=%d) — 재시도", eval_result["score"])
         else:
             logger.warning("최대 재시도 도달 — score=%d 로 진행", eval_result["score"])
 
     if render_spec is None:
         raise RuntimeError("render_spec 생성 실패")
 
-    # 4. 가드레일
+    # 5. [에이전트] LLM 자체 평가 — AI 인용 가능성 판단
+    llm_eval = llm_self_eval(render_spec, contract)
+    logger.info("LLM 자체 평가: score=%d, weak=%s", llm_eval["score"], llm_eval["weak_sections"])
+
+    if llm_eval["score"] < LLM_EVAL_THRESHOLD and llm_eval["weak_sections"]:
+        logger.info("LLM 자체 평가 미달 — 미달 섹션만 재생성: %s", llm_eval["weak_sections"])
+        render_spec = regenerate_weak_sections(
+            render_spec, llm_eval["weak_sections"], contract, llm_eval["reason"]
+        )
+
+    # 6. 가드레일
     check_guardrails(render_spec)
 
-    # 5. S3 저장
+    # 7. S3 저장
     save_result = save_render_spec(site_id, render_spec)
     logger.info(
-        "생성 완료 — site_id=%s, score=%d, s3_key=%s",
-        site_id, eval_result.get("score", 0), save_result["s3_key"],
+        "생성 완료 — site_id=%s, rule_score=%d, llm_score=%d, s3_key=%s",
+        site_id, eval_result.get("score", 0), llm_eval["score"], save_result["s3_key"],
     )
 
     return {
@@ -296,6 +475,8 @@ def run_generation(site_id: str) -> dict:
         "site_id": site_id,
         "render_spec_key": save_result["s3_key"],
         "eval_score": eval_result.get("score", 0),
+        "llm_eval_score": llm_eval["score"],
+        "weak_sections_patched": llm_eval["weak_sections"],
         "page_count": save_result["page_count"],
         "saved_at": save_result["saved_at"],
     }
@@ -306,9 +487,8 @@ def run_generation(site_id: str) -> dict:
 # =============================================================================
 
 async def _handle_invoke(request: Request) -> JSONResponse:
-    """AgentCore Runtime 공통 핸들러"""
     body = await request.body()
-    logger.info("요청 경로: %s %s (body_len=%d)", request.method, request.url.path, len(body))
+    logger.info("요청 경로: %s %s", request.method, request.url.path)
 
     try:
         payload = __import__("json").loads(body) if body else {}
@@ -319,13 +499,15 @@ async def _handle_invoke(request: Request) -> JSONResponse:
     input_text = payload.get("inputText", "")
     session_attrs = payload.get("sessionAttributes", {})
 
-    logger.info("invoke 호출 — sessionId=%s, inputText=%r", session_id, input_text[:120] if input_text else "")
+    logger.info("invoke 호출 — sessionId=%s", session_id)
 
     try:
         site_id = parse_site_id(input_text, session_attrs)
         result = run_generation(site_id)
         output_text = (
-            f"render_spec_saved — site_id: {site_id}, eval_score: {result.get('eval_score', 0)}"
+            f"render_spec_saved — site_id: {site_id}, "
+            f"rule_score: {result.get('eval_score', 0)}, "
+            f"llm_score: {result.get('llm_eval_score', 0)}"
             if result.get("status") == "complete"
             else f"generation_skipped — {result.get('reason', '')}"
         )
@@ -339,33 +521,24 @@ async def _handle_invoke(request: Request) -> JSONResponse:
         return JSONResponse({"error": "GENERATION_ERROR", "message": str(exc)}, status_code=500)
 
 
-# AgentCore Runtime이 호출하는 경로 후보 모두 등록
 @app.post("/invoke")
 async def invoke(request: Request) -> JSONResponse:
-    logger.info("invoke 호출 — 경로: /invoke")
     return await _handle_invoke(request)
 
 
 @app.post("/invocations")
 async def invocations(request: Request) -> JSONResponse:
-    logger.info("invoke 호출 — 경로: /invocations")
     return await _handle_invoke(request)
 
 
 @app.post("/")
 async def invoke_root(request: Request) -> JSONResponse:
-    logger.info("invoke 호출 — 경로: /")
     return await _handle_invoke(request)
 
 
-# AgentCore Runtime 디버그용: 어떤 경로가 호출됐는지 확인
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-async def catch_all(path: str, request: Request) -> JSONResponse:
-    body = await request.body()
-    logger.warning("알 수 없는 경로: %s %s (body_len=%d)", request.method, request.url.path, len(body))
-    if request.method == "POST":
-        return await _handle_invoke(request)
-    return JSONResponse({"path": path, "method": request.method}, status_code=200)
+@app.get("/ping")
+async def ping() -> JSONResponse:
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/health")
@@ -373,7 +546,15 @@ async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "agent": "hezo-generation-agent"})
 
 
-# ─── 로컬 실행 ────────────────────────────────────────────────────────────────
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def catch_all(path: str, request: Request) -> JSONResponse:
+    body = await request.body()
+    logger.warning("알 수 없는 경로: %s %s", request.method, request.url.path)
+    if request.method == "POST":
+        return await _handle_invoke(request)
+    return JSONResponse({"path": path, "method": request.method}, status_code=200)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
