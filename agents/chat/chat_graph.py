@@ -12,6 +12,7 @@ from bedrock_guardrails_adapter import (
 from chat_state_store import ChatCheckpoint, InMemoryChatStateStore
 from contract_compile import ContractDraftInput, compile_contract_draft
 from contract_quality_check import ContractQualityInput, check_contract_quality
+from p2_markdown_parser import P2MarkdownParseInput, parse_p2_markdown
 from p2_markdown_request import P2MarkdownRequestInput, build_p2_markdown_request_payload
 from p2_markdown_review import P2MarkdownReviewInput, review_p2_markdown
 from proactive_questioning import ProactiveQuestionInput, build_proactive_question_candidates
@@ -23,6 +24,7 @@ GraphNode = Callable[["ChatGraphState"], "ChatGraphState"]
 
 CHAT_GRAPH_NODE_ORDER = (
     "p2_markdown_request",
+    "p2_markdown_parse",
     "p2_markdown_review",
     "proactive_questioning",
     "slot_answer_state",
@@ -49,6 +51,7 @@ class ChatGraphState:
     known_answers: dict[str, Any]
     missing_slots: tuple[str, ...]
     p2_markdown_request: dict[str, Any] = field(default_factory=dict)
+    p2_markdown_parse: dict[str, Any] = field(default_factory=dict)
     p2_markdown_review: dict[str, Any] = field(default_factory=dict)
     question_candidates: tuple[dict[str, Any], ...] = ()
     contract_draft: dict[str, Any] = field(default_factory=dict)
@@ -71,6 +74,7 @@ class ChatGraphState:
             "known_answers": self.known_answers,
             "missing_slots": list(self.missing_slots),
             "p2_markdown_request": self.p2_markdown_request,
+            "p2_markdown_parse": self.p2_markdown_parse,
             "p2_markdown_review": self.p2_markdown_review,
             "question_candidates": list(self.question_candidates),
             "contract_draft": self.contract_draft,
@@ -88,6 +92,7 @@ def run_chat_graph(initial_state: ChatGraphState) -> ChatGraphState:
     state = initial_state
     for node in (
         p2_markdown_request_node,
+        p2_markdown_parse_node,
         p2_markdown_review_node,
         proactive_questioning_node,
         slot_answer_state_node,
@@ -122,22 +127,43 @@ def p2_markdown_request_node(state: ChatGraphState) -> ChatGraphState:
     )
 
 
+def p2_markdown_parse_node(state: ChatGraphState) -> ChatGraphState:
+    result = parse_p2_markdown(
+        P2MarkdownParseInput(
+            domain=state.domain,
+            expected_domain=state.domain,
+            content=_mock_p2_markdown_content(state),
+            slot_registry=state.slot_registry,
+            source_s3_key=f"domains/{state.domain}/question_guides/v001.md",
+            version="v001",
+            source_count=2,
+            source_grade="mid",
+        )
+    )
+    return _replace(
+        state,
+        stage="p2_markdown_parse",
+        slot_registry=result.apply_to_slot_registry(state.slot_registry),
+        p2_markdown_parse=result.to_dict(),
+        reasons=state.reasons + ("p2_markdown_parsed",),
+    )
+
+
 def p2_markdown_review_node(state: ChatGraphState) -> ChatGraphState:
     required_slot_questions = {
-        slot: str(meta.get("question_hint", "")).strip()
-        for slot, meta in state.slot_registry.items()
-        if bool(meta.get("required", False))
+        slot: str(question).strip()
+        for slot, question in state.p2_markdown_parse.get("required_slot_questions", {}).items()
     }
     result = review_p2_markdown(
         P2MarkdownReviewInput(
             domain=state.domain,
             expected_domain=state.domain,
-            p2_confidence=0.78,
+            p2_confidence=float(state.p2_markdown_parse.get("p2_confidence", 0.0)),
             content=f"{state.domain_label} 홈페이지 질문 가이드입니다.",
             required_slot_questions=required_slot_questions,
             required_slots=tuple(required_slot_questions.keys()),
-            source_count=3,
-            source_grade="mid",
+            source_count=int(state.p2_markdown_parse.get("source_count", 0)),
+            source_grade=str(state.p2_markdown_parse.get("source_grade", "unknown")),
         )
     ).to_state()
     return _replace(
@@ -145,6 +171,29 @@ def p2_markdown_review_node(state: ChatGraphState) -> ChatGraphState:
         stage="p2_markdown_review",
         p2_markdown_review=result,
         reasons=state.reasons + ("p2_markdown_reviewed",),
+    )
+
+
+def _mock_p2_markdown_content(state: ChatGraphState) -> str:
+    question_lines = []
+    for slot, meta in state.slot_registry.items():
+        label = str(meta.get("label", slot)).strip()
+        hint = str(meta.get("question_hint", "")).strip()
+        if hint:
+            question_lines.append(f"- {label}: {hint}")
+
+    return "\n".join(
+        [
+            f"# {state.domain_label} 질문 가이드",
+            "confidence: 0.82",
+            "",
+            "## 질문 후보",
+            *question_lines,
+            "",
+            "## 근거",
+            "- P2 domain markdown artifact",
+            "- HEZO MVP slot registry",
+        ]
     )
 
 

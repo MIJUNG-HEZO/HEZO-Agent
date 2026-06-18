@@ -26,6 +26,15 @@ Stages:
       - missing_slots
       - request_reason
 
+  - name: p2_markdown_parse
+    description: P2 markdown artifact 원문을 P1 내부 slot 질문/근거 구조로 정규화한다.
+    required_fields:
+      - parse_status
+      - slot_question_hints
+      - required_slot_questions
+      - evidence_refs
+      - warnings
+
   - name: p2_markdown_review
     description: P2 markdown을 수신 검수하고 적극적 질의에 사용할 수 있는지 판단한다.
     required_fields:
@@ -154,6 +163,26 @@ MockState:
     missing_slots:
       - core_services
       - contact_method
+  p2_markdown_parse:
+    parse_status: passed
+    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    version: v001
+    p2_confidence: 0.82
+    slot_question_hints:
+      business_name: 사무소명은 무엇인가요?
+      core_services: 핵심 세무 서비스는 무엇인가요?
+      contact_method: 상담 문의는 어떤 방식으로 받나요?
+    required_slot_questions:
+      business_name: 사무소명은 무엇인가요?
+      core_services: 핵심 세무 서비스는 무엇인가요?
+      contact_method: 상담 문의는 어떤 방식으로 받나요?
+    evidence_refs:
+      - ref_id: evidence_001
+        text: 국세청 세무 서비스 안내 페이지
+      - ref_id: evidence_002
+        text: 세무사무소 랜딩 페이지 공통 항목
+    warnings:
+      - parsed
   p2_markdown:
     status: reviewed
     source_s3_key: domains/tax_accounting/question_guides/v001.md
@@ -286,6 +315,7 @@ MockState:
   chat_graph:
     graph_node_order:
       - p2_markdown_request
+      - p2_markdown_parse
       - p2_markdown_review
       - proactive_questioning
       - slot_answer_state

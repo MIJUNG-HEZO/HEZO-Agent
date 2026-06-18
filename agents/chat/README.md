@@ -51,6 +51,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 ```text
 domain_selection
 -> p2_markdown_request
+-> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning
 -> slot_answer_state
@@ -109,6 +110,57 @@ domain_selection
 - `missing_slots`가 비어 있어도 payload 생성 가능
 
 이번 범위에서는 실제 P2 API 호출, S3 저장, Bedrock/LangGraph 호출을 포함하지 않습니다.
+
+## P2 Markdown Parser / Normalizer
+
+`p2_markdown_parser.py`는 P2가 S3에 저장한 domain markdown 원문을 P1 내부 표준 구조로 변환합니다.
+
+입력 기준:
+
+- `domain`, `expected_domain`
+- `content`
+- `slot_registry`
+- `source_s3_key`
+- `version`
+- `source_count`, `source_grade`
+
+출력 기준:
+
+```json
+{
+  "domain": "tax_accounting",
+  "p2_confidence": 0.82,
+  "parse_status": "passed",
+  "slot_question_hints": {
+    "core_services": "핵심 세무 서비스는 무엇인가요?"
+  },
+  "required_slot_questions": {
+    "core_services": "핵심 세무 서비스는 무엇인가요?"
+  },
+  "evidence_refs": [
+    {
+      "ref_id": "evidence_001",
+      "text": "국세청 세무 서비스 안내 페이지"
+    }
+  ],
+  "warnings": ["parsed"]
+}
+```
+
+파싱 기준:
+
+- slot key 또는 label이 포함된 질문 라인을 slot별 질문 후보로 추출
+- `근거`, `출처`, `source`, `evidence` 계열 heading 아래 list를 evidence refs로 분리
+- confidence metadata가 있으면 `p2_confidence`로 반영
+- 필수 slot 질문이 누락되면 `needs_enrichment`
+- 빈 markdown, domain mismatch, 질문/근거를 추출할 수 없는 markdown은 `failed`
+
+연결 기준:
+
+- `required_slot_questions`, `source_count`, `source_grade`는 `review_p2_markdown()` 입력으로 전달 가능
+- `slot_question_hints`는 `slot_registry.question_hint`에 반영해 적극적 질의 질문 후보로 사용 가능
+
+이번 범위에서는 실제 S3 read, P2 prefix 결정, Bedrock/LangGraph 호출을 포함하지 않습니다.
 
 ## P2 Markdown Review State
 
@@ -640,6 +692,7 @@ graph node 순서:
 
 ```text
 p2_markdown_request
+-> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning
 -> slot_answer_state
