@@ -1,36 +1,22 @@
-"""HEZO Wiki (P2) S3 저장 계층.
+"""HEZO Wiki (P2) S3 저장 계층 (nested).
 
-위키 파일을 S3에 넣고 빼는 얇은 래퍼. 실제 boto3 입출력은 팀 공용 유틸
+업종 지식 본문을 S3에 넣고 빼는 얇은 래퍼. 실제 boto3 입출력은 팀 공용 유틸
 `agents/shared/s3_utils.py`를 재사용하고, 이 모듈은 P2 키 규칙(constants.py)과
-저장 형식(md/json)을 입혀 준다.
+저장 형식(md)을 입혀 준다.
 
-저장 형식:
-- 위키 지식(industries/, api_profiles/) = **md** (text/markdown)
-- 내부 관리 파일(_internal/processed, pending_industries) = **json**
+- 본문(industries/) = **md** (text/markdown), nested 키 `industries/{category}/{domain}.md`.
+- 읽기 인터페이스 = `get_industry(category, domain)` (P1/P4가 Contract의 category·domain으로 호출).
+- 버킷은 버전드 ON이라 put 시 새 버전이 쌓인다. VersionId→DynamoDB 색인 연동과
+  `save_industry_versioned`는 후속 이슈(저장 버전드·index_store)에서 추가한다.
 
 credential은 코드/깃에 두지 않는다. 버킷·리전·프로필은 환경변수(constants.py),
 자격증명은 AWS 프로필(hezo-p2)로만 참조한다.
 """
 from __future__ import annotations
 
-from typing import Any
+from agents.shared.s3_utils import get_s3, key_exists, write_text
 
-from agents.shared.s3_utils import (
-    get_s3,
-    key_exists,
-    read_json,
-    write_json,
-    write_text,
-)
-
-from agents.wiki.constants import (
-    INDUSTRIES_PREFIX,
-    PENDING_INDUSTRIES_KEY,
-    PROCESSED_KEY,
-    WIKI_BUCKET,
-    api_profile_key,
-    industry_key,
-)
+from agents.wiki.constants import INDUSTRIES_PREFIX, WIKI_BUCKET, industry_key
 
 _MARKDOWN_CONTENT_TYPE = "text/markdown"
 
@@ -41,70 +27,33 @@ def _read_text(key: str) -> str:
     return resp["Body"].read().decode("utf-8")
 
 
-# ─── 업종 지식 (industries/{domain}.md) ────────────────────────────────────
-def put_industry(domain: str, markdown: str) -> int:
-    """업종 지식 md를 저장. 저장 바이트 수 반환."""
-    key = industry_key(domain)
+# ─── 업종 지식 (industries/{category}/{domain}.md) ─────────────────────────
+def put_industry(category: str, domain: str, markdown: str) -> int:
+    """업종 지식 md를 저장(버킷 버전드 → 새 버전 append). 저장 바이트 수 반환."""
+    key = industry_key(category, domain)
     write_text(WIKI_BUCKET, key, markdown, _MARKDOWN_CONTENT_TYPE)
     return len(markdown.encode("utf-8"))
 
 
-def get_industry(domain: str) -> str:
-    """업종 지식 md를 읽음."""
-    return _read_text(industry_key(domain))
+def get_industry(category: str, domain: str) -> str:
+    """업종 지식 md를 읽음(최신 버전). P1/P4 읽기 인터페이스."""
+    return _read_text(industry_key(category, domain))
 
 
-def industry_exists(domain: str) -> bool:
+def industry_exists(category: str, domain: str) -> bool:
     """업종 지식 파일 존재 여부."""
-    return key_exists(WIKI_BUCKET, industry_key(domain))
+    return key_exists(WIKI_BUCKET, industry_key(category, domain))
 
 
-def list_industries() -> list[str]:
-    """저장된 업종 도메인 목록(파일명에서 .md 제거)."""
+def list_industries() -> list[tuple[str, str]]:
+    """저장된 (category, domain) 목록. industries/{category}/{domain}.md 키를 파싱."""
     s3 = get_s3()
-    domains: list[str] = []
+    out: list[tuple[str, str]] = []
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=WIKI_BUCKET, Prefix=INDUSTRIES_PREFIX):
         for obj in page.get("Contents", []):
-            name = obj["Key"][len(INDUSTRIES_PREFIX):]
-            if name.endswith(".md"):
-                domains.append(name[:-3])
-    return domains
-
-
-# ─── API 명세 (api_profiles/{name}.md, 크롤링하지 않음) ────────────────────
-def put_api_profile(name: str, markdown: str) -> int:
-    """API 명세 md를 저장. 저장 바이트 수 반환."""
-    key = api_profile_key(name)
-    write_text(WIKI_BUCKET, key, markdown, _MARKDOWN_CONTENT_TYPE)
-    return len(markdown.encode("utf-8"))
-
-
-def get_api_profile(name: str) -> str:
-    """API 명세 md를 읽음."""
-    return _read_text(api_profile_key(name))
-
-
-# ─── 내부 관리 파일 (_internal/*.json) ─────────────────────────────────────
-def read_processed() -> dict[str, Any]:
-    """처리 기록(중복·실패 방지) 읽기. 없으면 빈 dict."""
-    if not key_exists(WIKI_BUCKET, PROCESSED_KEY):
-        return {}
-    return read_json(WIKI_BUCKET, PROCESSED_KEY)
-
-
-def write_processed(data: dict[str, Any]) -> int:
-    """처리 기록 저장. 저장 바이트 수 반환."""
-    return write_json(WIKI_BUCKET, PROCESSED_KEY, data)
-
-
-def read_pending() -> dict[str, Any]:
-    """신규 채우기 대기열 읽기. 없으면 빈 dict."""
-    if not key_exists(WIKI_BUCKET, PENDING_INDUSTRIES_KEY):
-        return {}
-    return read_json(WIKI_BUCKET, PENDING_INDUSTRIES_KEY)
-
-
-def write_pending(data: dict[str, Any]) -> int:
-    """신규 채우기 대기열 저장. 저장 바이트 수 반환."""
-    return write_json(WIKI_BUCKET, PENDING_INDUSTRIES_KEY, data)
+            rel = obj["Key"][len(INDUSTRIES_PREFIX):]  # "landing/tax_accounting.md"
+            if rel.endswith(".md") and "/" in rel:
+                category, filename = rel.split("/", 1)
+                out.append((category, filename[:-3]))
+    return out
