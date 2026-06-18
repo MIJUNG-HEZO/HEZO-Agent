@@ -28,6 +28,7 @@ from bedrock_guardrails_adapter import (
     MockBedrockGuardrailsClient,
 )
 from chat_graph import CHAT_GRAPH_NODE_ORDER, ChatGraphState, run_chat_graph
+from chat_http_handler import handle_agentcore_payload
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from chat_state_store import (
@@ -93,6 +94,7 @@ REQUIRED_STAGES = [
     "bedrock_claude_invocation",
     "bedrock_guardrails_apply",
     "chat_graph",
+    "chat_http_wrapper",
 ]
 
 REQUIRED_REVIEW_FIELDS = [
@@ -218,6 +220,15 @@ REQUIRED_GUARDED_CLAUDE_FLOW_FIELDS = [
     "claude_result",
     "output_guardrail",
     "final_text",
+]
+
+REQUIRED_CHAT_HTTP_FIELDS = [
+    "/invoke",
+    "/invocations",
+    "/ping",
+    "/health",
+    "sessionAttributes",
+    "action",
 ]
 
 
@@ -1858,6 +1869,72 @@ def _validate_chat_graph_cases() -> list[str]:
     return errors
 
 
+def _validate_chat_http_handler_cases() -> list[str]:
+    errors: list[str] = []
+
+    session_start = handle_agentcore_payload(
+        {
+            "sessionId": "session_http_001",
+            "inputText": "",
+            "sessionAttributes": {
+                "action": "session_start",
+                "site_id": "site_001",
+                "user_id": "user_001",
+            },
+        }
+    )
+    if session_start["sessionState"]["action"] != "session_start":
+        errors.append("HTTP handler session_start action이 보존되어야 합니다.")
+    if session_start["metadata"]["next_stage"] != "proactive_questioning":
+        errors.append("HTTP handler session_start는 proactive_questioning으로 진행해야 합니다.")
+    if "chat_session_start_complete" not in session_start["output"]:
+        errors.append("HTTP handler session_start output 문구가 올바르지 않습니다.")
+
+    chat_turn = handle_agentcore_payload(
+        {
+            "sessionId": "session_http_001",
+            "inputText": "",
+            "sessionAttributes": {
+                "action": "chat_turn",
+                "answered_slot": "core_services",
+                "answer": "기장 대리, 종합소득세 신고",
+            },
+        }
+    )
+    if chat_turn["metadata"]["turn_status"] != "answer_accepted":
+        errors.append("HTTP handler chat_turn은 answer_accepted 상태를 반환해야 합니다.")
+    if chat_turn["sessionState"]["stage"] != "proactive_questioning":
+        errors.append("HTTP handler chat_turn은 다음 stage를 sessionState에 반영해야 합니다.")
+
+    graph_smoke = handle_agentcore_payload(
+        {
+            "sessionId": "session_http_002",
+            "inputText": "",
+            "sessionAttributes": {"action": "graph_smoke"},
+        }
+    )
+    if graph_smoke["metadata"]["stage"] != "s3_artifact_storage":
+        errors.append("HTTP handler graph_smoke는 graph 최종 stage를 반환해야 합니다.")
+    if not graph_smoke["metadata"].get("chat_turn"):
+        errors.append("HTTP handler graph_smoke는 chat_turn 결과를 포함해야 합니다.")
+
+    try:
+        handle_agentcore_payload(
+            {
+                "sessionId": "session_http_003",
+                "inputText": "",
+                "sessionAttributes": {"action": "unsupported"},
+            }
+        )
+    except ValueError as error:
+        if str(error) != "action_invalid":
+            errors.append(f"invalid action error={error!s}, expected=action_invalid")
+    else:
+        errors.append("지원하지 않는 action은 ValueError가 발생해야 합니다.")
+
+    return errors
+
+
 def _validate_slot_answer_cases() -> list[str]:
     errors: list[str] = []
 
@@ -2373,6 +2450,28 @@ def main() -> None:
             print(f"  [FAIL] {error}")
     else:
         print("  [OK] passed / needs_enrichment / failed 케이스 확인")
+
+    print("\n[34] chat HTTP wrapper 필드 검증")
+    chat_http_field_errors = _assert_required_tokens(
+        config_text,
+        REQUIRED_CHAT_HTTP_FIELDS,
+        "chat HTTP wrapper field",
+    )
+    if chat_http_field_errors:
+        errors.extend(chat_http_field_errors)
+        for error in chat_http_field_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] chat HTTP wrapper 필드 확인")
+
+    print("\n[35] chat HTTP handler 케이스 검증")
+    chat_http_case_errors = _validate_chat_http_handler_cases()
+    if chat_http_case_errors:
+        errors.extend(chat_http_case_errors)
+        for error in chat_http_case_errors:
+            print(f"  [FAIL] {error}")
+    else:
+        print("  [OK] session_start / chat_turn / graph_smoke / invalid action 케이스 확인")
 
     print(f"\n{'=' * 60}")
     if errors:

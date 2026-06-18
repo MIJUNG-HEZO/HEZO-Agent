@@ -162,6 +162,16 @@ Stages:
       - graph_checkpoint_ref
       - graph_artifact_refs
 
+  - name: chat_http_wrapper
+    description: AgentCore Runtime 호환 HTTP 진입점을 제공한다.
+    required_fields:
+      - /invoke
+      - /invocations
+      - /ping
+      - /health
+      - sessionAttributes
+      - action
+
 MockState:
   session_id: session_001
   stage: p2_markdown_request
@@ -402,6 +412,21 @@ MockState:
       sk: CHECKPOINT#bedrock_guardrails#000001
     graph_artifact_refs:
       - uri: s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json
+  chat_http_wrapper:
+    endpoints:
+      - /invoke
+      - /invocations
+      - /ping
+      - /health
+    sessionAttributes:
+      action:
+        - session_start
+        - chat_turn
+        - graph_smoke
+    response_shape:
+      - output
+      - sessionState
+      - metadata
 
 OutOfScope:
   - Real LangGraph StateGraph implementation
