@@ -26,8 +26,11 @@ _DEDUCTIONS = {
     "NO_QUICK_ANSWER": 5,
     "INSUFFICIENT_FAQ": 5,
     "MISSING_REQUIRED_SECTION": 3,
-    "LAYER1_MISSING_INFO": 5,
+    "LAYER1_MISSING_TOPIC": 5,   # layer1_info_preservation.py 실제 코드
+    "LAYER1_MISSING_INFO": 5,    # 하위 호환
     "LAYER1_DISTORTED_INFO": 8,
+    "INVALID_JSONLD": 3,
+    "TEMPLATE_ID_MISMATCH": 3,
 }
 
 
