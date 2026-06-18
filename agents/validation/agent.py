@@ -126,8 +126,7 @@ def run_validation(site_id: str) -> dict[str, Any]:
     }
 
 
-@app.post("/invoke")
-async def invoke(request: Request) -> JSONResponse:
+async def _handle_invoke(request: Request) -> JSONResponse:
     payload = await request.json()
     session_id = payload.get("sessionId", "")
     input_text = payload.get("inputText", "")
@@ -150,9 +149,41 @@ async def invoke(request: Request) -> JSONResponse:
         return JSONResponse({"error": "VALIDATION_ERROR", "message": str(exc)}, status_code=500)
 
 
+@app.post("/invoke")
+async def invoke(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /invoke")
+    return await _handle_invoke(request)
+
+
+@app.post("/invocations")
+async def invocations(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /invocations")
+    return await _handle_invoke(request)
+
+
+@app.post("/")
+async def invoke_root(request: Request) -> JSONResponse:
+    logger.info("invoke 호출 — 경로: /")
+    return await _handle_invoke(request)
+
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def catch_all(path: str, request: Request) -> JSONResponse:
+    body = await request.body()
+    logger.warning("알 수 없는 경로: %s %s (body_len=%d)", request.method, request.url.path, len(body))
+    if request.method == "POST":
+        return await _handle_invoke(request)
+    return JSONResponse({"path": path, "method": request.method}, status_code=200)
+
+
 @app.get("/health")
 async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "agent": "hezo-validation-agent"})
+
+
+@app.get("/ping")
+async def ping() -> JSONResponse:
+    return JSONResponse({"status": "ok"})
 
 
 if __name__ == "__main__":

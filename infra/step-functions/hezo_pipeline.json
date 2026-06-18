@@ -205,19 +205,138 @@
           "Next": "PipelineFinalFailure"
         }
       ],
-      "Next": "ValidationPlaceholder"
+      "Next": "InvokeValidationAgent"
     },
 
-    "ValidationPlaceholder": {
-      "Type": "Pass",
-      "Comment": "TODO [P2 완료 후 활성화]: P4 검증 에이전트 — P3 HTML vs P2 크롤링 MD 비교 검증",
-      "Result": {
-        "validation_status": "skipped_pending_p2",
-        "publish_ready": true,
-        "message": "P2 크롤링 에이전트 구현 완료 후 InvokeValidationAgent로 교체"
+    "InvokeValidationAgent": {
+      "Type": "Task",
+      "Comment": "P4 검증 에이전트 — Layer 3→2→1 순서 검증 (패치+재빌드 루프 포함, 최대 3회)",
+      "Resource": "arn:aws:states:::http:invoke",
+      "Parameters": {
+        "ApiEndpoint": "${VALIDATION_AGENT_ENDPOINT}/invocations",
+        "Method": "POST",
+        "Headers": {
+          "Content-Type": "application/json"
+        },
+        "RequestBody": {
+          "sessionId.$": "$$.Execution.Name",
+          "inputText.$": "States.Format('site_id={}', $.site_id)",
+          "sessionAttributes": {
+            "site_id.$": "$.site_id",
+            "pipeline_run_id.$": "$$.Execution.Name"
+          }
+        },
+        "Authentication": {
+          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
+        }
+      },
+      "ResultSelector": {
+        "output.$": "$.ResponseBody.output",
+        "metadata.$": "$.ResponseBody.metadata",
+        "status_code.$": "$.StatusCode"
       },
       "ResultPath": "$.validation_result",
+      "TimeoutSeconds": 1800,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503"],
+          "IntervalSeconds": 15,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout", "States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkValidationFailed"
+        }
+      ],
+      "Next": "CheckValidationResult"
+    },
+
+    "CheckValidationResult": {
+      "Type": "Choice",
+      "Comment": "validation_status 기준 분기: PASS/PASS_WITH_WARNINGS → 성공, FAIL_BLOCKING → 실패",
+      "Choices": [
+        {
+          "Variable": "$.validation_result.output",
+          "StringMatches": "*validation_complete*",
+          "Next": "MarkPublished"
+        }
+      ],
+      "Default": "MarkValidationFailed"
+    },
+
+    "MarkPublished": {
+      "Type": "Task",
+      "Comment": "DynamoDB에 published 상태 기록",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET pipeline_status = :s, pipeline_run_id = :p, updated_at = :t",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "published" },
+          ":p": { "S.$": "$$.Execution.Name" },
+          ":t": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.DynamoDbException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "PipelineFinalFailure"
+        }
+      ],
       "Next": "PipelineSuccess"
+    },
+
+    "MarkValidationFailed": {
+      "Type": "Task",
+      "Comment": "DynamoDB에 validation_failed 상태 기록",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET pipeline_status = :s, pipeline_run_id = :p, updated_at = :t",
+        "ExpressionAttributeValues": {
+          ":s": { "S": "validation_failed" },
+          ":p": { "S.$": "$$.Execution.Name" },
+          ":t": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": ["DynamoDB.DynamoDbException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.double_failure",
+          "Next": "PipelineFinalFailure"
+        }
+      ],
+      "Next": "PipelineFinalFailure"
     },
 
     "MarkFailed": {

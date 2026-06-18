@@ -104,6 +104,7 @@ info "SSM에서 에이전트 엔드포인트 조회 중..."
 
 GENERATION_AGENT_ENDPOINT=$(ssm_get "hezo-generation-agent-endpoint" "PLACEHOLDER_GENERATION_ENDPOINT")
 BUILD_AGENT_ENDPOINT=$(ssm_get "hezo-build-agent-endpoint" "PLACEHOLDER_BUILD_ENDPOINT")
+VALIDATION_AGENT_ENDPOINT=$(ssm_get "hezo-validation-agent-endpoint" "PLACEHOLDER_VALIDATION_ENDPOINT")
 EVENTBRIDGE_CONNECTION_ARN=$(ssm_get "hezo-eventbridge-connection-arn" "PLACEHOLDER_CONNECTION_ARN")
 
 if [[ "$GENERATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
@@ -117,6 +118,13 @@ if [[ "$BUILD_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-build-agent-endpoint SSM 없음 — placeholder 사용"
 else
     success "Build Agent: $BUILD_AGENT_ENDPOINT"
+fi
+
+if [[ "$VALIDATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
+    warn "hezo-validation-agent-endpoint SSM 없음 — placeholder 사용"
+    warn "  AgentCore Runtime 배포 후: aws ssm put-parameter --name hezo-validation-agent-endpoint --value <URL>"
+else
+    success "Validation Agent: $VALIDATION_AGENT_ENDPOINT"
 fi
 
 if [[ "$EVENTBRIDGE_CONNECTION_ARN" == PLACEHOLDER* ]]; then
@@ -135,14 +143,15 @@ DEFINITION_TEMP=$(python3 -c "import tempfile; tf=tempfile.NamedTemporaryFile(su
 trap "rm -f '$DEFINITION_TEMP'" EXIT
 
 python3 - "$DEFINITION_FILE" "$DEFINITION_TEMP" \
-    "$ACCOUNT_ID" "$GENERATION_AGENT_ENDPOINT" "$BUILD_AGENT_ENDPOINT" "$EVENTBRIDGE_CONNECTION_ARN" <<'PYEOF'
+    "$ACCOUNT_ID" "$GENERATION_AGENT_ENDPOINT" "$BUILD_AGENT_ENDPOINT" "$VALIDATION_AGENT_ENDPOINT" "$EVENTBRIDGE_CONNECTION_ARN" <<'PYEOF'
 import sys, json
 
-src, dst, account, gen_ep, build_ep, conn_arn = sys.argv[1:]
+src, dst, account, gen_ep, build_ep, val_ep, conn_arn = sys.argv[1:]
 content = open(src, encoding='utf-8').read()
 content = content.replace('${AWS_ACCOUNT_ID}', account)
 content = content.replace('${GENERATION_AGENT_ENDPOINT}', gen_ep)
 content = content.replace('${BUILD_AGENT_ENDPOINT}', build_ep)
+content = content.replace('${VALIDATION_AGENT_ENDPOINT}', val_ep)
 content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}', conn_arn)
 
 # JSON 유효성 검증
@@ -230,11 +239,13 @@ echo "╚═══════════════════════�
 echo "  상태 머신 ARN     : $STATE_MACHINE_ARN"
 echo "  Generation Agent  : $GENERATION_AGENT_ENDPOINT"
 echo "  Build Agent       : $BUILD_AGENT_ENDPOINT"
+echo "  Validation Agent  : $VALIDATION_AGENT_ENDPOINT"
 echo "  EventBridge Conn  : $EVENTBRIDGE_CONNECTION_ARN"
 echo
 echo "  [에이전트 엔드포인트 등록 방법]"
-echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
-echo "  aws ssm put-parameter --name hezo-build-agent-endpoint      --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint  --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-build-agent-endpoint       --value <URL> --type String --overwrite"
+echo "  aws ssm put-parameter --name hezo-validation-agent-endpoint  --value <URL> --type String --overwrite"
 echo
 echo "  [파이프라인 테스트 실행]"
 echo "  aws stepfunctions start-execution \\"
