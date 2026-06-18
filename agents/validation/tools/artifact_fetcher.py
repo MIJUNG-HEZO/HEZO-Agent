@@ -19,14 +19,14 @@ from agents.validation.tools.wiki_parser import parse_wiki_md
 logger = logging.getLogger(__name__)
 
 
-def _load_wiki_snapshot(s3, domain: str) -> dict | None:
+def _load_wiki_snapshot(s3, category: str, domain: str) -> dict | None:
     """
     hezo-wiki 버킷에서 업종 MD를 읽어 wiki_snapshot으로 변환.
-    키 경로: industries/{domain}.md  (industry_key() 헬퍼 사용)
+    키 경로: industries/{category}/{domain}.md  (industry_key() 헬퍼 사용)
     """
-    if not domain:
+    if not domain or not category:
         return None
-    key = industry_key(domain)
+    key = industry_key(category, domain)
     try:
         resp = s3.get_object(Bucket=WIKI_BUCKET, Key=key)
         md_content = resp["Body"].read().decode("utf-8")
@@ -62,9 +62,10 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
     contract = read_json(ARTIFACTS_BUCKET, f"{prefix}/contract_final.json")
     render_spec = read_json(ARTIFACTS_BUCKET, f"{prefix}/render_spec.json")
 
-    # contract의 business_type → hezo-wiki 업종 MD 로드
-    domain = contract.get("slots", {}).get("business_type", "")
-    wiki_snapshot = _load_wiki_snapshot(s3, domain)
+    # contract의 industry + template.category → hezo-wiki 업종 MD 로드
+    domain = contract.get("slots", {}).get("industry", "")
+    category = contract.get("template", {}).get("category", "landing")
+    wiki_snapshot = _load_wiki_snapshot(s3, category, domain)
 
     # dist/index.html 로드
     html_key = f"{prefix}/dist/index.html"
