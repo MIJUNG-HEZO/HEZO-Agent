@@ -44,11 +44,11 @@ Stages:
       - version
 
   - name: p2_markdown_parse
-    description: P2 markdown artifact 원문을 P1 내부 slot 질문/근거 구조로 정규화한다.
+    description: P2 domain knowledge markdown 원문을 P1 내부 지식 섹션/출처 구조로 정규화한다.
     required_fields:
       - parse_status
-      - slot_question_hints
-      - required_slot_questions
+      - frontmatter
+      - knowledge_sections
       - evidence_refs
       - warnings
 
@@ -155,6 +155,7 @@ Stages:
 MockState:
   session_id: session_001
   stage: p2_markdown_request
+  category: services
   domain: tax_accounting
   domain_label: 세무/회계
   selected_template: landing/13-tax-accounting
@@ -162,7 +163,7 @@ MockState:
     session_start_status: ready_for_user_question
     next_stage: proactive_questioning
     llm_required: false
-    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    source_s3_key: industries/services/tax_accounting.md
     question_candidates:
       - slot: core_services
         question: 핵심 세무 서비스는 무엇인가요?
@@ -170,8 +171,9 @@ MockState:
         source: p2_markdown
         fallback: false
   p2_markdown_request:
-    payload_version: v0.1
-    target_artifact: domain_question_guide_markdown
+    payload_version: v0.2
+    target_artifact: industry_domain_knowledge_markdown
+    category: services
     request_reason: initial_domain_selected
     slot_registry:
       business_name:
@@ -193,32 +195,40 @@ MockState:
       - contact_method
   p2_markdown_load:
     p2_markdown_bucket: hezo-wiki
-    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    source_s3_key: industries/services/tax_accounting.md
     version: v001
     p2_markdown_content: loaded_from_s3
   p2_markdown_parse:
     parse_status: passed
-    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    source_s3_key: industries/services/tax_accounting.md
     version: v001
+    category: services
+    label: 세무/회계
     p2_confidence: 0.82
-    slot_question_hints:
-      business_name: 사무소명은 무엇인가요?
-      core_services: 핵심 세무 서비스는 무엇인가요?
-      contact_method: 상담 문의는 어떤 방식으로 받나요?
-    required_slot_questions:
-      business_name: 사무소명은 무엇인가요?
-      core_services: 핵심 세무 서비스는 무엇인가요?
-      contact_method: 상담 문의는 어떤 방식으로 받나요?
+    frontmatter:
+      domain: tax_accounting
+      category: services
+      label: 세무/회계
+      confidence: 0.82
+    knowledge_sections:
+      - section_id: section_001
+        title: 핵심 서비스 범위 [S1]
+        source_refs:
+          - S1
+      - section_id: section_002
+        title: 상담 전환 정보 [S2]
+        source_refs:
+          - S2
     evidence_refs:
-      - ref_id: evidence_001
+      - ref_id: S1
         text: 국세청 세무 서비스 안내 페이지
-      - ref_id: evidence_002
+      - ref_id: S2
         text: 세무사무소 랜딩 페이지 공통 항목
     warnings:
       - parsed
   p2_markdown:
     status: reviewed
-    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    source_s3_key: industries/services/tax_accounting.md
     generated_s3_key:
     version: v001
     p2_confidence: 0.78
@@ -312,7 +322,7 @@ MockState:
     p2_markdown_bucket: dev-hezo-p2-markdowns
     contract_bucket: dev-hezo-p4-contracts
     transcript_key: sessions/session_001/transcripts/000001.json
-    p2_markdown_key: domains/tax_accounting/question_guides/v001.md
+    p2_markdown_key: industries/services/tax_accounting.md
     contract_draft_key: sites/site_001/contracts/draft/000001.json
     contract_final_key: sites/site_001/contract_final.json
     guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json

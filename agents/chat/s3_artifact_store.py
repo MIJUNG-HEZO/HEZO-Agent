@@ -93,8 +93,8 @@ class InMemoryS3ArtifactStore:
             return ArtifactRef(
                 bucket=P2_MARKDOWNS_BUCKET,
                 key=p2_markdown_key(
+                    str(kwargs.get("category", "")),
                     str(kwargs.get("domain", "")),
-                    str(kwargs.get("version", "")),
                 ),
                 artifact_kind=artifact_kind,
                 content_type="text/markdown; charset=utf-8",
@@ -218,10 +218,10 @@ def chat_transcript_key(session_id: str, version: int) -> str:
     return f"sessions/{session_id.strip()}/transcripts/{version:06d}.json"
 
 
-def p2_markdown_key(domain: str, version: str) -> str:
+def p2_markdown_key(category: str, domain: str) -> str:
+    _require_text("category", category)
     _require_text("domain", domain)
-    _require_text("version", version)
-    return f"domains/{domain.strip()}/question_guides/{version.strip()}.md"
+    return f"industries/{category.strip()}/{domain.strip()}.md"
 
 
 def contract_draft_key(site_id: str, version: int) -> str:

@@ -64,6 +64,7 @@ def main() -> int:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     source_s3_key = f"smoke/p2_markdown_loader/{timestamp}.md"
     load_input = P2MarkdownLoadInput(
+        category="services",
         domain="tax_accounting",
         expected_domain="tax_accounting",
         slot_registry=SLOT_REGISTRY,
@@ -77,21 +78,30 @@ def main() -> int:
         ArtifactPayload(
             ref=ref,
             body="""
-# 세무/회계 질문 가이드
+---
+domain: tax_accounting
+category: services
+template_no: 13
+label: 세무/회계
 confidence: 0.82
+volatility: low
+last_updated: 2026-06-18
+source_urls:
+  - https://example.com/smoke-1
+  - https://example.com/smoke-2
+---
 
-## 업체명
-- 업체명: 업체명은 무엇인가요?
+# 세무/회계 도메인 지식
 
-## 핵심 서비스
-- 핵심 서비스: 핵심 서비스는 무엇인가요?
+## 1. 핵심 서비스 범위 [S1]
+세무/회계 홈페이지는 핵심 서비스와 상담 전환 정보를 명확히 제공해야 합니다.
 
-## 상담 방식
-- 상담 방식: 상담 방식은 무엇인가요?
+## 2. 상담 전환 정보 [S2]
+문의 방식과 상담 가능 시간을 쉽게 확인할 수 있어야 합니다.
 
-## 근거
-- P2 markdown S3 loader smoke source
-- HEZO dev smoke test
+## 출처
+- [S1] P2 markdown S3 loader smoke source
+- [S2] HEZO dev smoke test
 """,
         )
     )

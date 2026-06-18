@@ -27,6 +27,7 @@ class ChatSessionStartInput:
     session_id: str
     site_id: str
     user_id: str
+    category: str
     domain: str
     domain_label: str
     selected_template: str
@@ -81,6 +82,7 @@ def start_chat_session(
 
     load_result = load_p2_markdown_from_s3(
         P2MarkdownLoadInput(
+            category=session_input.category,
             domain=session_input.domain,
             expected_domain=session_input.domain,
             slot_registry=session_input.slot_registry,
@@ -89,7 +91,6 @@ def start_chat_session(
             source_count=session_input.source_count,
             source_grade=session_input.source_grade,
             bucket=session_input.bucket,
-            required_slots=session_input.missing_slots,
         ),
         store,
     )
@@ -101,8 +102,6 @@ def start_chat_session(
             expected_domain=session_input.domain,
             p2_confidence=parse_result.p2_confidence,
             content=load_result.content,
-            required_slot_questions=parse_result.required_slot_questions,
-            required_slots=session_input.missing_slots,
             source_count=parse_result.source_count,
             source_grade=parse_result.source_grade,
         )
@@ -117,6 +116,7 @@ def start_chat_session(
                 slot_registry=enriched_slot_registry,
                 known_answers=session_input.known_answers,
                 missing_slots=session_input.missing_slots,
+                p2_knowledge_summary=parse_result.knowledge_summary(),
                 max_questions=session_input.max_questions,
             )
         )
@@ -145,6 +145,7 @@ def _validate_session_input(session_input: ChatSessionStartInput) -> None:
         "session_id": session_input.session_id,
         "site_id": session_input.site_id,
         "user_id": session_input.user_id,
+        "category": session_input.category,
         "domain": session_input.domain,
         "domain_label": session_input.domain_label,
         "selected_template": session_input.selected_template,

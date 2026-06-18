@@ -83,9 +83,8 @@ domain_selection
 입력 기준:
 
 - `site_id`, `user_id`
-- `domain`, `domain_label`
+- `category`, `domain`, `domain_label`
 - `selected_template`
-- `slot_registry`
 - `known_answers`
 - `missing_slots`
 - `request_reason`
@@ -94,8 +93,9 @@ domain_selection
 
 ```json
 {
-  "payload_version": "v0.1",
-  "target_artifact": "domain_question_guide_markdown",
+  "payload_version": "v0.2",
+  "target_artifact": "industry_domain_knowledge_markdown",
+  "category": "services",
   "domain": "tax_accounting",
   "domain_label": "세무/회계",
   "selected_template": "landing/13-tax-accounting",
@@ -107,8 +107,8 @@ domain_selection
 검증 기준:
 
 - 필수 식별자 누락 시 실패
+- `category` 누락 시 실패
 - `domain` 누락 시 실패
-- `slot_registry`가 비어 있으면 실패
 - `missing_slots`가 비어 있어도 payload 생성 가능
 
 이번 범위에서는 실제 P2 API 호출, S3 저장, Bedrock/LangGraph 호출을 포함하지 않습니다.
@@ -130,7 +130,7 @@ P2 markdown S3 load
 입력 기준:
 
 - `session_id`, `site_id`, `user_id`
-- `domain`, `domain_label`, `selected_template`
+- `category`, `domain`, `domain_label`, `selected_template`
 - `slot_registry`, `known_answers`, `missing_slots`
 - `source_s3_key`, `version`
 
@@ -165,9 +165,7 @@ P2 markdown S3 load
 
 입력 기준:
 
-- `domain`, `expected_domain`
-- `slot_registry`
-- `version`
+- `category`, `domain`, `expected_domain`
 - `source_s3_key`
 - `source_count`, `source_grade`
 - `bucket`
@@ -175,8 +173,7 @@ P2 markdown S3 load
 key 결정 기준:
 
 - `source_s3_key`가 있으면 해당 key를 우선 사용
-- `source_s3_key`가 없으면 `domains/{domain}/question_guides/{version}.md` 규칙 사용
-- `version`이 없으면 임시 기본값 `v001` 사용
+- `source_s3_key`가 없으면 `industries/{category}/{domain}.md` 규칙 사용
 
 출력 기준:
 
@@ -184,19 +181,20 @@ key 결정 기준:
 {
   "ref": {
     "bucket": "hezo-wiki",
-    "key": "domains/tax_accounting/question_guides/v001.md",
+    "key": "industries/services/tax_accounting.md",
     "artifact_kind": "p2_markdown"
   },
   "parse_input": {
+    "category": "services",
     "domain": "tax_accounting",
     "expected_domain": "tax_accounting",
-    "source_s3_key": "domains/tax_accounting/question_guides/v001.md",
+    "source_s3_key": "industries/services/tax_accounting.md",
     "version": "v001"
   }
 }
 ```
 
-이번 범위에서는 P2의 최종 prefix 확정, 도메인 선택 API 연결, 사용자 세션 graph 연결을 포함하지 않습니다.
+이번 범위에서는 도메인 선택 API 연결, 사용자 세션 graph 연결을 포함하지 않습니다.
 
 AWS smoke test:
 
@@ -207,13 +205,12 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 ## P2 Markdown Parser / Normalizer
 
-`p2_markdown_parser.py`는 P2가 S3에 저장한 domain markdown 원문을 P1 내부 표준 구조로 변환합니다.
+`p2_markdown_parser.py`는 P2가 S3에 저장한 domain knowledge markdown 원문을 P1 내부 표준 구조로 변환합니다.
 
 입력 기준:
 
-- `domain`, `expected_domain`
+- `category`, `domain`, `expected_domain`
 - `content`
-- `slot_registry`
 - `source_s3_key`
 - `version`
 - `source_count`, `source_grade`
@@ -223,17 +220,20 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 ```json
 {
   "domain": "tax_accounting",
+  "category": "services",
+  "label": "세무/회계",
   "p2_confidence": 0.82,
   "parse_status": "passed",
-  "slot_question_hints": {
-    "core_services": "핵심 세무 서비스는 무엇인가요?"
-  },
-  "required_slot_questions": {
-    "core_services": "핵심 세무 서비스는 무엇인가요?"
-  },
+  "knowledge_sections": [
+    {
+      "section_id": "section_001",
+      "title": "핵심 서비스 범위 [S1]",
+      "source_refs": ["S1"]
+    }
+  ],
   "evidence_refs": [
     {
-      "ref_id": "evidence_001",
+      "ref_id": "S1",
       "text": "국세청 세무 서비스 안내 페이지"
     }
   ],
@@ -243,18 +243,19 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 파싱 기준:
 
-- slot key 또는 label이 포함된 질문 라인을 slot별 질문 후보로 추출
-- `근거`, `출처`, `source`, `evidence` 계열 heading 아래 list를 evidence refs로 분리
+- frontmatter의 `domain`, `category`, `label`, `confidence`, `source_urls`를 분리
+- `## N. 주제 ... [S?]` 섹션을 `knowledge_sections`로 분리
+- `[S?]` 출처 목록을 `evidence_refs`로 분리
 - confidence metadata가 있으면 `p2_confidence`로 반영
-- 필수 slot 질문이 누락되면 `needs_enrichment`
-- 빈 markdown, domain mismatch, 질문/근거를 추출할 수 없는 markdown은 `failed`
+- 출처가 부족하면 `needs_enrichment`
+- 빈 markdown, domain/category mismatch, 지식 섹션을 추출할 수 없는 markdown은 `failed`
 
 연결 기준:
 
-- `required_slot_questions`, `source_count`, `source_grade`는 `review_p2_markdown()` 입력으로 전달 가능
-- `slot_question_hints`는 `slot_registry.question_hint`에 반영해 적극적 질의 질문 후보로 사용 가능
+- `source_count`, `source_grade`는 `review_p2_markdown()` 입력으로 전달 가능
+- `knowledge_sections`는 P1이 `slot_registry`와 조합해 적극적 질의 질문 후보를 생성할 때 사용
 
-이번 범위에서는 실제 S3 read, P2 prefix 결정, Bedrock/LangGraph 호출을 포함하지 않습니다.
+이번 범위에서는 Bedrock/LangGraph 호출을 포함하지 않습니다.
 
 ## P2 Markdown Review State
 
@@ -566,7 +567,7 @@ key 설계:
 
 ```text
 sessions/{session_id}/transcripts/{version}.json
-domains/{domain}/question_guides/{version}.md
+industries/{category}/{domain}.md
 sites/{site_id}/contracts/draft/{version}.json
 sites/{site_id}/contract_final.json
 sessions/{session_id}/guardrails/{target}/{timestamp}.json
