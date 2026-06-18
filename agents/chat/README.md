@@ -51,6 +51,7 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 ```text
 domain_selection
 -> p2_markdown_request
+-> p2_markdown_load
 -> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning
@@ -110,6 +111,52 @@ domain_selection
 - `missing_slots`가 비어 있어도 payload 생성 가능
 
 이번 범위에서는 실제 P2 API 호출, S3 저장, Bedrock/LangGraph 호출을 포함하지 않습니다.
+
+## P2 Markdown S3 Loader
+
+`p2_markdown_loader.py`는 P2가 S3에 저장한 markdown artifact를 조회하고 parser 입력으로 변환합니다.
+
+입력 기준:
+
+- `domain`, `expected_domain`
+- `slot_registry`
+- `version`
+- `source_s3_key`
+- `source_count`, `source_grade`
+- `bucket`
+
+key 결정 기준:
+
+- `source_s3_key`가 있으면 해당 key를 우선 사용
+- `source_s3_key`가 없으면 `domains/{domain}/question_guides/{version}.md` 규칙 사용
+- `version`이 없으면 임시 기본값 `v001` 사용
+
+출력 기준:
+
+```json
+{
+  "ref": {
+    "bucket": "hezo-wiki",
+    "key": "domains/tax_accounting/question_guides/v001.md",
+    "artifact_kind": "p2_markdown"
+  },
+  "parse_input": {
+    "domain": "tax_accounting",
+    "expected_domain": "tax_accounting",
+    "source_s3_key": "domains/tax_accounting/question_guides/v001.md",
+    "version": "v001"
+  }
+}
+```
+
+이번 범위에서는 P2의 최종 prefix 확정, 도메인 선택 API 연결, 사용자 세션 graph 연결을 포함하지 않습니다.
+
+AWS smoke test:
+
+```bash
+python3 -m pip install -r agents/chat/requirements.txt
+python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
+```
 
 ## P2 Markdown Parser / Normalizer
 
@@ -692,6 +739,7 @@ graph node 순서:
 
 ```text
 p2_markdown_request
+-> p2_markdown_load
 -> p2_markdown_parse
 -> p2_markdown_review
 -> proactive_questioning

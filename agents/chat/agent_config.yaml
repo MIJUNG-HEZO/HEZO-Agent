@@ -26,6 +26,14 @@ Stages:
       - missing_slots
       - request_reason
 
+  - name: p2_markdown_load
+    description: P2가 S3에 저장한 markdown artifact를 조회하고 parser 입력으로 정규화한다.
+    required_fields:
+      - source_s3_key
+      - p2_markdown_bucket
+      - p2_markdown_content
+      - version
+
   - name: p2_markdown_parse
     description: P2 markdown artifact 원문을 P1 내부 slot 질문/근거 구조로 정규화한다.
     required_fields:
@@ -163,6 +171,11 @@ MockState:
     missing_slots:
       - core_services
       - contact_method
+  p2_markdown_load:
+    p2_markdown_bucket: hezo-wiki
+    source_s3_key: domains/tax_accounting/question_guides/v001.md
+    version: v001
+    p2_markdown_content: loaded_from_s3
   p2_markdown_parse:
     parse_status: passed
     source_s3_key: domains/tax_accounting/question_guides/v001.md
@@ -315,6 +328,7 @@ MockState:
   chat_graph:
     graph_node_order:
       - p2_markdown_request
+      - p2_markdown_load
       - p2_markdown_parse
       - p2_markdown_review
       - proactive_questioning
