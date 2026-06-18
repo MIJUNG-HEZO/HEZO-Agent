@@ -38,8 +38,8 @@ def _load_wiki_snapshot(s3, category: str, domain: str) -> dict | None:
         return snapshot
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
-        if code in ("NoSuchKey", "404"):
-            logger.info("hezo-wiki MD 없음: bucket=%s key=%s", WIKI_BUCKET, key)
+        if code in ("NoSuchKey", "404", "AccessDenied", "403"):
+            logger.info("hezo-wiki MD 없음(또는 접근불가): bucket=%s key=%s code=%s", WIKI_BUCKET, key, code)
             return None
         raise
     except Exception as exc:
