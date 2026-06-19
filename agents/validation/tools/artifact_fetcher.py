@@ -64,7 +64,7 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
 
     # contract의 industry + template.category → hezo-wiki 업종 MD 로드
     domain = contract.get("slots", {}).get("industry", "")
-    category = contract.get("template", {}).get("category", "landing")
+    category = contract.get("template", {}).get("template_category", "landing")
     wiki_snapshot = _load_wiki_snapshot(s3, category, domain)
 
     # dist/index.html 로드

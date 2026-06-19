@@ -54,10 +54,10 @@ def parse_site_id(input_text: str, session_attrs: dict) -> str:
     raise ValueError(f"site_id를 찾을 수 없음 — inputText: {input_text!r}")
 
 
-def _run_layers(artifacts: dict) -> tuple[list[dict], list[dict], list[dict]]:
+def _run_layers(artifacts: dict) -> tuple[list[dict], list[dict], list[dict], bool]:
     """
     Layer 3 → 2 → 1 순서로 실행 (비용 역순).
-    반환: (layer3_issues, layer2_issues, layer1_issues)
+    반환: (layer3_issues, layer2_issues, layer1_issues, layer1_ran)
     """
     contract = artifacts["contract"]
     render_spec = artifacts["render_spec"]
@@ -75,18 +75,20 @@ def _run_layers(artifacts: dict) -> tuple[list[dict], list[dict], list[dict]]:
 
     # Layer 1: wiki 커버리지 (Bedrock 호출 — Layer 3·2 통과 후에만)
     layer1_issues: list[dict] = []
+    layer1_ran = False
     l3_blocking = [i for i in layer3_issues if i.get("level") == "blocking"]
     l2_blocking = [i for i in layer2_issues if i.get("level") == "blocking"]
 
     if not l3_blocking and not l2_blocking and wiki_snapshot:
         layer1_issues = check_layer1(contract, wiki_snapshot, html_content)
+        layer1_ran = True
         logger.info("Layer 1 완료: %d 이슈", len(layer1_issues))
     elif not wiki_snapshot:
         logger.info("Layer 1 건너뜀 — wiki 없음")
     else:
         logger.info("Layer 1 건너뜀 — Layer 3·2 blocking 존재 (Bedrock 비용 절감)")
 
-    return layer3_issues, layer2_issues, layer1_issues
+    return layer3_issues, layer2_issues, layer1_issues, layer1_ran
 
 
 def run_validation(site_id: str) -> dict[str, Any]:
@@ -100,7 +102,7 @@ def run_validation(site_id: str) -> dict[str, Any]:
         contract = artifacts["contract"]
         render_spec = artifacts["render_spec"]
 
-        layer3_issues, layer2_issues, layer1_issues = _run_layers(artifacts)
+        layer3_issues, layer2_issues, layer1_issues, layer1_ran = _run_layers(artifacts)
 
         all_issues = layer3_issues + layer2_issues + layer1_issues
         blocking = [i for i in all_issues if i.get("level") == "blocking"]
@@ -114,7 +116,7 @@ def run_validation(site_id: str) -> dict[str, Any]:
             report = _build_report(
                 site_id, status, ai_score, blocking, warnings,
                 layer3_issues, layer2_issues, layer1_issues,
-                attempt=attempt,
+                layer1_ran=layer1_ran, attempt=attempt,
             )
             key = save_validation_report(site_id, report)
             logger.info("검증 PASS — site_id=%s, status=%s, score=%d, attempt=%d",
@@ -136,7 +138,8 @@ def run_validation(site_id: str) -> dict[str, Any]:
             # 3회 초과 → 최종 실패
             report = _build_report(
                 site_id, "FAIL_BLOCKING", ai_score, blocking, warnings,
-                layer3_issues, layer2_issues, layer1_issues, attempt=attempt,
+                layer3_issues, layer2_issues, layer1_issues,
+                layer1_ran=layer1_ran, attempt=attempt,
             )
             save_validation_report(site_id, report)
             feedback_key = save_validation_feedback(site_id, blocking, attempt)
@@ -184,7 +187,8 @@ def _build_report(
     site_id: str, status: str, ai_score: int,
     blocking: list, warnings: list,
     layer3: list, layer2: list, layer1: list,
-    attempt: int,
+    layer1_ran: bool = False,
+    attempt: int = 1,
 ) -> dict:
     return {
         "site_id": site_id,
@@ -206,7 +210,7 @@ def _build_report(
             "layer1_info_preservation": {
                 "status": "PASS" if not layer1 else "PASS_WITH_WARNINGS",
                 "issues": layer1,
-                "skipped": not bool(layer1),
+                "skipped": not layer1_ran,
                 "order": 3,
             },
         },
