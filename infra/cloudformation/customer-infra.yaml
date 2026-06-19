@@ -3,7 +3,7 @@ Description: >
   HEZO Customer Per-Tenant Infrastructure.
   고객 1명 = 스택 1개.
   정적 파일은 공유 hezo-sites/{site_id}/ 버킷 그대로 사용.
-  CloudFormation이 담당: VPC + EC2(FastAPI+MySQL) + CloudFront + Route53.
+  CloudFormation이 담당: VPC + EC2(hezo-customer-backend Docker + MariaDB) + CloudFront + Route53.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Parameters
@@ -36,9 +36,27 @@ Parameters:
 
   HezoSitesBucketRegionalDomain:
     Type: String
-    Description: >
-      hezo-sites 버킷의 Regional Domain Name
-      (e.g. hezo-sites.s3.ap-northeast-2.amazonaws.com)
+    Description: hezo-sites 버킷 Regional Domain (e.g. hezo-sites.s3.ap-northeast-2.amazonaws.com)
+
+  EcrImage:
+    Type: String
+    Description: hezo-customer-backend ECR 이미지 URI (e.g. 492554570964.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-customer-backend:latest)
+
+  TemplateType:
+    Type: String
+    Description: 템플릿 슬러그 (e.g. tax-accounting, dental, cafe-menu). hezo-customer-backend 환경변수로 주입.
+
+  TemplateCategory:
+    Type: String
+    Default: landing
+    AllowedValues: [landing, blog, store]
+    Description: 템플릿 카테고리
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: 'Hezo1234!'
+    Description: MariaDB hezo 사용자 비밀번호 (EC2 로컬 전용, 외부 노출 없음)
 
   EC2InstanceType:
     Type: String
@@ -50,29 +68,10 @@ Parameters:
     Default: ''
     Description: EC2 SSH 키 페어 이름 (비워두면 SSM Session Manager로 접속)
 
-  EcrImage:
-    Type: String
-    Description: hezo-customer-backend ECR 이미지 URI (e.g. 492554570964.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-customer-backend:latest)
-
-  TemplateType:
-    Type: String
-    Description: 템플릿 슬러그 (e.g. dental, cafe-menu, developer-docs)
-
-  TemplateCategory:
-    Type: String
-    AllowedValues: [landing, blog, store]
-    Description: 템플릿 카테고리
-
-  DBPassword:
-    Type: String
-    NoEcho: true
-    Default: 'Hezo1234!'
-    Description: MySQL hezo 유저 비밀번호
-
   VpcCidrBlock:
     Type: String
     Default: '10.100.0.0/16'
-    Description: 고객 전용 VPC CIDR (기존 VPC와 겹치지 않도록 설정)
+    Description: 고객 전용 VPC CIDR
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Conditions
@@ -152,7 +151,6 @@ Resources:
       GroupDescription: !Sub HEZO customer EC2 API server (${SiteId})
       VpcId: !Ref CustomerVPC
       SecurityGroupIngress:
-        # CloudFront IP는 고정 불가 → 운영 시 WAF + aws-managed-ip-ranges 추가 권장
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -179,14 +177,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: HezoCositeSiteAccess
+        - PolicyName: HezoCustomerSiteAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               # 공유 hezo-sites 버킷에서 해당 site_id 경로만 읽기
               - Effect: Allow
                 Action: ['s3:GetObject']
-                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/sites/${SiteId}/*'
+                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/${SiteId}/*'
               # ECR에서 hezo-customer-backend 이미지 pull
               - Effect: Allow
                 Action:
@@ -196,7 +194,8 @@ Resources:
                 Action:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
-                Resource: !Sub 'arn:aws:ecr:ap-northeast-2:${AWS::AccountId}:repository/hezo-customer-backend'
+                  - ecr:BatchCheckLayerAvailability
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/hezo-customer-backend'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -205,7 +204,7 @@ Resources:
       Roles:
         - !Ref EC2IAMRole
 
-  # ── EC2 (FastAPI + MySQL — 방문자 회원 기능) ─────────────────────────────────
+  # ── EC2 (hezo-customer-backend Docker + MariaDB) ─────────────────────────────
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
@@ -234,7 +233,7 @@ Resources:
           systemctl start mariadb
           systemctl enable mariadb
 
-          # DB/유저 생성 (초기 root는 비밀번호 없음)
+          # DB/유저 생성
           # localhost = Unix 소켓, 127.0.0.1 = TCP (Docker --network host 연결용 — 둘 다 필요)
           mysql -u root -e "
             CREATE DATABASE IF NOT EXISTS hezo_site CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -251,8 +250,8 @@ Resources:
 
           # ECR 로그인 (EC2 IAM 역할 기반 — 키 불필요)
           ECR_REGISTRY=$(echo ${EcrImage} | cut -d'/' -f1)
-          aws ecr get-login-password --region ap-northeast-2 \
-            | docker login --username AWS --password-stdin $ECR_REGISTRY
+          aws ecr get-login-password --region ${AWS::Region} \
+            | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
           # hezo-customer-backend 컨테이너 실행
           docker pull ${EcrImage}
@@ -264,7 +263,14 @@ Resources:
             -e TEMPLATE_CATEGORY="${TemplateCategory}" \
             -e SITE_ID="${SiteId}" \
             -e DB_URL="mysql+pymysql://hezo:${DBPassword}@127.0.0.1/hezo_site" \
+            -e DB_HOST="127.0.0.1" \
+            -e DB_PORT="3306" \
+            -e DB_NAME="hezo_site" \
+            -e DB_USER="hezo" \
+            -e DB_PASSWORD="${DBPassword}" \
             ${EcrImage}
+
+          echo "hezo-customer-backend setup complete"
 
   EC2EIP:
     Type: AWS::EC2::EIP
@@ -272,17 +278,7 @@ Resources:
       Domain: vpc
       InstanceId: !Ref EC2Instance
 
-  # ── CloudFront OAC (공유 hezo-sites 버킷 접근용) ──────────────────────────────
-  # 사전 조건: hezo-sites 버킷 정책에 아래 statement 추가 필요 (1회, 계정 전체 공유)
-  # {
-  #   "Effect": "Allow",
-  #   "Principal": {"Service": "cloudfront.amazonaws.com"},
-  #   "Action": "s3:GetObject",
-  #   "Resource": "arn:aws:s3:::hezo-sites/*",
-  #   "Condition": {
-  #     "StringLike": {"AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"}
-  #   }
-  # }
+  # ── CloudFront OAC (공유 hezo-sites 버킷 접근용) ─────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -313,42 +309,38 @@ Resources:
         DefaultRootObject: index.html
         HttpVersion: http2
         Origins:
-          # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙
+          # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙 (P3 출력: hezo-sites/{site_id}/)
           - Id: S3StaticOrigin
             DomainName: !Ref HezoSitesBucketRegionalDomain
-            OriginPath: !Sub /sites/${SiteId}/dist
+            OriginPath: !Sub /${SiteId}
             S3OriginConfig: {}
             OriginAccessControlId: !Ref CloudFrontOAC
-          # 고객사 전용 EC2 (FastAPI 백엔드 + MySQL)
-          # CloudFront는 IP 주소를 오리진으로 허용하지 않으므로 PublicDnsName 사용
+          # 고객사 전용 EC2 (hezo-customer-backend :8080)
+          # CloudFront는 IP 오리진 미지원 → PublicDnsName 사용
           - Id: EC2ApiOrigin
             DomainName: !GetAtt EC2Instance.PublicDnsName
             CustomOriginConfig:
               HTTPPort: 8080
               OriginProtocolPolicy: http-only
               OriginReadTimeout: 60
-        # 기본 → 정적 HTML/GEO 파일 (hezo-sites/{site_id}/)
         DefaultCacheBehavior:
           TargetOriginId: S3StaticOrigin
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
           Compress: true
         CacheBehaviors:
-          # /api/* → EC2 백엔드 (캐시 없음)
           - PathPattern: '/api/*'
             TargetOriginId: EC2ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
             AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
             CachedMethods: [GET, HEAD]
-          # /auth/* → EC2 백엔드 (방문자 회원 인증, 캐시 없음)
           - PathPattern: '/auth/*'
             TargetOriginId: EC2ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
             AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
             CachedMethods: [GET, HEAD]
-        # SPA fallback (404/403 → index.html)
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
@@ -375,7 +367,7 @@ Resources:
 # ══════════════════════════════════════════════════════════════════════════════
 Outputs:
   DomainUrl:
-    Description: 고객사 사이트 URL (커스텀 도메인 없으면 CloudFront 기본 URL)
+    Description: 고객사 사이트 URL
     Value: !If
       - HasCustomDomain
       - !Sub 'https://${DomainName}'
@@ -390,7 +382,7 @@ Outputs:
     Value: !GetAtt CloudFrontDistribution.DomainName
 
   EC2InstanceId:
-    Description: EC2 인스턴스 ID (방문자 회원 API + MySQL)
+    Description: EC2 인스턴스 ID
     Value: !Ref EC2Instance
 
   EC2PublicIp:
@@ -399,4 +391,4 @@ Outputs:
 
   StaticSitePrefix:
     Description: 정적 파일 S3 경로 (공유 버킷 내 prefix)
-    Value: !Sub '${HezoSitesBucketName}/sites/${SiteId}/dist/'
+    Value: !Sub '${HezoSitesBucketName}/${SiteId}/'
