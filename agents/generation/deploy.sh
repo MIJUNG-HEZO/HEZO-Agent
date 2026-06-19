@@ -181,7 +181,6 @@ build_and_push() {
     info "Docker 이미지 빌드 중 (arm64): $repo"
     docker buildx build --platform linux/arm64 \
         -f "$dockerfile" \
-        -t "${repo}:latest" \
         -t "${ecr_uri}:latest" \
         --push \
         "$context"
@@ -207,7 +206,7 @@ deploy_agentcore() {
     # 에이전트별 환경변수
     local model_id
     case "$agent" in
-        report)    model_id="global.anthropic.claude-haiku-4-5-20251001" ;;
+        report)    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0" ;;
         build)     model_id="" ;;  # 빌드 에이전트는 LLM 불필요
         *)         model_id="global.anthropic.claude-sonnet-4-6" ;;
     esac

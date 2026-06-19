@@ -52,11 +52,11 @@ def _load_domain_url(site_id: str) -> str:
     return fallback
 
 
-def _load_wiki_snapshot(domain: str) -> dict | None:
-    """hezo-wiki에서 업종 MD를 읽어 wiki_snapshot 반환."""
-    if not domain:
+def _load_wiki_snapshot(category: str, domain: str) -> dict | None:
+    """hezo-wiki에서 업종 MD를 읽어 wiki_snapshot 반환. (키: industries/{category}/{domain}.md)"""
+    if not domain or not category:
         return None
-    key = industry_key(domain)
+    key = industry_key(category, domain)
     try:
         resp = get_s3().get_object(Bucket=WIKI_BUCKET, Key=key)
         md_content = resp["Body"].read().decode("utf-8")
@@ -100,9 +100,10 @@ def fetch_site_content(site_id: str) -> dict[str, Any]:
     # 도메인 URL (DynamoDB pipeline_state에서 실제 배포 URL 조회)
     domain_url = _load_domain_url(site_id)
 
-    # wiki_snapshot (업종 지식 신선도 판단용)
-    business_type = contract.get("slots", {}).get("business_type", "")
-    wiki_snapshot = _load_wiki_snapshot(business_type)
+    # wiki_snapshot (업종 지식 신선도 판단용) — validation과 동일하게 category + industry 키 사용
+    domain = contract.get("slots", {}).get("industry", "")
+    category = contract.get("template", {}).get("category", "landing")
+    wiki_snapshot = _load_wiki_snapshot(category, domain)
 
     return {
         "site_id": site_id,

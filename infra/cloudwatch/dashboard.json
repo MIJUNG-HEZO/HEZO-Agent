@@ -4,7 +4,7 @@
       "type": "metric",
       "x": 0, "y": 0, "width": 12, "height": 7,
       "properties": {
-        "title": "💰 에이전트별 비용 ($)",
+        "title": "💰 에이전트별 비용 ($)  · boto3",
         "region": "ap-northeast-2",
         "view": "timeSeries",
         "stacked": false,
@@ -18,55 +18,57 @@
       "type": "metric",
       "x": 12, "y": 0, "width": 12, "height": 7,
       "properties": {
-        "title": "⏱️ 에이전트별 지연 (ms)",
+        "title": "🔢 에이전트별 토큰 (입력/출력)  · boto3",
         "region": "ap-northeast-2",
         "view": "timeSeries",
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.latency_ms\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
-        ]
-      }
-    },
-    {
-      "type": "metric",
-      "x": 0, "y": 7, "width": 12, "height": 7,
-      "properties": {
-        "title": "🔢 입력 토큰",
-        "region": "ap-northeast-2",
-        "view": "timeSeries",
-        "stacked": false,
-        "period": 300,
-        "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.input_tokens\"', 'Sum', 300)", "id": "tin", "region": "ap-northeast-2" } ]
-        ]
-      }
-    },
-    {
-      "type": "metric",
-      "x": 12, "y": 7, "width": 12, "height": 7,
-      "properties": {
-        "title": "🔢 출력 토큰",
-        "region": "ap-northeast-2",
-        "view": "timeSeries",
-        "stacked": false,
-        "period": 300,
-        "metrics": [
+          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.input_tokens\"', 'Sum', 300)", "id": "tin", "region": "ap-northeast-2" } ],
           [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.output_tokens\"', 'Sum', 300)", "id": "tout", "region": "ap-northeast-2" } ]
         ]
       }
     },
     {
       "type": "metric",
-      "x": 0, "y": 14, "width": 12, "height": 7,
+      "x": 0, "y": 7, "width": 8, "height": 7,
       "properties": {
-        "title": "💰 에이전트별 비용 ($) — 막대 비교",
+        "title": "📈 에이전트별 호출 수  · AgentCore",
         "region": "ap-northeast-2",
-        "view": "bar",
+        "view": "timeSeries",
+        "stacked": false,
         "period": 300,
-        "stat": "Sum",
         "metrics": [
-          [ { "expression": "SEARCH('{HEZO/Agents,agent,model} MetricName=\"llm.cost_usd\"', 'Sum', 300)", "id": "csum", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Invocations\"', 'Sum', 300)", "id": "inv", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8, "y": 7, "width": 8, "height": 7,
+      "properties": {
+        "title": "🔥 에이전트별 에러 (건수)  · AgentCore",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"UserErrors\"', 'Sum', 300)", "id": "uerr", "region": "ap-northeast-2" } ],
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"SystemErrors\"', 'Sum', 300)", "id": "serr", "region": "ap-northeast-2" } ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16, "y": 7, "width": 8, "height": 7,
+      "properties": {
+        "title": "🐢 에이전트별 전체 지연 (ms)  · AgentCore",
+        "region": "ap-northeast-2",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Latency\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
         ]
       }
     }
