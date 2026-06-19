@@ -152,11 +152,30 @@ def evaluate_render_spec(
     if not llms_txt:
         issues.append("supplementary_files.llms_txt 없음")
         score -= 10
-    elif len(llms_txt) < _LLMS_TXT_MIN_LEN:
-        issues.append(
-            f"llms_txt 너무 짧음 ({len(llms_txt)}자, 최소 {_LLMS_TXT_MIN_LEN}자)"
-        )
-        score -= 5
+    else:
+        if len(llms_txt) < _LLMS_TXT_MIN_LEN:
+            issues.append(f"llms_txt 너무 짧음 ({len(llms_txt)}자, 최소 {_LLMS_TXT_MIN_LEN}자)")
+            score -= 5
+        if "## 핵심 페이지" not in llms_txt:
+            issues.append("llms_txt에 '## 핵심 페이지' 링크 섹션 없음 (BLOCKING) — [홈](/), [서비스 안내](/#services) 등 페이지 링크 섹션 필수")
+            score -= 20
+        elif not re.search(r"\[.+\]\(/.+\)", llms_txt):
+            issues.append("llms_txt '## 핵심 페이지' 섹션에 내부 링크([텍스트](/path)) 없음")
+            score -= 10
+
+    llms_full = supp.get("llms_full_txt", "")
+    if not llms_full:
+        issues.append("supplementary_files.llms_full_txt 없음")
+        score -= 15
+    else:
+        if "## FAQ" not in llms_full:
+            issues.append("llms_full_txt에 '## FAQ' 섹션 없음 (BLOCKING) — Q: 질문\\n  A: 답변 형식으로 3개 이상 필수")
+            score -= 20
+        else:
+            qa_count = len(re.findall(r"^\s*Q\s*:", llms_full, re.MULTILINE))
+            if qa_count < 3:
+                issues.append(f"llms_full_txt FAQ Q:/A: 항목 {qa_count}개 (최소 3개 필요)")
+                score -= 10
 
     robots = supp.get("robots_rules", [])
     if not robots:
