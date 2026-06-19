@@ -22,6 +22,7 @@ GUARDRAIL_NAME="${HEZO_BEDROCK_GUARDRAIL_NAME:-hezo-dev-guardrail}"
 GUARDRAIL_ID="${HEZO_BEDROCK_GUARDRAIL_ID:-q8dcjc2um846}"
 GUARDRAIL_VERSION="${HEZO_BEDROCK_GUARDRAIL_VERSION:-DRAFT}"
 ECR_REPOSITORY="${HEZO_ECR_REPOSITORY:-hezo-chat-agent}"
+AGENTCORE_RUNTIME_RAW="${HEZO_AGENTCORE_RUNTIME_NAME:-${HEZO_AGENTCORE_RUNTIME:-hezo-chat-agent-dev}}"
 
 AWS_ARGS=(--region "$REGION")
 if [ -n "$PROFILE" ]; then
@@ -38,6 +39,18 @@ missing() {
 
 warn() {
   printf '[WARN] %s\n' "$1"
+}
+
+normalize_runtime_name() {
+  local raw="$1"
+  local normalized
+  normalized="$(printf '%s' "$raw" | tr '-' '_' | tr -cd '[:alnum:]_')"
+
+  if [[ ! "$normalized" =~ ^[A-Za-z] ]]; then
+    normalized="hezo_${normalized}"
+  fi
+
+  printf '%.48s' "$normalized"
 }
 
 check_aws_cli() {
@@ -100,6 +113,35 @@ check_ecr() {
   fi
 }
 
+check_agentcore_runtime() {
+  local runtime_name
+  runtime_name="$(normalize_runtime_name "$AGENTCORE_RUNTIME_RAW")"
+
+  if ! aws bedrock-agentcore-control help >/dev/null 2>&1; then
+    warn "AgentCore Runtime 확인 실패: bedrock-agentcore-control CLI 미지원"
+    return
+  fi
+
+  local runtime_id
+  runtime_id="$(aws bedrock-agentcore-control list-agent-runtimes "${AWS_ARGS[@]}" \
+    --query "agentRuntimes[?agentRuntimeName=='${runtime_name}'].agentRuntimeId | [0]" \
+    --output text 2>/dev/null || echo "None")"
+
+  if [ -z "$runtime_id" ] || [ "$runtime_id" = "None" ]; then
+    missing "AgentCore Runtime: $runtime_name"
+    return
+  fi
+
+  local status
+  status="$(aws bedrock-agentcore-control get-agent-runtime \
+    --agent-runtime-id "$runtime_id" \
+    "${AWS_ARGS[@]}" \
+    --query "status" \
+    --output text 2>/dev/null || echo "UNKNOWN")"
+
+  ok "AgentCore Runtime: $runtime_name ($runtime_id/$status)"
+}
+
 main() {
   printf 'HEZO P1 Chat Agent dev infra verification\n'
   printf 'region=%s profile=%s\n\n' "$REGION" "${PROFILE:-default}"
@@ -113,6 +155,7 @@ main() {
   check_bedrock_model
   check_guardrail
   check_ecr
+  check_agentcore_runtime
 
   printf '\n검증 완료: MISSING 항목은 후속 AWS 생성 이슈에서 생성해야 합니다.\n'
 }
