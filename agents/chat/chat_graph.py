@@ -10,6 +10,7 @@ from bedrock_guardrails_adapter import (
     MockBedrockGuardrailsClient,
 )
 from chat_state_store import ChatCheckpoint, InMemoryChatStateStore
+from chat_intent_guard import StaticChatIntentClassifier
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from contract_compile import ContractDraftInput, compile_contract_draft
 from contract_quality_check import ContractQualityInput, check_contract_quality
@@ -310,6 +311,7 @@ def chat_turn_handler_node(state: ChatGraphState) -> ChatGraphState:
                 if section.get("title")
             ),
             max_questions=3,
+            intent_classifier=StaticChatIntentClassifier(intent="on_topic"),
         )
     )
     return _replace(

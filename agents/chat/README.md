@@ -12,9 +12,9 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - Contract 품질 상태 판단
 - LLM 보완 필요 여부 표시
 
-## MVP 스켈레톤 범위
+## MVP 개발 범위
 
-이번 스켈레톤은 실제 AWS/Bedrock/LangGraph 연동을 포함하지 않습니다.
+이번 범위는 로컬 순수 로직 smoke를 기본으로 유지하되, AWS dev 리소스가 필요한 경계는 별도 AWS smoke test로 검증합니다.
 
 포함:
 
@@ -33,17 +33,17 @@ P1 채팅 에이전트는 사용자 대화에서 도메인을 확정하고, P2 m
 - S3 artifact storage adapter 스켈레톤
 - Bedrock Claude invocation adapter 스켈레톤
 - Bedrock Guardrails ApplyGuardrail adapter 스켈레톤
+- Bedrock Claude intent classifier 경계
 - LangGraph chat graph 스켈레톤
 - AgentCore 호환 HTTP wrapper
 - 로컬 smoke test
+- Bedrock Claude/Guardrails/intent classifier AWS smoke test
 
 제외:
 
 - 실제 LangGraph `StateGraph` 구현
-- 실제 Bedrock 호출
 - 실제 P2 API 호출
 - 실제 Backend 사용자 대화 API 라우터 연동
-- 실제 Bedrock Guardrails 호출
 - 실제 DynamoDB custom checkpointer
 - 실제 S3 3개 물리 버킷 연동
 - AgentCore Runtime 배포
@@ -343,6 +343,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 ```text
 사용자 답변 수신
+-> LLM intent classifier 적용
 -> slot_answer_state 적용
 -> missing_slots 갱신
 -> 다음 질문 후보 생성 또는 contract_compile 진입 판단
@@ -356,6 +357,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 - `answered_slot`, `answer`
 - `p1_markdown_review_status`, `p2_markdown_usable_for_questions`
 - `p2_knowledge_summary`
+- `intent_classifier`
 
 출력 기준:
 
@@ -363,6 +365,13 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 {
   "turn_status": "answer_accepted",
   "next_stage": "proactive_questioning",
+  "intent_guard": {
+    "intent": "on_topic",
+    "confidence": 1.0,
+    "classification_source": "llm",
+    "store_allowed": true
+  },
+  "store_allowed": true,
   "known_answers": {
     "business_name": "한빛 세무회계",
     "core_services": "기장 대리, 종합소득세 신고, 법인세 신고"
@@ -379,6 +388,11 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 판단 기준:
 
+- `chat_intent_guard.py`는 키워드 블랙리스트가 아니라 LLM intent classifier 경계입니다.
+- 매 턴 현재 질문, answered slot, domain context를 함께 전달해 `on_topic`, `off_topic`, `ambiguous`를 분류합니다.
+- `on_topic`만 `known_answers`, `missing_slots`, Contract JSON 후보에 반영할 수 있습니다.
+- `off_topic`, `ambiguous`, classifier 미설정/실패 입력은 `store_allowed=false`로 fail-closed 처리하고 slot/Contract에 반영하지 않습니다.
+- 오프토픽 입력 후에는 기존 `missing_slots` 기준 질문 후보를 다시 반환합니다.
 - 답변이 유효하면 `known_answers`와 `missing_slots`를 갱신합니다.
 - 남은 필수 slot이 있으면 `next_stage=proactive_questioning`으로 다음 질문 후보를 반환합니다.
 - 모든 필수 slot이 채워지면 `next_stage=contract_compile`로 전환합니다.
@@ -666,6 +680,7 @@ python3 agents/chat/test_s3_aws_smoke.py
 - `question_enrichment`
 - `contract_enrichment`
 - `assistant_reply`
+- `intent_classification`
 
 입력 기준:
 
@@ -711,6 +726,7 @@ AWS smoke test:
 ```bash
 python3 -m pip install -r agents/chat/requirements.txt
 python3 agents/chat/test_bedrock_claude_aws_smoke.py
+python3 agents/chat/test_chat_intent_classifier_aws_smoke.py
 ```
 
 ## Bedrock Guardrails ApplyGuardrail

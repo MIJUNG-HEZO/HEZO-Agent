@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from bedrock_claude_adapter import Boto3BedrockClaudeInvoker
 from chat_graph import ChatGraphState, run_chat_graph
+from chat_intent_guard import (
+    ChatIntent,
+    ChatIntentClassifier,
+    ClaudeChatIntentClassifier,
+    StaticChatIntentClassifier,
+)
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from p2_markdown_loader import P2MarkdownLoadInput, build_p2_markdown_ref
@@ -104,6 +111,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             p2_knowledge_summary=str(
                 session_attrs.get("p2_knowledge_summary", "핵심 서비스 범위, 상담 전환 정보")
             ),
+            intent_classifier=_intent_classifier(session_attrs),
         )
     )
     return result.to_dict()
@@ -251,3 +259,19 @@ def _tuple_value(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(item) for item in value)
     return default
+
+
+def _intent_override(session_attrs: dict[str, Any]) -> ChatIntent:
+    intent = str(session_attrs.get("intent", "on_topic"))
+    if intent in {"on_topic", "off_topic", "ambiguous", "needs_classification"}:
+        return intent  # type: ignore[return-value]
+    return "on_topic"
+
+
+def _intent_classifier(session_attrs: dict[str, Any]) -> ChatIntentClassifier:
+    if "intent" in session_attrs:
+        return StaticChatIntentClassifier(
+            intent=_intent_override(session_attrs),
+            reason="http_static_intent_override",
+        )
+    return ClaudeChatIntentClassifier(Boto3BedrockClaudeInvoker())

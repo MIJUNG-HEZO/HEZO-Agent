@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from chat_intent_guard import (
+    ChatIntentClassifier,
+    ChatIntentClassifierInput,
+    ChatIntentClassifierResult,
+    classify_chat_intent,
+)
 from proactive_questioning import (
     ProactiveQuestionCandidate,
     ProactiveQuestionInput,
@@ -14,7 +20,12 @@ from proactive_questioning import (
 from slot_answer_state import SlotAnswerStateResult, SlotAnswerInput, apply_slot_answer
 
 
-TurnStatus = Literal["answer_accepted", "answer_rejected", "ready_for_contract_compile"]
+TurnStatus = Literal[
+    "answer_accepted",
+    "answer_rejected",
+    "off_topic_rejected",
+    "ready_for_contract_compile",
+]
 NextStage = Literal["proactive_questioning", "contract_compile", "retry_answer"]
 
 
@@ -36,6 +47,7 @@ class ChatTurnInput:
     p2_markdown_usable_for_questions: bool = True
     p2_knowledge_summary: str = ""
     max_questions: int = 3
+    intent_classifier: ChatIntentClassifier | None = None
 
 
 @dataclass(frozen=True)
@@ -49,11 +61,17 @@ class ChatTurnResult:
     missing_slots: tuple[str, ...]
     question_candidates: tuple[ProactiveQuestionCandidate, ...]
     reasons: tuple[str, ...]
+    intent_guard: ChatIntentClassifierResult | None = None
+    store_allowed: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "turn_status": self.turn_status,
             "next_stage": self.next_stage,
+            "intent_guard": (
+                self.intent_guard.to_dict() if self.intent_guard is not None else None
+            ),
+            "store_allowed": self.store_allowed,
             "slot_answer": self.slot_answer.to_dict(),
             "known_answers": self.known_answers,
             "missing_slots": list(self.missing_slots),
@@ -68,6 +86,46 @@ def handle_chat_turn(turn_input: ChatTurnInput) -> ChatTurnResult:
     """Apply one user answer and decide the next P1 chat stage."""
 
     _validate_turn_input(turn_input)
+    intent_guard = classify_chat_intent(
+        ChatIntentClassifierInput(
+            message=turn_input.answer,
+            current_question=_current_question_hint(turn_input),
+            domain=turn_input.domain,
+            domain_label=turn_input.domain_label,
+            slot_registry=turn_input.slot_registry,
+            answered_slot=turn_input.answered_slot,
+        ),
+        turn_input.intent_classifier,
+    )
+    if intent_guard.intent in {"off_topic", "ambiguous", "needs_classification"}:
+        question_candidates = _build_question_candidates(
+            turn_input=turn_input,
+            known_answers=turn_input.known_answers,
+            missing_slots=turn_input.missing_slots,
+        )
+        turn_status = (
+            "off_topic_rejected"
+            if intent_guard.intent == "off_topic"
+            else "answer_rejected"
+        )
+        return ChatTurnResult(
+            turn_status=turn_status,
+            next_stage="proactive_questioning",
+            intent_guard=intent_guard,
+            store_allowed=False,
+            slot_answer=SlotAnswerStateResult(
+                known_answers=dict(turn_input.known_answers),
+                missing_slots=tuple(turn_input.missing_slots),
+                answered_slot=turn_input.answered_slot,
+                answer_status="rejected",
+                reasons=(f"{intent_guard.intent}_detected",),
+            ),
+            known_answers=dict(turn_input.known_answers),
+            missing_slots=tuple(turn_input.missing_slots),
+            question_candidates=question_candidates,
+            reasons=(f"{intent_guard.intent}_detected",) + intent_guard.reasons,
+        )
+
     answer_result = apply_slot_answer(
         SlotAnswerInput(
             slot_registry=turn_input.slot_registry,
@@ -81,6 +139,8 @@ def handle_chat_turn(turn_input: ChatTurnInput) -> ChatTurnResult:
         return ChatTurnResult(
             turn_status="answer_rejected",
             next_stage="retry_answer",
+            intent_guard=intent_guard,
+            store_allowed=True,
             slot_answer=answer_result,
             known_answers=answer_result.known_answers,
             missing_slots=answer_result.missing_slots,
@@ -92,6 +152,8 @@ def handle_chat_turn(turn_input: ChatTurnInput) -> ChatTurnResult:
         return ChatTurnResult(
             turn_status="ready_for_contract_compile",
             next_stage="contract_compile",
+            intent_guard=intent_guard,
+            store_allowed=True,
             slot_answer=answer_result,
             known_answers=answer_result.known_answers,
             missing_slots=(),
@@ -99,24 +161,16 @@ def handle_chat_turn(turn_input: ChatTurnInput) -> ChatTurnResult:
             reasons=answer_result.reasons + ("required_slots_filled",),
         )
 
-    question_candidates = tuple(
-        build_proactive_question_candidates(
-            ProactiveQuestionInput(
-                domain=turn_input.domain,
-                domain_label=turn_input.domain_label,
-                p1_markdown_review_status=turn_input.p1_markdown_review_status,
-                p2_markdown_usable_for_questions=turn_input.p2_markdown_usable_for_questions,
-                slot_registry=turn_input.slot_registry,
-                known_answers=answer_result.known_answers,
-                missing_slots=answer_result.missing_slots,
-                p2_knowledge_summary=turn_input.p2_knowledge_summary,
-                max_questions=turn_input.max_questions,
-            )
-        )
+    question_candidates = _build_question_candidates(
+        turn_input=turn_input,
+        known_answers=answer_result.known_answers,
+        missing_slots=answer_result.missing_slots,
     )
     return ChatTurnResult(
         turn_status="answer_accepted",
         next_stage="proactive_questioning",
+        intent_guard=intent_guard,
+        store_allowed=True,
         slot_answer=answer_result,
         known_answers=answer_result.known_answers,
         missing_slots=answer_result.missing_slots,
@@ -142,3 +196,31 @@ def _validate_turn_input(turn_input: ChatTurnInput) -> None:
         raise ValueError("required_fields_missing:" + ",".join(missing))
     if turn_input.max_questions <= 0:
         raise ValueError("max_questions_must_be_positive")
+
+
+def _build_question_candidates(
+    *,
+    turn_input: ChatTurnInput,
+    known_answers: dict[str, Any],
+    missing_slots: tuple[str, ...],
+) -> tuple[ProactiveQuestionCandidate, ...]:
+    return tuple(
+        build_proactive_question_candidates(
+            ProactiveQuestionInput(
+                domain=turn_input.domain,
+                domain_label=turn_input.domain_label,
+                p1_markdown_review_status=turn_input.p1_markdown_review_status,
+                p2_markdown_usable_for_questions=turn_input.p2_markdown_usable_for_questions,
+                slot_registry=turn_input.slot_registry,
+                known_answers=known_answers,
+                missing_slots=missing_slots,
+                p2_knowledge_summary=turn_input.p2_knowledge_summary,
+                max_questions=turn_input.max_questions,
+            )
+        )
+    )
+
+
+def _current_question_hint(turn_input: ChatTurnInput) -> str:
+    slot = turn_input.slot_registry.get(turn_input.answered_slot, {})
+    return str(slot.get("question_hint") or slot.get("label") or turn_input.answered_slot)
