@@ -11,7 +11,7 @@
         "TemplateURL": "${CFN_TEMPLATE_URL}",
         "Parameters": [
           { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.detail.site_id" },
-          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.hezo.io', $.detail.site_id)" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.doodo.cloud', $.detail.site_id)" },
           { "ParameterKey": "HostedZoneId",                  "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
           { "ParameterKey": "WildcardCertArn",               "ParameterValue": "${WILDCARD_CERT_ARN}" },
           { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
@@ -58,7 +58,7 @@
         "TemplateURL": "${CFN_TEMPLATE_URL}",
         "Parameters": [
           { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.detail.site_id" },
-          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.hezo.io', $.detail.site_id)" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.doodo.cloud', $.detail.site_id)" },
           { "ParameterKey": "HostedZoneId",                  "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
           { "ParameterKey": "WildcardCertArn",               "ParameterValue": "${WILDCARD_CERT_ARN}" },
           { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
