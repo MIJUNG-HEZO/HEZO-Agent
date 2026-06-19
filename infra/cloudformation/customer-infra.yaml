@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   HEZO Customer Per-Tenant Infrastructure.
-  고객 1명 = 스택 1개. VPC + EC2(FastAPI+MySQL) + S3 + CloudFront + Route53.
-  Step Functions cloudformation:createStack.sync 으로 자동 프로비저닝.
+  고객 1명 = 스택 1개.
+  정적 파일은 공유 hezo-sites/{site_id}/ 버킷 그대로 사용.
+  CloudFormation이 담당: VPC + EC2(FastAPI+MySQL) + CloudFront + Route53.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Parameters
@@ -19,17 +20,27 @@ Parameters:
 
   HostedZoneId:
     Type: String
-    Description: Route 53 Hosted Zone ID (hezo.io 또는 고객 도메인)
+    Description: Route 53 Hosted Zone ID (hezo.io)
 
   WildcardCertArn:
     Type: String
     Description: ACM 와일드카드 인증서 ARN (*.hezo.io, 반드시 us-east-1 발급)
 
+  HezoSitesBucketName:
+    Type: String
+    Default: hezo-sites
+    Description: P3가 정적 파일을 올리는 공유 S3 버킷명
+
+  HezoSitesBucketRegionalDomain:
+    Type: String
+    Description: >
+      hezo-sites 버킷의 Regional Domain Name
+      (e.g. hezo-sites.s3.ap-northeast-2.amazonaws.com)
+
   EC2InstanceType:
     Type: String
     Default: t3.micro
     AllowedValues: [t3.micro, t3.small, t3.medium]
-    Description: 방문자 회원 API 서버 인스턴스 타입
 
   EC2KeyName:
     Type: String
@@ -118,7 +129,7 @@ Resources:
       GroupDescription: !Sub HEZO customer EC2 API server (${SiteId})
       VpcId: !Ref CustomerVPC
       SecurityGroupIngress:
-        # CloudFront → EC2: CloudFront IP는 고정 불가 → 추후 WAF + Managed Rule로 제한
+        # CloudFront IP는 고정 불가 → 운영 시 WAF + aws-managed-ip-ranges 추가 권장
         - IpProtocol: tcp
           FromPort: 8000
           ToPort: 8000
@@ -145,15 +156,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: SiteS3Access
+        - PolicyName: HezoCositeSiteAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
+              # 공유 hezo-sites 버킷에서 해당 site_id 경로만 읽기
               - Effect: Allow
-                Action: ['s3:GetObject', 's3:ListBucket']
-                Resource:
-                  - arn:aws:s3:::hezo-sites
-                  - !Sub 'arn:aws:s3:::hezo-sites/${SiteId}/*'
+                Action: ['s3:GetObject']
+                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/${SiteId}/*'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -167,7 +177,6 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: !Ref EC2InstanceType
-      # Amazon Linux 2023 (arm64 — t3 시리즈는 x86_64)
       ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}'
       SubnetId: !Ref PublicSubnet
       SecurityGroupIds:
@@ -193,11 +202,10 @@ Resources:
 
           mkdir -p /opt/hezo-site
 
-          # 기본 헬스체크 앱 — 실제 방문자 회원 앱은 P4가 S3에서 배포
+          # 기본 헬스체크 + 방문자 회원 API 골격
+          # 실제 앱 코드는 배포 파이프라인에서 S3를 통해 주입
           cat > /opt/hezo-site/main.py << 'PYEOF'
           from fastapi import FastAPI
-          import os
-
           app = FastAPI()
 
           @app.get("/api/health")
@@ -229,20 +237,17 @@ Resources:
       Domain: vpc
       InstanceId: !Ref EC2Instance
 
-  # ── S3 정적 사이트 버킷 ──────────────────────────────────────────────────────
-  StaticSiteBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub hezo-site-${SiteId}
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      Tags:
-        - Key: hezo:site-id
-          Value: !Ref SiteId
-
+  # ── CloudFront OAC (공유 hezo-sites 버킷 접근용) ──────────────────────────────
+  # 사전 조건: hezo-sites 버킷 정책에 아래 statement 추가 필요 (1회, 계정 전체 공유)
+  # {
+  #   "Effect": "Allow",
+  #   "Principal": {"Service": "cloudfront.amazonaws.com"},
+  #   "Action": "s3:GetObject",
+  #   "Resource": "arn:aws:s3:::hezo-sites/*",
+  #   "Condition": {
+  #     "StringLike": {"AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"}
+  #   }
+  # }
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -252,31 +257,13 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  StaticSiteBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    DependsOn: CloudFrontDistribution
-    Properties:
-      Bucket: !Ref StaticSiteBucket
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: cloudfront.amazonaws.com
-            Action: s3:GetObject
-            Resource: !Sub 'arn:aws:s3:::hezo-site-${SiteId}/*'
-            Condition:
-              StringEquals:
-                AWS:SourceArn: !Sub
-                  - 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistId}'
-                  - DistId: !Ref CloudFrontDistribution
-
   # ── CloudFront ───────────────────────────────────────────────────────────────
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub HEZO customer site — ${SiteId}
+        Comment: !Sub HEZO customer — ${SiteId} / ${DomainName}
         Aliases:
           - !Ref DomainName
         ViewerCertificate:
@@ -286,38 +273,41 @@ Resources:
         DefaultRootObject: index.html
         HttpVersion: http2
         Origins:
-          - Id: S3Origin
-            DomainName: !GetAtt StaticSiteBucket.RegionalDomainName
+          # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙
+          - Id: S3StaticOrigin
+            DomainName: !Ref HezoSitesBucketRegionalDomain
+            OriginPath: !Sub /${SiteId}
             S3OriginConfig: {}
             OriginAccessControlId: !Ref CloudFrontOAC
-          - Id: EC2Origin
+          # 고객사 전용 EC2 (FastAPI 백엔드 + MySQL)
+          - Id: EC2ApiOrigin
             DomainName: !GetAtt EC2EIP.PublicIp
             CustomOriginConfig:
               HTTPPort: 8000
               OriginProtocolPolicy: http-only
               OriginReadTimeout: 60
-        # 기본 → S3 정적 콘텐츠
+        # 기본 → 정적 HTML/GEO 파일 (hezo-sites/{site_id}/)
         DefaultCacheBehavior:
-          TargetOriginId: S3Origin
+          TargetOriginId: S3StaticOrigin
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
           Compress: true
         CacheBehaviors:
-          # /api/* → EC2 (캐시 없음)
+          # /api/* → EC2 백엔드 (캐시 없음)
           - PathPattern: '/api/*'
-            TargetOriginId: EC2Origin
+            TargetOriginId: EC2ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
             AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
             CachedMethods: [GET, HEAD]
-          # /auth/* → EC2 (캐시 없음)
+          # /auth/* → EC2 백엔드 (방문자 회원 인증, 캐시 없음)
           - PathPattern: '/auth/*'
-            TargetOriginId: EC2Origin
+            TargetOriginId: EC2ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
             AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
             CachedMethods: [GET, HEAD]
-        # SPA fallback
+        # SPA fallback (404/403 → index.html)
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
@@ -339,7 +329,7 @@ Resources:
         HostedZoneId: Z2FDTNDATAQYW2  # CloudFront 전용 고정 Hosted Zone ID
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Outputs — Step Functions ResultSelector 대상 (순서 고정)
+# Outputs — Step Functions ResultSelector 대상 (순서 고정, 변경 금지)
 # ══════════════════════════════════════════════════════════════════════════════
 Outputs:
   DomainUrl:
@@ -355,13 +345,13 @@ Outputs:
     Value: !GetAtt CloudFrontDistribution.DomainName
 
   EC2InstanceId:
-    Description: EC2 인스턴스 ID
+    Description: EC2 인스턴스 ID (방문자 회원 API + MySQL)
     Value: !Ref EC2Instance
 
   EC2PublicIp:
     Description: EC2 퍼블릭 IP
     Value: !GetAtt EC2EIP.PublicIp
 
-  StaticSiteBucket:
-    Description: 정적 파일 S3 버킷명
-    Value: !Ref StaticSiteBucket
+  StaticSitePrefix:
+    Description: 정적 파일 S3 경로 (공유 버킷 내 prefix)
+    Value: !Sub '${HezoSitesBucketName}/${SiteId}/'

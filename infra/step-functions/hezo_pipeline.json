@@ -336,11 +336,11 @@
         "StackName.$": "States.Format('hezo-customer-{}', $.site_id)"
       },
       "ResultSelector": {
-        "domain_url.$":           "$.Stacks[0].Outputs[0].OutputValue",
+        "domain_url.$":          "$.Stacks[0].Outputs[0].OutputValue",
         "cf_distribution_id.$":  "$.Stacks[0].Outputs[1].OutputValue",
         "cf_domain_name.$":      "$.Stacks[0].Outputs[2].OutputValue",
         "ec2_instance_id.$":     "$.Stacks[0].Outputs[3].OutputValue",
-        "static_site_bucket.$":  "$.Stacks[0].Outputs[5].OutputValue"
+        "static_site_prefix.$":  "$.Stacks[0].Outputs[5].OutputValue"
       },
       "ResultPath": "$.stack_outputs",
       "Next": "StoreCustomerDomain",
@@ -361,11 +361,10 @@
         "Key": {
           "site_id": { "S.$": "$.site_id" }
         },
-        "UpdateExpression": "SET domain_url = :domain, cf_distribution_id = :cf_id, static_site_bucket = :bucket",
+        "UpdateExpression": "SET domain_url = :domain, cf_distribution_id = :cf_id",
         "ExpressionAttributeValues": {
-          ":domain":  { "S.$": "$.stack_outputs.domain_url" },
-          ":cf_id":   { "S.$": "$.stack_outputs.cf_distribution_id" },
-          ":bucket":  { "S.$": "$.stack_outputs.static_site_bucket" }
+          ":domain": { "S.$": "$.stack_outputs.domain_url" },
+          ":cf_id":  { "S.$": "$.stack_outputs.cf_distribution_id" }
         }
       },
       "ResultPath": null,
