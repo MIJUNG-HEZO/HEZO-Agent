@@ -46,6 +46,10 @@ def _backoff_days(attempts: int) -> int:
     return _BACKOFF_DAYS.get(attempts, _BACKOFF_DEFAULT_DAYS)
 
 
+class ConcurrencyConflict(Exception):
+    """commit 시 latest_version이 기대값과 달라 조건부 쓰기 실패(동시 수정 감지)."""
+
+
 def _now_epoch() -> int:
     return int(time.time())
 
@@ -165,27 +169,47 @@ class WikiIndexStore:
         confidence: float,
         source_urls: list[str],
         now: int | None = None,
+        check_version: bool = False,
+        expected_version: str | None = None,
     ) -> dict:
-        """저장 성공 후 done 전이 + 최신버전·신뢰도·출처·만료 갱신."""
+        """저장 성공 후 done 전이 + 최신버전·신뢰도·출처·만료 갱신.
+
+        check_version=True면 낙관적 동시성(CAS): 현재 latest_version이 expected_version과
+        같을 때만 갱신(첫 저장은 expected_version=None → latest_version 없을 때만). 그새
+        다른 쓰기가 끼면 ConcurrencyConflict를 올린다(호출부가 재읽기·재시도).
+        """
         e = catalog.get_entry(domain)
         nra = next_refresh_at(e["volatility"], now)
-        resp = self._table.update_item(
-            Key={"domain": domain},
-            UpdateExpression=(
+        values = {
+            ":done": STATUS_DONE,
+            ":lv": latest_version,
+            ":conf": Decimal(str(confidence)),
+            ":urls": source_urls,
+            ":lu": _now_iso(),
+            ":nra": nra,
+        }
+        kwargs: dict[str, Any] = {
+            "Key": {"domain": domain},
+            "UpdateExpression": (
                 "SET #st = :done, latest_version = :lv, confidence = :conf, "
                 "source_urls = :urls, last_updated = :lu, next_refresh_at = :nra"
             ),
-            ExpressionAttributeNames={"#st": "status"},
-            ExpressionAttributeValues={
-                ":done": STATUS_DONE,
-                ":lv": latest_version,
-                ":conf": Decimal(str(confidence)),
-                ":urls": source_urls,
-                ":lu": _now_iso(),
-                ":nra": nra,
-            },
-            ReturnValues="ALL_NEW",
-        )
+            "ExpressionAttributeNames": {"#st": "status"},
+            "ExpressionAttributeValues": values,
+            "ReturnValues": "ALL_NEW",
+        }
+        if check_version:
+            if expected_version is None:
+                kwargs["ConditionExpression"] = "attribute_not_exists(latest_version)"
+            else:
+                kwargs["ConditionExpression"] = "latest_version = :expv"
+                values[":expv"] = expected_version
+        try:
+            resp = self._table.update_item(**kwargs)
+        except Exception as error:  # ConditionalCheckFailedException 포함
+            if type(error).__name__ == "ConditionalCheckFailedException":
+                raise ConcurrencyConflict(domain) from error
+            raise
         return _to_native(resp.get("Attributes", {}))
 
     def reject(self, domain: str, *, now: int | None = None) -> int:
