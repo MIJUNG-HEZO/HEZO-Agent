@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from bedrock_claude_adapter import Boto3BedrockClaudeInvoker
@@ -13,7 +14,12 @@ from chat_intent_guard import (
     StaticChatIntentClassifier,
 )
 from chat_session_start import ChatSessionStartInput, start_chat_session
-from chat_state_store import Boto3ChatStateStore, ChatStateStore, InMemoryChatStateStore
+from chat_state_store import (
+    Boto3ChatStateStore,
+    ChatMessage,
+    ChatStateStore,
+    InMemoryChatStateStore,
+)
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from p2_markdown_loader import P2MarkdownLoadInput, build_p2_markdown_ref
 from s3_artifact_store import (
@@ -121,7 +127,20 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             intent_classifier=_intent_classifier(session_attrs),
         )
     )
-    return result.to_dict()
+    metadata = result.to_dict()
+    state_store = _state_store(session_attrs)
+    message_refs = _persist_chat_turn_messages(
+        session_id=session_id,
+        answer=answer,
+        metadata=metadata,
+        store=state_store,
+    )
+    metadata["message_refs"] = message_refs
+    metadata["recent_messages"] = [
+        _chat_message_to_dict(message)
+        for message in state_store.load_recent_messages(session_id, limit=6)
+    ]
+    return metadata
 
 
 def _run_graph_smoke(session_id: str, session_attrs: dict[str, Any]) -> dict[str, Any]:
@@ -291,6 +310,98 @@ def _state_store(session_attrs: dict[str, Any]) -> ChatStateStore:
     if str(session_attrs.get("storage_mode", "memory")).lower() == "aws":
         return Boto3ChatStateStore()
     return InMemoryChatStateStore()
+
+
+def _persist_chat_turn_messages(
+    *,
+    session_id: str,
+    answer: Any,
+    metadata: dict[str, Any],
+    store: ChatStateStore,
+) -> list[dict[str, str]]:
+    if metadata.get("store_allowed") is not True:
+        return []
+
+    now = _utc_timestamp()
+    refs: list[dict[str, str]] = []
+    user_content = _message_content(answer)
+    if user_content is not None:
+        refs.append(
+            _stored_ref(
+                store.append_message(
+                    ChatMessage(
+                        session_id=session_id,
+                        message_id="01_user",
+                        role="user",
+                        content=user_content,
+                        created_at=now,
+                    )
+                )
+            )
+        )
+
+    assistant_content = _assistant_message_content(metadata)
+    if assistant_content is not None:
+        refs.append(
+            _stored_ref(
+                store.append_message(
+                    ChatMessage(
+                        session_id=session_id,
+                        message_id="02_assistant",
+                        role="assistant",
+                        content=assistant_content,
+                        created_at=now,
+                    )
+                )
+            )
+        )
+
+    return refs
+
+
+def _assistant_message_content(metadata: dict[str, Any]) -> str | None:
+    candidates = metadata.get("question_candidates")
+    if isinstance(candidates, list) and candidates:
+        first = candidates[0]
+        if isinstance(first, dict):
+            return _message_content(first.get("question"))
+
+    if metadata.get("next_stage") == "contract_compile":
+        return "필수 정보가 모두 수집되어 Contract JSON 생성 단계로 이동합니다."
+
+    intent_guard = metadata.get("intent_guard")
+    if isinstance(intent_guard, dict):
+        return _message_content(intent_guard.get("redirect_message"))
+
+    return None
+
+
+def _message_content(value: Any) -> str | None:
+    if not isinstance(value, str):
+        value = str(value)
+    stripped = value.strip()
+    return stripped or None
+
+
+def _stored_ref(item: Any) -> dict[str, str]:
+    return {"pk": str(item.pk), "sk": str(item.sk), "item_type": str(item.item_type)}
+
+
+def _chat_message_to_dict(message: ChatMessage) -> dict[str, str]:
+    return {
+        "session_id": message.session_id,
+        "message_id": message.message_id,
+        "role": message.role,
+        "content": message.content,
+        "created_at": message.created_at,
+    }
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
+        "+00:00",
+        "Z",
+    )
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:

@@ -69,6 +69,15 @@ def main() -> int:
                 created_at=timestamp,
             )
         )
+        store.append_message(
+            ChatMessage(
+                session_id=session_id,
+                message_id="msg_002",
+                role="assistant",
+                content="DynamoDB smoke reply",
+                created_at=f"{timestamp}~assistant",
+            )
+        )
         store.save_checkpoint(
             ChatCheckpoint(
                 session_id=session_id,
@@ -89,12 +98,16 @@ def main() -> int:
         )
 
         latest = store.load_latest_checkpoint(session_id)
+        recent_messages = store.load_recent_messages(session_id, limit=2)
         items = store.list_items(session_id)
         if latest is None or latest.state.get("quality_status") != "smoke":
             print("[FAIL] latest checkpoint mismatch")
             return 1
-        if len(items) != 4:
-            print(f"[FAIL] expected 4 items, got {len(items)}")
+        if [message.message_id for message in recent_messages] != ["msg_001", "msg_002"]:
+            print("[FAIL] recent message query mismatch")
+            return 1
+        if len(items) != 5:
+            print(f"[FAIL] expected 5 items, got {len(items)}")
             return 1
 
         print("[OK] DynamoDB write/read/delete smoke test")

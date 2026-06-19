@@ -82,6 +82,9 @@ class ChatStateStore(Protocol):
     def append_message(self, message: ChatMessage) -> StoredItem:
         ...
 
+    def load_recent_messages(self, session_id: str, limit: int = 10) -> list[ChatMessage]:
+        ...
+
     def save_checkpoint(self, checkpoint: ChatCheckpoint) -> StoredItem:
         ...
 
@@ -142,6 +145,21 @@ class InMemoryChatStateStore:
             },
         )
         return self._put(item)
+
+    def load_recent_messages(self, session_id: str, limit: int = 10) -> list[ChatMessage]:
+        _require_text("session_id", session_id)
+        if limit <= 0:
+            raise ValueError("message_limit_must_be_positive")
+
+        pk = session_pk(session_id)
+        messages = [
+            item
+            for (item_pk, item_sk), item in self._items.items()
+            if item_pk == pk and item_sk.startswith(MESSAGE_SK_PREFIX)
+        ]
+        messages.sort(key=lambda item: item.sk)
+        recent = messages[-limit:]
+        return [_message_from_stored_item(item) for item in recent]
 
     def save_checkpoint(self, checkpoint: ChatCheckpoint) -> StoredItem:
         _require_text("session_id", checkpoint.session_id)
@@ -267,6 +285,26 @@ class Boto3ChatStateStore:
         item = InMemoryChatStateStore().append_message(message)
         return self._put(item)
 
+    def load_recent_messages(self, session_id: str, limit: int = 10) -> list[ChatMessage]:
+        _require_text("session_id", session_id)
+        if limit <= 0:
+            raise ValueError("message_limit_must_be_positive")
+
+        response = self._table.query(
+            KeyConditionExpression="pk = :pk AND begins_with(sk, :sk_prefix)",
+            ExpressionAttributeValues={
+                ":pk": session_pk(session_id),
+                ":sk_prefix": MESSAGE_SK_PREFIX,
+            },
+            ScanIndexForward=False,
+        )
+        items = response.get("Items", [])
+        recent = sorted(items[:limit], key=lambda item: str(item["sk"]))
+        return [
+            _message_from_stored_item(_stored_item_from_dynamodb(item))
+            for item in recent
+        ]
+
     def save_checkpoint(self, checkpoint: ChatCheckpoint) -> StoredItem:
         item = InMemoryChatStateStore().save_checkpoint(checkpoint)
         return self._put(item)
@@ -368,6 +406,18 @@ def _stored_item_from_dynamodb(item: dict[str, Any]) -> StoredItem:
         sk=str(item["sk"]),
         item_type=str(item["item_type"]),
         data=dict(_from_dynamodb_value(item.get("data", {}))),
+    )
+
+
+def _message_from_stored_item(item: StoredItem) -> ChatMessage:
+    if item.item_type != "message":
+        raise ValueError("stored_item_not_message")
+    return ChatMessage(
+        session_id=str(item.data["session_id"]),
+        message_id=str(item.data["message_id"]),
+        role=str(item.data["role"]),  # type: ignore[arg-type]
+        content=str(item.data["content"]),
+        created_at=str(item.data["created_at"]),
     )
 
 
