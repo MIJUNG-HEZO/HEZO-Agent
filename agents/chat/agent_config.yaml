@@ -79,6 +79,8 @@ Stages:
       - known_answers
       - missing_slots
       - question_candidates
+      - intent_guard
+      - store_allowed
 
   - name: slot_answer_state
     description: 사용자 답변을 known_answers에 반영하고 missing_slots를 갱신한다.
@@ -271,6 +273,16 @@ MockState:
     turn_status: answer_accepted
     next_stage: proactive_questioning
     answered_slot: core_services
+    intent_guard:
+      intent: on_topic
+      confidence: 1.0
+      store_allowed: true
+      classification_source: llm
+      reasons:
+        - intent_classified_by_llm
+      normalized_answer_candidate: 기장 대리, 종합소득세 신고, 법인세 신고
+      redirect_message:
+    store_allowed: true
     known_answers:
       business_name: 한빛 세무회계
       core_services: 기장 대리, 종합소득세 신고, 법인세 신고

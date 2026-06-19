@@ -29,6 +29,12 @@ from bedrock_guardrails_adapter import (
 )
 from chat_graph import CHAT_GRAPH_NODE_ORDER, ChatGraphState, run_chat_graph
 from chat_http_handler import handle_agentcore_payload
+from chat_intent_guard import (
+    ChatIntentClassifierInput,
+    ClaudeChatIntentClassifier,
+    StaticChatIntentClassifier,
+    classify_chat_intent,
+)
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from chat_state_store import (
@@ -213,6 +219,8 @@ REQUIRED_CHAT_TURN_FIELDS = [
     "known_answers",
     "missing_slots",
     "question_candidates",
+    "intent_guard",
+    "store_allowed",
 ]
 
 REQUIRED_GUARDED_CLAUDE_FLOW_FIELDS = [
@@ -415,6 +423,7 @@ def _sample_chat_turn_input(**overrides: object) -> ChatTurnInput:
         "p2_markdown_usable_for_questions": True,
         "p2_knowledge_summary": "핵심 서비스 범위, 상담 전환 정보",
         "max_questions": 3,
+        "intent_classifier": StaticChatIntentClassifier(intent="on_topic"),
     }
     data.update(overrides)
     return ChatTurnInput(**data)
@@ -771,6 +780,35 @@ confidence: 0.82
 def _validate_chat_turn_handler_cases() -> list[str]:
     errors: list[str] = []
 
+    request_input = _sample_request_input()
+    classifier_input = ChatIntentClassifierInput(
+        message="요즘 날씨가 왜 이렇게 더워요?",
+        current_question="핵심 세무 서비스는 무엇인가요?",
+        domain="tax_accounting",
+        domain_label="세무/회계",
+        slot_registry=request_input.slot_registry,
+        answered_slot="core_services",
+    )
+    off_topic_intent = classify_chat_intent(
+        classifier_input,
+        StaticChatIntentClassifier(intent="off_topic", reason="static_off_topic"),
+    )
+    if off_topic_intent.intent != "off_topic" or off_topic_intent.store_allowed is not False:
+        errors.append("LLM classifier 경계는 off_topic/store_allowed=false를 반환할 수 있어야 합니다.")
+
+    llm_intent = ClaudeChatIntentClassifier(MockClaudeInvoker()).classify(
+        ChatIntentClassifierInput(
+            message="기장 대리와 종합소득세 신고를 합니다.",
+            current_question="핵심 세무 서비스는 무엇인가요?",
+            domain="tax_accounting",
+            domain_label="세무/회계",
+            slot_registry=request_input.slot_registry,
+            answered_slot="core_services",
+        )
+    )
+    if llm_intent.intent != "on_topic" or llm_intent.classification_source != "llm":
+        errors.append("Claude intent classifier mock은 on_topic/llm 결과를 반환해야 합니다.")
+
     next_question = handle_chat_turn(_sample_chat_turn_input())
     next_question_dict = next_question.to_dict()
     if next_question.turn_status != "answer_accepted":
@@ -785,6 +823,8 @@ def _validate_chat_turn_handler_cases() -> list[str]:
         errors.append("대화 턴 처리 결과는 다음 missing slot 질문을 생성해야 합니다.")
     if next_question_dict["question_candidates"][0]["source"] != "p2_markdown":
         errors.append("다음 질문은 P2 도메인 지식 기반 source를 유지해야 합니다.")
+    if next_question_dict["intent_guard"]["intent"] != "on_topic":
+        errors.append("정상 slot 답변은 intent_guard=on_topic이어야 합니다.")
 
     ready = handle_chat_turn(
         _sample_chat_turn_input(
@@ -805,6 +845,38 @@ def _validate_chat_turn_handler_cases() -> list[str]:
         errors.append("Contract compile 준비 상태에서는 추가 질문 후보가 없어야 합니다.")
     if "required_slots_filled" not in ready.reasons:
         errors.append("필수 slot 완료 사유가 reasons에 포함되어야 합니다.")
+
+    off_topic = handle_chat_turn(
+        _sample_chat_turn_input(
+            answer="나 배고파. 점심 뭐 먹지?",
+            intent_classifier=StaticChatIntentClassifier(
+                intent="off_topic",
+                reason="static_off_topic",
+            ),
+        )
+    )
+    if off_topic.turn_status != "off_topic_rejected":
+        errors.append("무관한 잡담은 off_topic_rejected 상태여야 합니다.")
+    if off_topic.next_stage != "proactive_questioning":
+        errors.append("off_topic 입력 후에는 기존 질문으로 다시 돌아가야 합니다.")
+    if off_topic.store_allowed is not False:
+        errors.append("off_topic 입력은 저장 허용되면 안 됩니다.")
+    if off_topic.known_answers != _sample_chat_turn_input().known_answers:
+        errors.append("off_topic 입력은 known_answers를 변경하면 안 됩니다.")
+    if off_topic.missing_slots != _sample_chat_turn_input().missing_slots:
+        errors.append("off_topic 입력은 missing_slots를 변경하면 안 됩니다.")
+    if not off_topic.question_candidates or off_topic.question_candidates[0].slot != "core_services":
+        errors.append("off_topic 입력 후에는 기존 missing slot 질문을 유지해야 합니다.")
+    if "off_topic_detected" not in off_topic.reasons:
+        errors.append("off_topic 입력 사유가 reasons에 포함되어야 합니다.")
+
+    needs_classification = handle_chat_turn(_sample_chat_turn_input(intent_classifier=None))
+    if needs_classification.turn_status != "answer_rejected":
+        errors.append("intent classifier 미설정 시 fail-closed answer_rejected여야 합니다.")
+    if needs_classification.store_allowed is not False:
+        errors.append("intent classifier 미설정 입력은 저장 허용되면 안 됩니다.")
+    if "intent_classifier_not_configured" not in needs_classification.reasons:
+        errors.append("intent classifier 미설정 사유가 reasons에 포함되어야 합니다.")
 
     rejected = handle_chat_turn(_sample_chat_turn_input(answer=" "))
     if rejected.turn_status != "answer_rejected" or rejected.next_stage != "retry_answer":
@@ -1898,6 +1970,7 @@ def _validate_chat_http_handler_cases() -> list[str]:
                 "action": "chat_turn",
                 "answered_slot": "core_services",
                 "answer": "기장 대리, 종합소득세 신고",
+                "intent": "on_topic",
             },
         }
     )
@@ -1905,6 +1978,23 @@ def _validate_chat_http_handler_cases() -> list[str]:
         errors.append("HTTP handler chat_turn은 answer_accepted 상태를 반환해야 합니다.")
     if chat_turn["sessionState"]["stage"] != "proactive_questioning":
         errors.append("HTTP handler chat_turn은 다음 stage를 sessionState에 반영해야 합니다.")
+
+    off_topic_turn = handle_agentcore_payload(
+        {
+            "sessionId": "session_http_001",
+            "inputText": "",
+            "sessionAttributes": {
+                "action": "chat_turn",
+                "answered_slot": "core_services",
+                "answer": "오늘 날씨 어때요?",
+                "intent": "off_topic",
+            },
+        }
+    )
+    if off_topic_turn["metadata"]["turn_status"] != "off_topic_rejected":
+        errors.append("HTTP handler off-topic chat_turn은 off_topic_rejected를 반환해야 합니다.")
+    if off_topic_turn["metadata"]["store_allowed"] is not False:
+        errors.append("HTTP handler off-topic chat_turn은 store_allowed=false여야 합니다.")
 
     graph_smoke = handle_agentcore_payload(
         {

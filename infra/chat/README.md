@@ -119,9 +119,8 @@ bash infra/chat/verify_dev_infra.sh
 
 ## 후속 작업
 
-- AWS dev 리소스 실제 생성 이슈
-- Bedrock Claude adapter에 boto3 client 연결
-- Bedrock Guardrails adapter에 `ApplyGuardrail` 연결
+- AgentCore Runtime 실제 생성 및 ECR 이미지 배포
+- Backend/Frontend에서 호출할 HTTP 계약 확정
 - DynamoDB state/checkpoint store 실제 구현
 - S3 artifact store 실제 구현
-- AgentCore Runtime + ECR 배포 파이프라인
+- 운영 전 IAM 최소 권한 재점검

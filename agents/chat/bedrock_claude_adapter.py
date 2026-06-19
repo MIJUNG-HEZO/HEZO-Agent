@@ -8,7 +8,12 @@ import time
 from typing import Any, Literal, Protocol
 
 
-ClaudeUseCase = Literal["question_enrichment", "contract_enrichment", "assistant_reply"]
+ClaudeUseCase = Literal[
+    "question_enrichment",
+    "contract_enrichment",
+    "assistant_reply",
+    "intent_classification",
+]
 InvocationStatus = Literal["succeeded", "failed"]
 
 FOUNDATION_MODEL_ID = "anthropic.claude-sonnet-4-5-20250929-v1:0"
@@ -197,6 +202,7 @@ def _validate_invocation_input(invocation_input: ClaudeInvocationInput) -> str |
         "question_enrichment",
         "contract_enrichment",
         "assistant_reply",
+        "intent_classification",
     }:
         return "use_case_invalid"
     if not isinstance(invocation_input.system_prompt, str) or not invocation_input.system_prompt.strip():
@@ -226,6 +232,13 @@ def _mock_response_text(invocation_input: ClaudeInvocationInput) -> str:
         return "부족한 슬롯을 확인하기 위한 보완 질문 후보를 생성했습니다."
     if invocation_input.use_case == "contract_enrichment":
         return "Contract draft 보완에 필요한 누락 정보와 약한 근거를 정리했습니다."
+    if invocation_input.use_case == "intent_classification":
+        return (
+            '{"intent":"on_topic","confidence":1.0,'
+            '"reasons":["mock_intent_classification"],'
+            '"normalized_answer_candidate":"요청 내용을 확인했습니다.",'
+            '"redirect_message":null}'
+        )
     return "요청 내용을 확인했습니다. 필요한 정보를 순서대로 도와드리겠습니다."
 
 
