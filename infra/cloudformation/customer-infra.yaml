@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  HEZO Customer Per-Tenant Infrastructure.
+  고객 1명 = 스택 1개.
+  정적 파일은 공유 hezo-sites/{site_id}/ 버킷 그대로 사용.
+  CloudFormation이 담당: VPC + EC2(FastAPI+MySQL) + CloudFront + Route53.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Parameters
+# ══════════════════════════════════════════════════════════════════════════════
+Parameters:
+  SiteId:
+    Type: String
+    Description: HEZO site_id (e.g. site_tax_13_001)
+    AllowedPattern: '[a-zA-Z0-9_\-]+'
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: 고객사 서브도메인 (e.g. mybiz.hezo.io). 비워두면 CloudFront 기본 도메인으로 테스트 가능.
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route 53 Hosted Zone ID. DomainName이 있을 때만 필요.
+
+  WildcardCertArn:
+    Type: String
+    Default: ''
+    Description: ACM 와일드카드 인증서 ARN (*.hezo.io, us-east-1). DomainName이 있을 때만 필요.
+
+  HezoSitesBucketName:
+    Type: String
+    Default: hezo-sites
+    Description: P3가 정적 파일을 올리는 공유 S3 버킷명
+
+  HezoSitesBucketRegionalDomain:
+    Type: String
+    Description: >
+      hezo-sites 버킷의 Regional Domain Name
+      (e.g. hezo-sites.s3.ap-northeast-2.amazonaws.com)
+
+  EC2InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+
+  EC2KeyName:
+    Type: String
+    Default: ''
+    Description: EC2 SSH 키 페어 이름 (비워두면 SSM Session Manager로 접속)
+
+  VpcCidrBlock:
+    Type: String
+    Default: '10.100.0.0/16'
+    Description: 고객 전용 VPC CIDR (기존 VPC와 겹치지 않도록 설정)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Conditions
+# ══════════════════════════════════════════════════════════════════════════════
+Conditions:
+  HasKeyName:      !Not [!Equals [!Ref EC2KeyName, '']]
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Resources
+# ══════════════════════════════════════════════════════════════════════════════
+Resources:
+
+  # ── VPC ─────────────────────────────────────────────────────────────────────
+  CustomerVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}
+        - Key: hezo:site-id
+          Value: !Ref SiteId
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CustomerVPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidrBlock, 4, 8]]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}-public
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref CustomerVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CustomerVPC
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}-rtb
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # ── 보안그룹 ─────────────────────────────────────────────────────────────────
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub HEZO customer EC2 API server (${SiteId})
+      VpcId: !Ref CustomerVPC
+      SecurityGroupIngress:
+        # CloudFront IP는 고정 불가 → 운영 시 WAF + aws-managed-ip-ranges 추가 권장
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: '0.0.0.0/0'
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}-ec2-sg
+
+  # ── IAM (EC2용) ──────────────────────────────────────────────────────────────
+  EC2IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub hezo-customer-${SiteId}-ec2-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: HezoCositeSiteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # 공유 hezo-sites 버킷에서 해당 site_id 경로만 읽기
+              - Effect: Allow
+                Action: ['s3:GetObject']
+                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/${SiteId}/*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub hezo-customer-${SiteId}-ec2-profile
+      Roles:
+        - !Ref EC2IAMRole
+
+  # ── EC2 (FastAPI + MySQL — 방문자 회원 기능) ─────────────────────────────────
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}'
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      KeyName: !If [HasKeyName, !Ref EC2KeyName, !Ref AWS::NoValue]
+      Tags:
+        - Key: Name
+          Value: !Sub hezo-customer-${SiteId}-ec2
+        - Key: hezo:site-id
+          Value: !Ref SiteId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          dnf update -y
+          dnf install -y python3.12 python3.12-pip mysql-server
+
+          systemctl start mysqld
+          systemctl enable mysqld
+
+          pip3.12 install fastapi "uvicorn[standard]" pymysql sqlalchemy
+
+          mkdir -p /opt/hezo-site
+
+          # 기본 헬스체크 + 방문자 회원 API 골격
+          # 실제 앱 코드는 배포 파이프라인에서 S3를 통해 주입
+          cat > /opt/hezo-site/main.py << 'PYEOF'
+          from fastapi import FastAPI
+          app = FastAPI()
+
+          @app.get("/api/health")
+          def health():
+              return {"status": "ok", "site_id": "${SiteId}"}
+          PYEOF
+
+          cat > /etc/systemd/system/hezo-site.service << 'SVCEOF'
+          [Unit]
+          Description=HEZO Site API (${SiteId})
+          After=network.target mysqld.service
+          [Service]
+          Type=simple
+          WorkingDirectory=/opt/hezo-site
+          ExecStart=/usr/bin/python3.12 -m uvicorn main:app --host 0.0.0.0 --port 8000
+          Restart=on-failure
+          RestartSec=5
+          [Install]
+          WantedBy=multi-user.target
+          SVCEOF
+
+          systemctl daemon-reload
+          systemctl enable hezo-site
+          systemctl start hezo-site
+
+  EC2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref EC2Instance
+
+  # ── CloudFront OAC (공유 hezo-sites 버킷 접근용) ──────────────────────────────
+  # 사전 조건: hezo-sites 버킷 정책에 아래 statement 추가 필요 (1회, 계정 전체 공유)
+  # {
+  #   "Effect": "Allow",
+  #   "Principal": {"Service": "cloudfront.amazonaws.com"},
+  #   "Action": "s3:GetObject",
+  #   "Resource": "arn:aws:s3:::hezo-sites/*",
+  #   "Condition": {
+  #     "StringLike": {"AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"}
+  #   }
+  # }
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub hezo-oac-${SiteId}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ── CloudFront ───────────────────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub HEZO customer — ${SiteId}
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref DomainName]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref WildcardCertArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        Origins:
+          # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙
+          - Id: S3StaticOrigin
+            DomainName: !Ref HezoSitesBucketRegionalDomain
+            OriginPath: !Sub /${SiteId}
+            S3OriginConfig: {}
+            OriginAccessControlId: !Ref CloudFrontOAC
+          # 고객사 전용 EC2 (FastAPI 백엔드 + MySQL)
+          - Id: EC2ApiOrigin
+            DomainName: !GetAtt EC2EIP.PublicIp
+            CustomOriginConfig:
+              HTTPPort: 8000
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 60
+        # 기본 → 정적 HTML/GEO 파일 (hezo-sites/{site_id}/)
+        DefaultCacheBehavior:
+          TargetOriginId: S3StaticOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          Compress: true
+        CacheBehaviors:
+          # /api/* → EC2 백엔드 (캐시 없음)
+          - PathPattern: '/api/*'
+            TargetOriginId: EC2ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+            AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+            CachedMethods: [GET, HEAD]
+          # /auth/* → EC2 백엔드 (방문자 회원 인증, 캐시 없음)
+          - PathPattern: '/auth/*'
+            TargetOriginId: EC2ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+            AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+            CachedMethods: [GET, HEAD]
+        # SPA fallback (404/403 → index.html)
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  # ── Route 53 (커스텀 도메인이 있을 때만 생성) ─────────────────────────────────
+  CustomerDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront 전용 고정 Hosted Zone ID
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Outputs — Step Functions ResultSelector 대상 (순서 고정, 변경 금지)
+# ══════════════════════════════════════════════════════════════════════════════
+Outputs:
+  DomainUrl:
+    Description: 고객사 사이트 URL (커스텀 도메인 없으면 CloudFront 기본 URL)
+    Value: !If
+      - HasCustomDomain
+      - !Sub 'https://${DomainName}'
+      - !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+  CloudFrontDistributionId:
+    Description: CloudFront 배포 ID (캐시 무효화용)
+    Value: !Ref CloudFrontDistribution
+
+  CloudFrontDomainName:
+    Description: CloudFront 도메인명
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  EC2InstanceId:
+    Description: EC2 인스턴스 ID (방문자 회원 API + MySQL)
+    Value: !Ref EC2Instance
+
+  EC2PublicIp:
+    Description: EC2 퍼블릭 IP
+    Value: !GetAtt EC2EIP.PublicIp
+
+  StaticSitePrefix:
+    Description: 정적 파일 S3 경로 (공유 버킷 내 prefix)
+    Value: !Sub '${HezoSitesBucketName}/${SiteId}/'

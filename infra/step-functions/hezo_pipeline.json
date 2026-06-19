@@ -1,5 +1,5 @@
 {
-  "Comment": "HEZO Site Generation Pipeline v3.0 — CheckIdempotency → Generation → Build(ECS) → Validation → Publish",
+  "Comment": "HEZO Site Generation Pipeline v4.0 — CheckIdempotency → Generation → Build → Validation → CustomerStack(CFn) → DomainStore → CFInvalidation → ReportSchedule → Publish",
   "StartAt": "CheckIdempotency",
   "States": {
 
@@ -252,7 +252,179 @@
         }
       },
       "ResultPath": null,
-      "Next": "PublishSiteEvent"
+      "Next": "CreateCustomerStack"
+    },
+
+    "CreateCustomerStack": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::cloudformation:createStack.sync",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.site_id)",
+        "TemplateURL": "${CFN_TEMPLATE_URL}",
+        "Parameters": [
+          { "ParameterKey": "SiteId",          "ParameterValue.$": "$.site_id" },
+          { "ParameterKey": "DomainName",      "ParameterValue.$": "States.Format('{}.hezo.io', $.site_id)" },
+          { "ParameterKey": "HostedZoneId",    "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
+          { "ParameterKey": "WildcardCertArn", "ParameterValue": "${WILDCARD_CERT_ARN}" }
+        ],
+        "Capabilities": ["CAPABILITY_NAMED_IAM"],
+        "Tags": [
+          { "Key": "hezo:site-id",   "Value.$": "$.site_id" },
+          { "Key": "hezo:managed-by","Value": "step-functions" }
+        ]
+      },
+      "ResultPath": null,
+      "Next": "GetStackOutputs",
+      "TimeoutSeconds": 1800,
+      "Retry": [
+        {
+          "ErrorEquals": ["CloudFormation.CloudFormationException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 1,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["CloudFormation.AlreadyExistsException"],
+          "Next": "UpdateCustomerStack",
+          "ResultPath": null
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "UpdateCustomerStack": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::cloudformation:updateStack.sync",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.site_id)",
+        "TemplateURL": "${CFN_TEMPLATE_URL}",
+        "Parameters": [
+          { "ParameterKey": "SiteId",          "ParameterValue.$": "$.site_id" },
+          { "ParameterKey": "DomainName",      "ParameterValue.$": "States.Format('{}.hezo.io', $.site_id)" },
+          { "ParameterKey": "HostedZoneId",    "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
+          { "ParameterKey": "WildcardCertArn", "ParameterValue": "${WILDCARD_CERT_ARN}" }
+        ],
+        "Capabilities": ["CAPABILITY_NAMED_IAM"]
+      },
+      "ResultPath": null,
+      "Next": "GetStackOutputs",
+      "TimeoutSeconds": 1800,
+      "Catch": [
+        {
+          "ErrorEquals": ["CloudFormation.ValidationException"],
+          "Next": "GetStackOutputs",
+          "ResultPath": null
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "GetStackOutputs": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.site_id)"
+      },
+      "ResultSelector": {
+        "domain_url.$":          "$.Stacks[0].Outputs[0].OutputValue",
+        "cf_distribution_id.$":  "$.Stacks[0].Outputs[1].OutputValue",
+        "cf_domain_name.$":      "$.Stacks[0].Outputs[2].OutputValue",
+        "ec2_instance_id.$":     "$.Stacks[0].Outputs[3].OutputValue",
+        "static_site_prefix.$":  "$.Stacks[0].Outputs[5].OutputValue"
+      },
+      "ResultPath": "$.stack_outputs",
+      "Next": "StoreCustomerDomain",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "StoreCustomerDomain": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.site_id" }
+        },
+        "UpdateExpression": "SET domain_url = :domain, cf_distribution_id = :cf_id",
+        "ExpressionAttributeValues": {
+          ":domain": { "S.$": "$.stack_outputs.domain_url" },
+          ":cf_id":  { "S.$": "$.stack_outputs.cf_distribution_id" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "CloudFrontInvalidation",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "MarkFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "CloudFrontInvalidation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:cloudfront:createInvalidation",
+      "Parameters": {
+        "DistributionId.$": "$.stack_outputs.cf_distribution_id",
+        "InvalidationBatch": {
+          "CallerReference.$": "$$.Execution.Name",
+          "Paths": {
+            "Quantity": 1,
+            "Items": ["/*"]
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "RegisterReportSchedule",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishSiteEvent",
+          "ResultPath": null
+        }
+      ]
+    },
+
+    "RegisterReportSchedule": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:scheduler:createSchedule",
+      "Parameters": {
+        "Name.$": "States.Format('hezo-report-{}', $.site_id)",
+        "GroupName": "hezo-reports",
+        "ScheduleExpression": "rate(7 days)",
+        "FlexibleTimeWindow": { "Mode": "OFF" },
+        "Target": {
+          "Arn": "${REPORT_STATE_MACHINE_ARN}",
+          "RoleArn": "${SCHEDULER_ROLE_ARN}",
+          "Input.$": "States.Format('{\"site_id\":\"{}\",\"domain_url\":\"{}\"}', $.site_id, $.stack_outputs.domain_url)"
+        }
+      },
+      "ResultPath": null,
+      "Next": "PublishSiteEvent",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PublishSiteEvent",
+          "ResultPath": null
+        }
+      ]
     },
 
     "PublishSiteEvent": {

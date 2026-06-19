@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HEZO Step Functions 상태 머신 배포 스크립트 v3.0
+# HEZO Step Functions 상태 머신 배포 스크립트 v4.0
 #
-# 변경사항 (v3.0):
-#   - hezo_pipeline.json v3.0 반영 (CheckIdempotency → Generation → Build(ECS) → Validation → Publish)
-#   - BUILD_AGENT_ENDPOINT 제거 → VALIDATION_AGENT_ENDPOINT 추가 (검증 에이전트 활성화)
-#   - ECS 빌드 워커용 클러스터/서브넷/보안그룹 플레이스홀더 추가
-#   - DynamoDB 테이블명: hezo_pipeline_state → pipeline_state
+# 변경사항 (v4.0):
+#   - hezo_pipeline.json v4.0 반영: 고객사 CloudFormation IAC 스텝 추가
+#     CreateCustomerStack → UpdateCustomerStack → GetStackOutputs →
+#     StoreCustomerDomain → CloudFrontInvalidation → RegisterReportSchedule
+#   - 신규 SSM 파라미터: CFN_TEMPLATE_URL, HEZO_HOSTED_ZONE_ID,
+#                         WILDCARD_CERT_ARN, REPORT_STATE_MACHINE_ARN, SCHEDULER_ROLE_ARN
 #
 # 사용법:
 #   bash deploy_state_machine.sh            # 생성 또는 업데이트
@@ -85,7 +86,7 @@ fi
 # 1. 사전 조건 확인
 # =============================================================================
 echo "╔══════════════════════════════════════════════════════╗"
-echo "║  HEZO Step Functions 배포 v3.0                      ║"
+echo "║  HEZO Step Functions 배포 v4.0                      ║"
 echo "╚══════════════════════════════════════════════════════╝"
 
 command -v aws >/dev/null 2>&1 || error "AWS CLI 미설치"
@@ -108,23 +109,30 @@ VALIDATION_AGENT_ENDPOINT=$(ssm_get "hezo-validation-agent-endpoint" "PLACEHOLDE
 BUILD_AGENT_ENDPOINT=$(ssm_get "hezo-build-agent-endpoint" "PLACEHOLDER_BUILD_ENDPOINT")
 EVENTBRIDGE_CONNECTION_ARN=$(ssm_get "hezo-eventbridge-connection-arn" "PLACEHOLDER_CONNECTION_ARN")
 
+# 고객사 CloudFormation IAC 관련 파라미터
+CFN_TEMPLATE_URL=$(ssm_get "hezo-cfn-template-url" "PLACEHOLDER_CFN_TEMPLATE_URL")
+HEZO_HOSTED_ZONE_ID=$(ssm_get "hezo-hosted-zone-id" "PLACEHOLDER_HOSTED_ZONE_ID")
+WILDCARD_CERT_ARN=$(ssm_get "hezo-wildcard-cert-arn" "PLACEHOLDER_WILDCARD_CERT_ARN")
+REPORT_STATE_MACHINE_ARN=$(ssm_get "hezo-report-state-machine-arn" "PLACEHOLDER_REPORT_SM_ARN")
+SCHEDULER_ROLE_ARN=$(ssm_get "hezo-scheduler-role-arn" "PLACEHOLDER_SCHEDULER_ROLE_ARN")
+
 if [[ "$GENERATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-generation-agent-endpoint SSM 없음 — placeholder 사용"
-    warn "  등록 방법: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
+    warn "  등록: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
 else
     success "Generation Agent: $GENERATION_AGENT_ENDPOINT"
 fi
 
 if [[ "$VALIDATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-validation-agent-endpoint SSM 없음 — placeholder 사용"
-    warn "  등록 방법: aws ssm put-parameter --name hezo-validation-agent-endpoint --value <URL> --type String --overwrite"
+    warn "  등록: aws ssm put-parameter --name hezo-validation-agent-endpoint --value <URL> --type String --overwrite"
 else
     success "Validation Agent: $VALIDATION_AGENT_ENDPOINT"
 fi
 
 if [[ "$BUILD_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-build-agent-endpoint SSM 없음 — placeholder 사용"
-    warn "  등록 방법: aws ssm put-parameter --name hezo-build-agent-endpoint --value <URL> --type String --overwrite"
+    warn "  등록: aws ssm put-parameter --name hezo-build-agent-endpoint --value <URL> --type String --overwrite"
 else
     success "Build Agent: $BUILD_AGENT_ENDPOINT"
 fi
@@ -134,6 +142,35 @@ if [[ "$EVENTBRIDGE_CONNECTION_ARN" == PLACEHOLDER* ]]; then
     warn "  실행: bash deploy_state_machine.sh --setup-connection"
 else
     success "EventBridge Connection: $EVENTBRIDGE_CONNECTION_ARN"
+fi
+
+if [[ "$CFN_TEMPLATE_URL" == PLACEHOLDER* ]]; then
+    warn "hezo-cfn-template-url SSM 없음 (고객사 CloudFormation 템플릿 S3 URL)"
+    warn "  등록: aws s3 cp infra/cloudformation/customer-infra.yaml s3://hezo-cfn-templates/"
+    warn "        aws ssm put-parameter --name hezo-cfn-template-url --value https://hezo-cfn-templates.s3.ap-northeast-2.amazonaws.com/customer-infra.yaml --type String --overwrite"
+else
+    success "CFn Template: $CFN_TEMPLATE_URL"
+fi
+
+if [[ "$HEZO_HOSTED_ZONE_ID" == PLACEHOLDER* ]]; then
+    warn "hezo-hosted-zone-id SSM 없음 (Route 53 Hosted Zone ID)"
+    warn "  등록: aws ssm put-parameter --name hezo-hosted-zone-id --value <ZONE_ID> --type String --overwrite"
+else
+    success "Hosted Zone ID: $HEZO_HOSTED_ZONE_ID"
+fi
+
+if [[ "$WILDCARD_CERT_ARN" == PLACEHOLDER* ]]; then
+    warn "hezo-wildcard-cert-arn SSM 없음 (*.hezo.io ACM 인증서 — us-east-1 발급)"
+    warn "  등록: aws ssm put-parameter --name hezo-wildcard-cert-arn --value <CERT_ARN> --type String --overwrite"
+else
+    success "Wildcard Cert: $WILDCARD_CERT_ARN"
+fi
+
+if [[ "$SCHEDULER_ROLE_ARN" == PLACEHOLDER* ]]; then
+    warn "hezo-scheduler-role-arn SSM 없음 (EventBridge Scheduler 실행 역할)"
+    warn "  등록: aws ssm put-parameter --name hezo-scheduler-role-arn --value <ROLE_ARN> --type String --overwrite"
+else
+    success "Scheduler Role: $SCHEDULER_ROLE_ARN"
 fi
 
 # =============================================================================
@@ -149,16 +186,28 @@ python3 - "$DEFINITION_FILE" "$DEFINITION_TEMP" \
     "$GENERATION_AGENT_ENDPOINT" \
     "$VALIDATION_AGENT_ENDPOINT" \
     "$BUILD_AGENT_ENDPOINT" \
-    "$EVENTBRIDGE_CONNECTION_ARN" <<'PYEOF'
+    "$EVENTBRIDGE_CONNECTION_ARN" \
+    "$CFN_TEMPLATE_URL" \
+    "$HEZO_HOSTED_ZONE_ID" \
+    "$WILDCARD_CERT_ARN" \
+    "$REPORT_STATE_MACHINE_ARN" \
+    "$SCHEDULER_ROLE_ARN" <<'PYEOF'
 import sys, json
 
-src, dst, account, gen_ep, val_ep, build_ep, conn_arn = sys.argv[1:]
+(src, dst, account, gen_ep, val_ep, build_ep, conn_arn,
+ cfn_url, hosted_zone_id, wildcard_cert, report_sm_arn, scheduler_role) = sys.argv[1:]
+
 content = open(src, encoding='utf-8').read()
-content = content.replace('${AWS_ACCOUNT_ID}', account)
+content = content.replace('${AWS_ACCOUNT_ID}',           account)
 content = content.replace('${GENERATION_AGENT_ENDPOINT}', gen_ep)
 content = content.replace('${VALIDATION_AGENT_ENDPOINT}', val_ep)
-content = content.replace('${BUILD_AGENT_ENDPOINT}', build_ep)
+content = content.replace('${BUILD_AGENT_ENDPOINT}',      build_ep)
 content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}', conn_arn)
+content = content.replace('${CFN_TEMPLATE_URL}',          cfn_url)
+content = content.replace('${HEZO_HOSTED_ZONE_ID}',       hosted_zone_id)
+content = content.replace('${WILDCARD_CERT_ARN}',         wildcard_cert)
+content = content.replace('${REPORT_STATE_MACHINE_ARN}',  report_sm_arn)
+content = content.replace('${SCHEDULER_ROLE_ARN}',        scheduler_role)
 
 # JSON 유효성 검증
 json.loads(content)
@@ -247,11 +296,22 @@ echo "  Generation Agent   : $GENERATION_AGENT_ENDPOINT"
 echo "  Validation Agent   : $VALIDATION_AGENT_ENDPOINT"
 echo "  Build Agent        : $BUILD_AGENT_ENDPOINT"
 echo "  EventBridge Conn   : $EVENTBRIDGE_CONNECTION_ARN"
+echo "  CFn Template URL   : $CFN_TEMPLATE_URL"
+echo "  Hosted Zone ID     : $HEZO_HOSTED_ZONE_ID"
+echo "  Wildcard Cert ARN  : $WILDCARD_CERT_ARN"
+echo "  Scheduler Role ARN : $SCHEDULER_ROLE_ARN"
 echo
-echo "  [에이전트 엔드포인트 등록 방법]"
-echo "  aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
-echo "  aws ssm put-parameter --name hezo-validation-agent-endpoint --value <URL> --type String --overwrite"
-echo "  aws ssm put-parameter --name hezo-build-agent-endpoint      --value <URL> --type String --overwrite"
+echo "  [M8 고객사 CloudFormation 사전 등록 순서]"
+echo "  1. hezo-sites 버킷 정책 1회 업데이트 (계정 내 모든 CF 배포가 접근 가능하도록):"
+echo "     infra/cloudformation/setup-sites-bucket-policy.sh 실행"
+echo "  2. 템플릿 버킷 + 업로드:"
+echo "     aws s3 mb s3://hezo-cfn-templates --region ap-northeast-2"
+echo "     aws s3 cp infra/cloudformation/customer-infra.yaml s3://hezo-cfn-templates/"
+echo "  3. SSM 등록:"
+echo "     aws ssm put-parameter --name hezo-cfn-template-url     --value https://hezo-cfn-templates.s3.ap-northeast-2.amazonaws.com/customer-infra.yaml --type String --overwrite"
+echo "     aws ssm put-parameter --name hezo-hosted-zone-id       --value <ROUTE53_ZONE_ID> --type String --overwrite"
+echo "     aws ssm put-parameter --name hezo-wildcard-cert-arn    --value <ACM_ARN_US_EAST_1> --type String --overwrite"
+echo "     aws ssm put-parameter --name hezo-scheduler-role-arn   --value <SCHEDULER_ROLE_ARN> --type String --overwrite"
 echo
 echo "  [파이프라인 테스트 실행]"
 echo "  aws stepfunctions start-execution \\"
