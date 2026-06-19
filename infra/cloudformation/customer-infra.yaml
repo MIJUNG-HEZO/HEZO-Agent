@@ -312,7 +312,7 @@ Resources:
           # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙 (P3 출력: hezo-sites/{site_id}/)
           - Id: S3StaticOrigin
             DomainName: !Ref HezoSitesBucketRegionalDomain
-            OriginPath: !Sub /${SiteId}
+            OriginPath: !Sub /sites/${SiteId}/dist
             S3OriginConfig: {}
             OriginAccessControlId: !Ref CloudFrontOAC
           # 고객사 전용 EC2 (hezo-customer-backend :8080)
