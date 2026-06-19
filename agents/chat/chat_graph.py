@@ -9,7 +9,12 @@ from bedrock_guardrails_adapter import (
     GuardrailsApplyInput,
     MockBedrockGuardrailsClient,
 )
-from chat_state_store import ChatCheckpoint, InMemoryChatStateStore
+from chat_state_store import (
+    ChatCheckpoint,
+    ChatStateStore,
+    InMemoryChatStateStore,
+    SessionMetadata,
+)
 from chat_intent_guard import StaticChatIntentClassifier
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from contract_compile import ContractDraftInput, compile_contract_draft
@@ -110,12 +115,14 @@ class ChatGraphState:
 def run_chat_graph(
     initial_state: ChatGraphState,
     artifact_store: S3ArtifactStore | None = None,
+    state_store: ChatStateStore | None = None,
     *,
     seed_mock_p2_markdown: bool = True,
 ) -> ChatGraphState:
     """Run the deterministic graph skeleton in fixed stage order."""
 
     store = artifact_store or InMemoryS3ArtifactStore()
+    checkpoints = state_store or InMemoryChatStateStore()
     state = initial_state
     state = p2_markdown_request_node(state)
     state = p2_markdown_load_node(
@@ -130,7 +137,7 @@ def run_chat_graph(
     state = contract_compile_node(state)
     state = contract_quality_check_node(state)
     state = bedrock_guardrails_node(state)
-    state = chat_state_checkpoint_node(state)
+    state = chat_state_checkpoint_node(state, checkpoints)
     state = s3_artifact_storage_node(state, store)
     return state
 
@@ -404,8 +411,19 @@ def bedrock_guardrails_node(state: ChatGraphState) -> ChatGraphState:
     )
 
 
-def chat_state_checkpoint_node(state: ChatGraphState) -> ChatGraphState:
-    store = InMemoryChatStateStore()
+def chat_state_checkpoint_node(
+    state: ChatGraphState,
+    store: ChatStateStore,
+) -> ChatGraphState:
+    metadata = store.save_session_metadata(
+        SessionMetadata(
+            session_id=state.session_id,
+            user_id=state.user_id,
+            site_id=state.site_id,
+            stage=state.stage,
+            domain=state.domain,
+        )
+    )
     checkpoint = store.save_checkpoint(
         ChatCheckpoint(
             session_id=state.session_id,
@@ -417,8 +435,14 @@ def chat_state_checkpoint_node(state: ChatGraphState) -> ChatGraphState:
     return _replace(
         state,
         stage="chat_state_checkpoint",
-        checkpoint_ref={"pk": checkpoint.pk, "sk": checkpoint.sk},
-        reasons=state.reasons + ("chat_state_checkpoint_saved",),
+        checkpoint_ref={
+            "metadata": {"pk": metadata.pk, "sk": metadata.sk},
+            "checkpoint": {"pk": checkpoint.pk, "sk": checkpoint.sk},
+        },
+        reasons=state.reasons + (
+            "chat_session_metadata_saved",
+            "chat_state_checkpoint_saved",
+        ),
     )
 
 

@@ -597,17 +597,19 @@ SK = GUARDRAIL#{created_at}#{target}
 - `save_session_metadata`, `append_message`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryChatStateStore`로 저장/조회 검증
 - AWS dev smoke test에서는 `Boto3ChatStateStore`로 `hezo_agent_chat` write/read/delete 검증
+- chat graph는 `ChatStateStore` 주입을 통해 session metadata와 checkpoint를 저장
 - 실제 DynamoDB table, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
 - TTL, GSI 설정은 후속 운영 이슈에서 처리
-- LangGraph custom checkpointer 연결은 후속 이슈에서 처리
 
-이번 범위에서는 LangGraph custom checkpointer, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 실제 `langgraph` package의 custom checkpointer 구현과 AgentCore Runtime 연결을 포함하지 않습니다.
+현재 graph checkpoint stage는 repository 경계(`ChatStateStore`)를 통해 DynamoDB 저장소로 전환 가능합니다.
 
 AWS smoke test:
 
 ```bash
 python3 -m pip install -r agents/chat/requirements.txt
 python3 agents/chat/test_dynamodb_aws_smoke.py
+python3 agents/chat/test_chat_graph_dynamodb_aws_smoke.py
 ```
 
 ## S3 Artifact Storage
@@ -912,8 +914,14 @@ state 기준:
     "store_allowed": true
   },
   "checkpoint_ref": {
-    "pk": "SESSION#session_001",
-    "sk": "CHECKPOINT#bedrock_guardrails#000001"
+    "metadata": {
+      "pk": "SESSION#session_001",
+      "sk": "META"
+    },
+    "checkpoint": {
+      "pk": "SESSION#session_001",
+      "sk": "CHECKPOINT#bedrock_guardrails#000001"
+    }
   },
   "artifact_refs": [
     {
@@ -923,8 +931,9 @@ state 기준:
 }
 ```
 
-이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB custom checkpointer, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 실제 LangGraph `StateGraph` 런타임과 AgentCore Runtime 연결을 포함하지 않습니다.
 S3 artifact 경계는 `S3ArtifactStore` 주입으로 분리되어 있으며, 로컬 smoke는 in-memory store, AWS smoke는 `Boto3S3ArtifactStore`를 사용합니다.
+DynamoDB checkpoint 경계는 `ChatStateStore` 주입으로 분리되어 있으며, 로컬 smoke는 in-memory store, AWS smoke는 `Boto3ChatStateStore`를 사용합니다.
 
 ## Chat HTTP Wrapper
 
