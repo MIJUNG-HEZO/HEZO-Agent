@@ -1,0 +1,213 @@
+{
+  "Comment": "HEZO IaC Pipeline — site-published EventBridge 이벤트로 트리거. CloudFormation 고객사 스택 생성/업데이트 → 도메인 저장 → CloudFront 무효화 → 리포트 스케줄 등록",
+  "StartAt": "CreateCustomerStack",
+  "States": {
+
+    "CreateCustomerStack": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::cloudformation:createStack.sync",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.detail.site_id)",
+        "TemplateURL": "${CFN_TEMPLATE_URL}",
+        "Parameters": [
+          { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.detail.site_id" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.hezo.io', $.detail.site_id)" },
+          { "ParameterKey": "HostedZoneId",                  "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
+          { "ParameterKey": "WildcardCertArn",               "ParameterValue": "${WILDCARD_CERT_ARN}" },
+          { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
+          { "ParameterKey": "EcrImage",                      "ParameterValue": "${CUSTOMER_BACKEND_ECR_IMAGE}" },
+          { "ParameterKey": "TemplateType",                  "ParameterValue.$": "$.detail.template_type" },
+          { "ParameterKey": "TemplateCategory",              "ParameterValue.$": "$.detail.template_category" }
+        ],
+        "Capabilities": ["CAPABILITY_NAMED_IAM"],
+        "Tags": [
+          { "Key": "hezo:site-id",   "Value.$": "$.detail.site_id" },
+          { "Key": "hezo:managed-by","Value": "step-functions-iac" }
+        ]
+      },
+      "ResultPath": null,
+      "Next": "GetStackOutputs",
+      "TimeoutSeconds": 1800,
+      "Retry": [
+        {
+          "ErrorEquals": ["CloudFormation.CloudFormationException"],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 1,
+          "BackoffRate": 1
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["CloudFormation.AlreadyExistsException"],
+          "Next": "UpdateCustomerStack",
+          "ResultPath": null
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "UpdateCustomerStack": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::cloudformation:updateStack.sync",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.detail.site_id)",
+        "TemplateURL": "${CFN_TEMPLATE_URL}",
+        "Parameters": [
+          { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.detail.site_id" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "States.Format('{}.hezo.io', $.detail.site_id)" },
+          { "ParameterKey": "HostedZoneId",                  "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
+          { "ParameterKey": "WildcardCertArn",               "ParameterValue": "${WILDCARD_CERT_ARN}" },
+          { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
+          { "ParameterKey": "EcrImage",                      "ParameterValue": "${CUSTOMER_BACKEND_ECR_IMAGE}" },
+          { "ParameterKey": "TemplateType",                  "ParameterValue.$": "$.detail.template_type" },
+          { "ParameterKey": "TemplateCategory",              "ParameterValue.$": "$.detail.template_category" }
+        ],
+        "Capabilities": ["CAPABILITY_NAMED_IAM"]
+      },
+      "ResultPath": null,
+      "Next": "GetStackOutputs",
+      "TimeoutSeconds": 1800,
+      "Catch": [
+        {
+          "ErrorEquals": ["CloudFormation.ValidationException"],
+          "Next": "GetStackOutputs",
+          "ResultPath": null
+        },
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "GetStackOutputs": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+      "Parameters": {
+        "StackName.$": "States.Format('hezo-customer-{}', $.detail.site_id)"
+      },
+      "ResultSelector": {
+        "domain_url.$":         "$.Stacks[0].Outputs[0].OutputValue",
+        "cf_distribution_id.$": "$.Stacks[0].Outputs[1].OutputValue"
+      },
+      "ResultPath": "$.stack_outputs",
+      "Next": "StoreCustomerDomain",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "StoreCustomerDomain": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "pipeline_state",
+        "Key": {
+          "site_id": { "S.$": "$.detail.site_id" }
+        },
+        "UpdateExpression": "SET domain_url = :domain, cf_distribution_id = :cf_id",
+        "ExpressionAttributeValues": {
+          ":domain": { "S.$": "$.stack_outputs.domain_url" },
+          ":cf_id":  { "S.$": "$.stack_outputs.cf_distribution_id" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "CloudFrontInvalidation",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "CloudFrontInvalidation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:cloudfront:createInvalidation",
+      "Parameters": {
+        "DistributionId.$": "$.stack_outputs.cf_distribution_id",
+        "InvalidationBatch": {
+          "CallerReference.$": "$$.Execution.Name",
+          "Paths": {
+            "Quantity": 1,
+            "Items": ["/*"]
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "RegisterReportSchedule",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "RegisterReportSchedule",
+          "ResultPath": null
+        }
+      ]
+    },
+
+    "RegisterReportSchedule": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:scheduler:createSchedule",
+      "Parameters": {
+        "Name.$": "States.Format('hezo-report-{}', $.detail.site_id)",
+        "GroupName": "hezo-reports",
+        "ScheduleExpression": "rate(7 days)",
+        "FlexibleTimeWindow": { "Mode": "OFF" },
+        "Target": {
+          "Arn": "${REPORT_STATE_MACHINE_ARN}",
+          "RoleArn": "${SCHEDULER_ROLE_ARN}",
+          "Input.$": "States.Format('{\"site_id\":\"{}\",\"domain_url\":\"{}\"}', $.detail.site_id, $.stack_outputs.domain_url)"
+        }
+      },
+      "ResultPath": null,
+      "Next": "IaCSuccess",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCSuccess",
+          "ResultPath": null
+        }
+      ]
+    },
+
+    "IaCSuccess": {
+      "Type": "Succeed"
+    },
+
+    "IaCFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:ap-northeast-2:${AWS_ACCOUNT_ID}:hezo-pipeline-alerts",
+        "Subject": "HEZO IaC Pipeline Failed",
+        "Message.$": "States.Format('IaC pipeline failed for site_id={}, execution={}', $.detail.site_id, $$.Execution.Name)"
+      },
+      "ResultPath": null,
+      "Next": "IaCPipelineFailed",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "IaCPipelineFailed",
+          "ResultPath": null
+        }
+      ]
+    },
+
+    "IaCPipelineFailed": {
+      "Type": "Fail",
+      "Error": "IaCPipelineFailed",
+      "Cause": "IaC pipeline failed. Check SNS alert and CloudWatch Logs."
+    }
+
+  }
+}
