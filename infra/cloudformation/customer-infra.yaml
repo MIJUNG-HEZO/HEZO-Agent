@@ -16,15 +16,18 @@ Parameters:
 
   DomainName:
     Type: String
-    Description: 고객사 서브도메인 (e.g. mybiz.hezo.io)
+    Default: ''
+    Description: 고객사 서브도메인 (e.g. mybiz.hezo.io). 비워두면 CloudFront 기본 도메인으로 테스트 가능.
 
   HostedZoneId:
     Type: String
-    Description: Route 53 Hosted Zone ID (hezo.io)
+    Default: ''
+    Description: Route 53 Hosted Zone ID. DomainName이 있을 때만 필요.
 
   WildcardCertArn:
     Type: String
-    Description: ACM 와일드카드 인증서 ARN (*.hezo.io, 반드시 us-east-1 발급)
+    Default: ''
+    Description: ACM 와일드카드 인증서 ARN (*.hezo.io, us-east-1). DomainName이 있을 때만 필요.
 
   HezoSitesBucketName:
     Type: String
@@ -56,7 +59,8 @@ Parameters:
 # Conditions
 # ══════════════════════════════════════════════════════════════════════════════
 Conditions:
-  HasKeyName: !Not [!Equals [!Ref EC2KeyName, '']]
+  HasKeyName:      !Not [!Equals [!Ref EC2KeyName, '']]
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Resources
@@ -263,13 +267,17 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub HEZO customer — ${SiteId} / ${DomainName}
-        Aliases:
-          - !Ref DomainName
-        ViewerCertificate:
-          AcmCertificateArn: !Ref WildcardCertArn
-          SslSupportMethod: sni-only
-          MinimumProtocolVersion: TLSv1.2_2021
+        Comment: !Sub HEZO customer — ${SiteId}
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref DomainName]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref WildcardCertArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
         DefaultRootObject: index.html
         HttpVersion: http2
         Origins:
@@ -316,9 +324,10 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
 
-  # ── Route 53 ─────────────────────────────────────────────────────────────────
+  # ── Route 53 (커스텀 도메인이 있을 때만 생성) ─────────────────────────────────
   CustomerDNSRecord:
     Type: AWS::Route53::RecordSet
+    Condition: HasCustomDomain
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
@@ -333,8 +342,11 @@ Resources:
 # ══════════════════════════════════════════════════════════════════════════════
 Outputs:
   DomainUrl:
-    Description: 고객사 사이트 URL
-    Value: !Sub 'https://${DomainName}'
+    Description: 고객사 사이트 URL (커스텀 도메인 없으면 CloudFront 기본 URL)
+    Value: !If
+      - HasCustomDomain
+      - !Sub 'https://${DomainName}'
+      - !Sub 'https://${CloudFrontDistribution.DomainName}'
 
   CloudFrontDistributionId:
     Description: CloudFront 배포 ID (캐시 무효화용)
