@@ -118,14 +118,15 @@ bash infra/chat/verify_dev_infra.sh
 python3 agents/chat/test_s3_aws_smoke.py
 python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 python3 agents/chat/test_chat_graph_s3_pipeline_aws_smoke.py
+python3 agents/chat/test_dynamodb_aws_smoke.py
+python3 agents/chat/test_chat_graph_dynamodb_aws_smoke.py
 ```
 
 `verify_dev_infra.sh`는 read-only AWS CLI 호출만 수행한다. 없는 리소스는 `MISSING`으로 표시하고,
-생성이나 수정은 하지 않는다. `test_*_aws_smoke.py`는 dev bucket에 임시 객체를 쓰고 검증 후 삭제한다.
+생성이나 수정은 하지 않는다. `test_*_aws_smoke.py`는 dev bucket 또는 DynamoDB table에 임시 데이터를 쓰고 검증 후 삭제한다.
 
 ## 후속 작업
 
 - AgentCore Runtime 실제 생성 및 ECR 이미지 배포
 - Backend/Frontend에서 호출할 HTTP 계약 확정
-- DynamoDB state/checkpoint store 실제 구현
 - 운영 전 IAM 최소 권한 재점검

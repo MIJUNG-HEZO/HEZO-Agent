@@ -1922,8 +1922,12 @@ def _validate_chat_graph_cases() -> list[str]:
         errors.append("chat graph는 quality_check 결과를 포함해야 합니다.")
     if final_dict["guardrail_result"].get("action") != "NONE":
         errors.append("안전한 contract draft는 graph Guardrails를 통과해야 합니다.")
-    if not final_dict["checkpoint_ref"].get("pk") or not final_dict["checkpoint_ref"].get("sk"):
+    checkpoint_ref = final_dict["checkpoint_ref"].get("checkpoint", {})
+    metadata_ref = final_dict["checkpoint_ref"].get("metadata", {})
+    if not checkpoint_ref.get("pk") or not checkpoint_ref.get("sk"):
         errors.append("chat graph는 checkpoint_ref를 포함해야 합니다.")
+    if not metadata_ref.get("pk") or metadata_ref.get("sk") != "META":
+        errors.append("chat graph는 session metadata ref를 포함해야 합니다.")
     if not final_dict["artifact_refs"] or "uri" not in final_dict["artifact_refs"][0]:
         errors.append("chat graph는 artifact_refs uri를 포함해야 합니다.")
     if "contract_draft_artifact_saved" not in final_state.reasons:

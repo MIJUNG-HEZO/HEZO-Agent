@@ -13,6 +13,7 @@ from chat_intent_guard import (
     StaticChatIntentClassifier,
 )
 from chat_session_start import ChatSessionStartInput, start_chat_session
+from chat_state_store import Boto3ChatStateStore, ChatStateStore, InMemoryChatStateStore
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from p2_markdown_loader import P2MarkdownLoadInput, build_p2_markdown_ref
 from s3_artifact_store import (
@@ -149,6 +150,7 @@ def _run_graph_smoke(session_id: str, session_attrs: dict[str, Any]) -> dict[str
             ),
         ),
         artifact_store=_s3_store(session_attrs),
+        state_store=_state_store(session_attrs),
         seed_mock_p2_markdown=_seed_mock_p2_markdown(session_attrs),
     )
     return result.to_dict()
@@ -283,6 +285,12 @@ def _s3_store(session_attrs: dict[str, Any]) -> S3ArtifactStore:
     if str(session_attrs.get("storage_mode", "memory")).lower() == "aws":
         return Boto3S3ArtifactStore()
     return InMemoryS3ArtifactStore()
+
+
+def _state_store(session_attrs: dict[str, Any]) -> ChatStateStore:
+    if str(session_attrs.get("storage_mode", "memory")).lower() == "aws":
+        return Boto3ChatStateStore()
+    return InMemoryChatStateStore()
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:
