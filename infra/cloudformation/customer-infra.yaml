@@ -17,7 +17,7 @@ Parameters:
   DomainName:
     Type: String
     Default: ''
-    Description: 고객사 서브도메인 (e.g. mybiz.hezo.io). 비워두면 CloudFront 기본 도메인으로 테스트 가능.
+    Description: 고객사 소유 도메인 (e.g. hezo.doodo.cloud). 비워두면 CloudFront 기본 도메인으로 테스트 가능.
 
   HostedZoneId:
     Type: String
@@ -27,7 +27,7 @@ Parameters:
   WildcardCertArn:
     Type: String
     Default: ''
-    Description: ACM 와일드카드 인증서 ARN (*.hezo.io, us-east-1). DomainName이 있을 때만 필요.
+    Description: ACM 인증서 ARN (고객 도메인 기준 발급, us-east-1). DomainName이 있을 때만 필요.
 
   HezoSitesBucketName:
     Type: String
@@ -49,6 +49,25 @@ Parameters:
     Type: String
     Default: ''
     Description: EC2 SSH 키 페어 이름 (비워두면 SSM Session Manager로 접속)
+
+  EcrImage:
+    Type: String
+    Description: hezo-customer-backend ECR 이미지 URI (e.g. 492554570964.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-customer-backend:latest)
+
+  TemplateType:
+    Type: String
+    Description: 템플릿 슬러그 (e.g. dental, cafe-menu, developer-docs)
+
+  TemplateCategory:
+    Type: String
+    AllowedValues: [landing, blog, store]
+    Description: 템플릿 카테고리
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: 'Hezo1234!'
+    Description: MySQL hezo 유저 비밀번호
 
   VpcCidrBlock:
     Type: String
@@ -135,8 +154,8 @@ Resources:
       SecurityGroupIngress:
         # CloudFront IP는 고정 불가 → 운영 시 WAF + aws-managed-ip-ranges 추가 권장
         - IpProtocol: tcp
-          FromPort: 8000
-          ToPort: 8000
+          FromPort: 8080
+          ToPort: 8080
           CidrIp: '0.0.0.0/0'
       SecurityGroupEgress:
         - IpProtocol: '-1'
@@ -167,7 +186,17 @@ Resources:
               # 공유 hezo-sites 버킷에서 해당 site_id 경로만 읽기
               - Effect: Allow
                 Action: ['s3:GetObject']
-                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/${SiteId}/*'
+                Resource: !Sub 'arn:aws:s3:::${HezoSitesBucketName}/sites/${SiteId}/*'
+              # ECR에서 hezo-customer-backend 이미지 pull
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub 'arn:aws:ecr:ap-northeast-2:${AWS::AccountId}:repository/hezo-customer-backend'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -196,44 +225,46 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -e
+          exec > /var/log/hezo-setup.log 2>&1
+
           dnf update -y
-          dnf install -y python3.12 python3.12-pip mysql-server
+          dnf install -y mariadb105-server docker
 
-          systemctl start mysqld
-          systemctl enable mysqld
+          # MariaDB 시작
+          systemctl start mariadb
+          systemctl enable mariadb
 
-          pip3.12 install fastapi "uvicorn[standard]" pymysql sqlalchemy
+          # DB/유저 생성 (초기 root는 비밀번호 없음)
+          # localhost = Unix 소켓, 127.0.0.1 = TCP (Docker --network host 연결용 — 둘 다 필요)
+          mysql -u root -e "
+            CREATE DATABASE IF NOT EXISTS hezo_site CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+            CREATE USER IF NOT EXISTS 'hezo'@'localhost' IDENTIFIED BY '${DBPassword}';
+            CREATE USER IF NOT EXISTS 'hezo'@'127.0.0.1' IDENTIFIED BY '${DBPassword}';
+            GRANT ALL PRIVILEGES ON hezo_site.* TO 'hezo'@'localhost';
+            GRANT ALL PRIVILEGES ON hezo_site.* TO 'hezo'@'127.0.0.1';
+            FLUSH PRIVILEGES;
+          "
 
-          mkdir -p /opt/hezo-site
+          # Docker 시작
+          systemctl start docker
+          systemctl enable docker
 
-          # 기본 헬스체크 + 방문자 회원 API 골격
-          # 실제 앱 코드는 배포 파이프라인에서 S3를 통해 주입
-          cat > /opt/hezo-site/main.py << 'PYEOF'
-          from fastapi import FastAPI
-          app = FastAPI()
+          # ECR 로그인 (EC2 IAM 역할 기반 — 키 불필요)
+          ECR_REGISTRY=$(echo ${EcrImage} | cut -d'/' -f1)
+          aws ecr get-login-password --region ap-northeast-2 \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-          @app.get("/api/health")
-          def health():
-              return {"status": "ok", "site_id": "${SiteId}"}
-          PYEOF
-
-          cat > /etc/systemd/system/hezo-site.service << 'SVCEOF'
-          [Unit]
-          Description=HEZO Site API (${SiteId})
-          After=network.target mysqld.service
-          [Service]
-          Type=simple
-          WorkingDirectory=/opt/hezo-site
-          ExecStart=/usr/bin/python3.12 -m uvicorn main:app --host 0.0.0.0 --port 8000
-          Restart=on-failure
-          RestartSec=5
-          [Install]
-          WantedBy=multi-user.target
-          SVCEOF
-
-          systemctl daemon-reload
-          systemctl enable hezo-site
-          systemctl start hezo-site
+          # hezo-customer-backend 컨테이너 실행
+          docker pull ${EcrImage}
+          docker run -d \
+            --name hezo-customer-backend \
+            --restart unless-stopped \
+            --network host \
+            -e TEMPLATE_TYPE="${TemplateType}" \
+            -e TEMPLATE_CATEGORY="${TemplateCategory}" \
+            -e SITE_ID="${SiteId}" \
+            -e DB_URL="mysql+pymysql://hezo:${DBPassword}@127.0.0.1/hezo_site" \
+            ${EcrImage}
 
   EC2EIP:
     Type: AWS::EC2::EIP
@@ -264,6 +295,7 @@ Resources:
   # ── CloudFront ───────────────────────────────────────────────────────────────
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
+    DependsOn: EC2EIP
     Properties:
       DistributionConfig:
         Enabled: true
@@ -284,14 +316,15 @@ Resources:
           # 공유 hezo-sites 버킷. OriginPath로 해당 site_id 경로만 서빙
           - Id: S3StaticOrigin
             DomainName: !Ref HezoSitesBucketRegionalDomain
-            OriginPath: !Sub /${SiteId}
+            OriginPath: !Sub /sites/${SiteId}/dist
             S3OriginConfig: {}
             OriginAccessControlId: !Ref CloudFrontOAC
           # 고객사 전용 EC2 (FastAPI 백엔드 + MySQL)
+          # CloudFront는 IP 주소를 오리진으로 허용하지 않으므로 PublicDnsName 사용
           - Id: EC2ApiOrigin
-            DomainName: !GetAtt EC2EIP.PublicIp
+            DomainName: !GetAtt EC2Instance.PublicDnsName
             CustomOriginConfig:
-              HTTPPort: 8000
+              HTTPPort: 8080
               OriginProtocolPolicy: http-only
               OriginReadTimeout: 60
         # 기본 → 정적 HTML/GEO 파일 (hezo-sites/{site_id}/)
@@ -366,4 +399,4 @@ Outputs:
 
   StaticSitePrefix:
     Description: 정적 파일 S3 경로 (공유 버킷 내 prefix)
-    Value: !Sub '${HezoSitesBucketName}/${SiteId}/'
+    Value: !Sub '${HezoSitesBucketName}/sites/${SiteId}/dist/'
