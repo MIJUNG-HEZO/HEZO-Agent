@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from agents.shared.s3_utils import write_json
 
-from agents.wiki.constants import WIKI_BUCKET, raw_key
+from agents.wiki.constants import STAGING_BUCKET, raw_key
 from agents.wiki.fetch import fetch_many
 from agents.wiki.search import search_sources
 
@@ -23,7 +23,7 @@ def save_raw(category: str, domain: str, docs: list[dict], *, date: str | None =
     """수집 원문(json)을 S3 raw/에 저장(생성 단계 전달용). raw 키 반환."""
     date = date or _today()
     key = raw_key(category, domain, date)
-    write_json(WIKI_BUCKET, key, {"category": category, "domain": domain, "date": date, "docs": docs})
+    write_json(STAGING_BUCKET, key, {"category": category, "domain": domain, "date": date, "docs": docs})
     return key
 
 

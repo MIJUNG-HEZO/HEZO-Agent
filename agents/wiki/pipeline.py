@@ -14,7 +14,7 @@ from __future__ import annotations
 from agents.shared.s3_utils import read_json
 
 from agents.wiki.catalog import get_entry
-from agents.wiki.constants import WIKI_BUCKET
+from agents.wiki.constants import STAGING_BUCKET
 from agents.wiki.generate import assemble_markdown, generate
 from agents.wiki.index_store import WikiIndexStore
 from agents.wiki.precheck import precheck
@@ -28,7 +28,7 @@ def generate_and_store(category: str, domain: str, raw_key: str, *, llm=None, in
     label = entry["label"]
     category = entry["category"]  # 진실원본(입력 category 불신) — 키·파서 일치 보장
 
-    payload = read_json(WIKI_BUCKET, raw_key)
+    payload = read_json(STAGING_BUCKET, raw_key)
     docs = payload.get("docs", [])
 
     gen = generate(category, domain, docs, llm=llm)
