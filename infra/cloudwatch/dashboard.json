@@ -39,7 +39,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Invocations\"', 'Sum', 300)", "id": "inv", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Invocations\" DEFAULT', 'Sum', 300)", "id": "inv", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -53,8 +53,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"UserErrors\"', 'Sum', 300)", "id": "uerr", "region": "ap-northeast-2" } ],
-          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"SystemErrors\"', 'Sum', 300)", "id": "serr", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Errors\" DEFAULT', 'Sum', 300)", "id": "err", "region": "ap-northeast-2" } ]
         ]
       }
     },
@@ -68,7 +67,7 @@
         "stacked": false,
         "period": 300,
         "metrics": [
-          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Latency\"', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
+          [ { "expression": "SEARCH('{AWS/Bedrock-AgentCore,Name,Operation,Resource} MetricName=\"Latency\" DEFAULT', 'Average', 300)", "id": "lat", "region": "ap-northeast-2" } ]
         ]
       }
     }
