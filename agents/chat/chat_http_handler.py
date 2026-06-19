@@ -15,7 +15,12 @@ from chat_intent_guard import (
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_turn_handler import ChatTurnInput, handle_chat_turn
 from p2_markdown_loader import P2MarkdownLoadInput, build_p2_markdown_ref
-from s3_artifact_store import ArtifactPayload, InMemoryS3ArtifactStore
+from s3_artifact_store import (
+    ArtifactPayload,
+    Boto3S3ArtifactStore,
+    InMemoryS3ArtifactStore,
+    S3ArtifactStore,
+)
 
 
 DEFAULT_CATEGORY = "services"
@@ -53,7 +58,7 @@ def handle_agentcore_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _run_session_start(session_id: str, session_attrs: dict[str, Any]) -> dict[str, Any]:
     request_input = _build_session_start_input(session_id, session_attrs)
-    store = InMemoryS3ArtifactStore()
+    store = _s3_store(session_attrs)
     load_input = P2MarkdownLoadInput(
         category=request_input.category,
         domain=request_input.domain,
@@ -65,16 +70,17 @@ def _run_session_start(session_id: str, session_attrs: dict[str, Any]) -> dict[s
         source_grade=request_input.source_grade,
     )
     ref = build_p2_markdown_ref(load_input)
-    store.put_artifact(
-        ArtifactPayload(
-            ref=ref,
-            body=_sample_p2_markdown_content(
-                domain=request_input.domain,
-                category=request_input.category,
-                domain_label=request_input.domain_label,
-            ),
+    if _seed_mock_p2_markdown(session_attrs):
+        store.put_artifact(
+            ArtifactPayload(
+                ref=ref,
+                body=_sample_p2_markdown_content(
+                    domain=request_input.domain,
+                    category=request_input.category,
+                    domain_label=request_input.domain_label,
+                ),
+            )
         )
-    )
     return start_chat_session(request_input, store).to_dict()
 
 
@@ -128,6 +134,10 @@ def _run_graph_smoke(session_id: str, session_attrs: dict[str, Any]) -> dict[str
             domain=str(session_attrs.get("domain", DEFAULT_DOMAIN)),
             domain_label=str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL)),
             selected_template=str(session_attrs.get("selected_template", DEFAULT_TEMPLATE)),
+            p2_source_s3_key=_optional_text(session_attrs.get("source_s3_key")),
+            p2_version=_optional_text(session_attrs.get("version")) or "v001",
+            p2_source_count=int(session_attrs.get("source_count", 2)),
+            p2_source_grade=str(session_attrs.get("source_grade", "mid")),
             slot_registry=_slot_registry(session_attrs),
             known_answers=_dict_value(
                 session_attrs.get("known_answers"),
@@ -137,7 +147,9 @@ def _run_graph_smoke(session_id: str, session_attrs: dict[str, Any]) -> dict[str
                 session_attrs.get("missing_slots"),
                 default=("core_services", "contact_method"),
             ),
-        )
+        ),
+        artifact_store=_s3_store(session_attrs),
+        seed_mock_p2_markdown=_seed_mock_p2_markdown(session_attrs),
     )
     return result.to_dict()
 
@@ -259,6 +271,24 @@ def _tuple_value(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(str(item) for item in value)
     return default
+
+
+def _optional_text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _s3_store(session_attrs: dict[str, Any]) -> S3ArtifactStore:
+    if str(session_attrs.get("storage_mode", "memory")).lower() == "aws":
+        return Boto3S3ArtifactStore()
+    return InMemoryS3ArtifactStore()
+
+
+def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:
+    if "seed_mock_p2_markdown" in session_attrs:
+        return bool(session_attrs.get("seed_mock_p2_markdown"))
+    return str(session_attrs.get("storage_mode", "memory")).lower() != "aws"
 
 
 def _intent_override(session_attrs: dict[str, Any]) -> ChatIntent:

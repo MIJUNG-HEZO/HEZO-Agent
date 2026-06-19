@@ -640,6 +640,17 @@ sites/{site_id}/contract_final.json
 sessions/{session_id}/guardrails/{target}/{timestamp}.json
 ```
 
+P2 markdown load 정책:
+
+- `source_s3_key`가 명시되면 해당 key를 우선 사용합니다.
+- `source_s3_key`가 없으면 dev fallback으로 `industries/{category}/{domain}.md`를 사용합니다.
+- P2 팀의 최종 prefix가 확정되면 호출 payload의 `source_s3_key`만 조정하고 loader 계약은 유지합니다.
+
+P4 Contract 저장 정책:
+
+- Contract draft는 `hezo-artifacts/sites/{site_id}/contracts/draft/{version}.json`에 저장합니다.
+- Contract final은 quality check가 `preview_ready=true`일 때 `hezo-artifacts/sites/{site_id}/contract_final.json`에 저장합니다.
+
 출력 기준:
 
 ```json
@@ -658,6 +669,7 @@ sessions/{session_id}/guardrails/{target}/{timestamp}.json
 - `build_artifact_ref`, `put_artifact`, `get_artifact` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryS3ArtifactStore`로 저장/조회 검증
 - AWS dev smoke test에서는 `Boto3S3ArtifactStore`로 `hezo-chat` write/read/delete 검증
+- graph S3 pipeline smoke test에서는 `hezo-wiki` P2 markdown load와 `hezo-artifacts` Contract draft/final 저장을 검증
 - `store_allowed=false` 또는 `guardrail_action != NONE`이면 저장을 거부
 - 실제 S3 bucket, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
 - KMS/SSE, lifecycle policy 고도화는 후속 운영 이슈에서 처리
@@ -669,6 +681,8 @@ AWS smoke test:
 ```bash
 python3 -m pip install -r agents/chat/requirements.txt
 python3 agents/chat/test_s3_aws_smoke.py
+python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
+python3 agents/chat/test_chat_graph_s3_pipeline_aws_smoke.py
 ```
 
 ## Bedrock Claude Invocation
@@ -909,7 +923,8 @@ state 기준:
 }
 ```
 
-이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB/S3/Boto3 호출, Bedrock 호출, AgentCore Runtime 연결을 포함하지 않습니다.
+이번 범위에서는 실제 LangGraph `StateGraph`, DynamoDB custom checkpointer, AgentCore Runtime 연결을 포함하지 않습니다.
+S3 artifact 경계는 `S3ArtifactStore` 주입으로 분리되어 있으며, 로컬 smoke는 in-memory store, AWS smoke는 `Boto3S3ArtifactStore`를 사용합니다.
 
 ## Chat HTTP Wrapper
 
