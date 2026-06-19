@@ -50,7 +50,7 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         parsed = urlparse(canonical)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
     except (KeyError, IndexError, TypeError):
-        base_url = f"https://{site_id}.hezo.io"
+        base_url = f"https://{site_id}.doodo.cloud"
         logger.warning("canonical URL 파싱 실패 — fallback 사용: %s", base_url)
 
     prefix = f"sites/{site_id}/dist"
