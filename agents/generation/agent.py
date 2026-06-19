@@ -127,6 +127,14 @@ JSON 시작 전 또는 후에 어떤 텍스트도 추가하지 마세요.
           "mainEntity": [
             { "@type": "Question", "name": "<질문>", "acceptedAnswer": { "@type": "Answer", "text": "<답변>" } }
           ]
+        },
+        {
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "serviceType": "<대표 서비스명>",
+          "provider": { "@type": "<업종 Schema 타입>", "name": "<업체명>" },
+          "description": "<서비스 설명>",
+          "areaServed": { "@type": "City", "name": "<지역>" }
         }
       ],
       "blocks": [
@@ -139,13 +147,17 @@ JSON 시작 전 또는 후에 어떤 텍스트도 추가하지 마세요.
     }
   ],
   "supplementary_files": {
-    "llms_txt": "# <업체명>\\n> <업종> | <지역>\\n\\n## 서비스\\n- <서비스1>\\n...",
-    "llms_full_txt": "<상세 설명 전체>",
-    "sitemap_pages": [{ "path": "/", "priority": 1.0, "changefreq": "monthly" }],
+    "llms_txt": "# <업체명>\\n> <업종> | <지역>\\n\\n## 핵심 페이지\\n- [홈](/) : <업체 한 줄 설명>\\n- [서비스 안내](/#services) : <서비스 한 줄 요약>\\n- [자주 묻는 질문](/#faq) : 비용·기간·절차 안내\\n- [상담 신청](/#contact) : 무료 상담\\n\\n## 서비스\\n- <서비스1>\\n- <서비스2>\\n\\n## 연락처\\n- 전화: <전화번호>\\n- 영업시간: <영업시간>",
+    "llms_full_txt": "# <업체명>\\n> <업종> | <지역>\\n\\n<업체 소개 2~3문장>\\n\\n## 핵심 서비스\\n- **<서비스1>**: <구체적 설명>\\n- **<서비스2>**: <구체적 설명>\\n\\n## 고객 고통점 해결\\n- <문제1>: <해결책>\\n\\n## FAQ\\n- Q: <실제 사용자가 AI 검색에 물어볼 질문1>\\n  A: <구체적 수치·비용·기간 포함 답변>\\n- Q: <질문2>\\n  A: <답변2>\\n- Q: <질문3>\\n  A: <답변3>\\n\\n## 연락처\\n- 전화: <전화번호>\\n- 영업시간: <영업시간>\\n\\n## 타겟 고객\\n- <고객군1>\\n- <고객군2>",
+    "sitemap_pages": [
+      { "path": "/", "priority": 1.0, "changefreq": "monthly" },
+      { "path": "/llms-full.txt", "priority": 0.8, "changefreq": "monthly" }
+    ],
     "robots_rules": [
       "User-agent: GPTBot", "Allow: /",
       "User-agent: ClaudeBot", "Allow: /",
       "User-agent: PerplexityBot", "Allow: /",
+      "User-agent: Yeti", "Allow: /",
       "User-agent: *", "Allow: /",
       "Sitemap: https://<slug>.hezo.io/sitemap.xml"
     ]
@@ -172,9 +184,11 @@ education      → EducationalOrganization
 ## BLOCKING 조건 (반드시 준수)
 - H1: 페이지당 정확히 1개
 - FAQ: 최소 5개 (h2_list와 jsonld.FAQPage.mainEntity 모두 5개 이상)
-- llms_txt 필수 생성
-- robots_rules에 GPTBot/ClaudeBot/PerplexityBot Allow 필수
+- llms_txt 필수 생성 (## 핵심 페이지 링크 섹션 포함)
+- llms_full_txt에 ## FAQ 섹션 필수 (Q:/A: 형식, 3개 이상)
+- robots_rules에 GPTBot/ClaudeBot/PerplexityBot/Yeti Allow 필수
 - FAQPage JSON-LD 필수
+- Service JSON-LD 필수 (대표 서비스 1개 이상)
 """
 
 
@@ -498,8 +512,11 @@ async def _handle_invoke(request: Request) -> JSONResponse:
     session_id = payload.get("sessionId", "")
     input_text = payload.get("inputText", "")
     session_attrs = payload.get("sessionAttributes", {})
+    # Step Functions HTTP Task / 직접 호출 시 payload root에 site_id가 올 수 있음
+    if payload.get("site_id") and not session_attrs.get("site_id"):
+        session_attrs = {**session_attrs, "site_id": payload["site_id"]}
 
-    logger.info("invoke 호출 — sessionId=%s", session_id)
+    logger.info("invoke 호출 — sessionId=%s body_keys=%s", session_id, list(payload.keys()))
 
     try:
         site_id = parse_site_id(input_text, session_attrs)
