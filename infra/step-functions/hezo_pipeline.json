@@ -127,28 +127,23 @@
 
     "InvokeBuildWorker": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Resource": "arn:aws:states:::http:invoke",
       "Parameters": {
-        "Cluster": "${ECS_CLUSTER}",
-        "TaskDefinition": "hezo-build-worker",
-        "LaunchType": "FARGATE",
-        "Overrides": {
-          "ContainerOverrides": [
-            {
-              "Name": "build-worker",
-              "Environment": [
-                { "Name": "SITE_ID", "Value.$": "$.site_id" },
-                { "Name": "MODE", "Value": "publish" }
-              ]
-            }
-          ]
+        "ApiEndpoint": "${BUILD_AGENT_ENDPOINT}/invocations",
+        "Method": "POST",
+        "Headers": {
+          "Content-Type": "application/json"
         },
-        "NetworkConfiguration": {
-          "AwsvpcConfiguration": {
-            "Subnets": ["${ECS_SUBNET_1}", "${ECS_SUBNET_2}"],
-            "SecurityGroups": ["${ECS_SECURITY_GROUP}"],
-            "AssignPublicIp": "DISABLED"
+        "RequestBody": {
+          "sessionId.$": "$$.Execution.Name",
+          "inputText.$": "States.Format('site_id={} mode=publish', $.site_id)",
+          "sessionAttributes": {
+            "site_id.$": "$.site_id",
+            "mode": "publish"
           }
+        },
+        "Authentication": {
+          "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}"
         }
       },
       "ResultPath": "$.build_result",
@@ -156,10 +151,11 @@
       "TimeoutSeconds": 600,
       "Retry": [
         {
-          "ErrorEquals": ["States.TaskFailed", "ECS.EcsException"],
+          "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503", "States.Timeout"],
           "IntervalSeconds": 15,
           "MaxAttempts": 2,
-          "BackoffRate": 2
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
         }
       ],
       "Catch": [
