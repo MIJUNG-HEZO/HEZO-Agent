@@ -35,7 +35,7 @@
         }
       },
       "healthCheck": {
-        "command":     ["CMD-SHELL", "curl -sf http://localhost:8080/ping || exit 1"],
+        "command":     ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ping')"],
         "interval":    30,
         "timeout":     5,
         "retries":     3,
