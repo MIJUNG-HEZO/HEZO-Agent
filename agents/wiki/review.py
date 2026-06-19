@@ -104,12 +104,16 @@ def review(
     *,
     llm: BedrockLLM | None = None,
     sources_block: str | None = None,
+    system_prompt: str | None = None,
 ) -> ReviewResult:
-    """본문을 출처와 대조해 8항목 채점 → 합성점수·게이트·컷 판정."""
+    """본문을 출처와 대조해 8항목 채점 → 합성점수·게이트·컷 판정.
+
+    system_prompt를 주면 기본 REVIEW_SYSTEM 대신 사용(보강 A의 강화 프롬프트 등).
+    """
     label = get_entry(domain)["label"]
     block = sources_block if sources_block is not None else build_sources_block(selected)
     llm = llm or BedrockLLM()
-    res = llm.complete(REVIEW_SYSTEM, build_review_user(label, body, block), max_tokens=600, temperature=0.0)
+    res = llm.complete(system_prompt or REVIEW_SYSTEM, build_review_user(label, body, block), max_tokens=600, temperature=0.0)
     if not res.ok:
         return ReviewResult(False, False, 0.0, reason=res.reason or "review_call_failed")
 

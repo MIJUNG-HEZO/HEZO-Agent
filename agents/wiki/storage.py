@@ -44,6 +44,8 @@ def save_industry_versioned(
     confidence: float,
     source_urls: list[str],
     index: WikiIndexStore | None = None,
+    check_version: bool = False,
+    expected_version: str | None = None,
 ) -> dict:
     """완성 md를 S3에 새 버전으로 저장하고, 그 VersionId로 DDB 메타를 갱신한다.
 
@@ -70,6 +72,8 @@ def save_industry_versioned(
         latest_version=version_id,
         confidence=confidence,
         source_urls=source_urls,
+        check_version=check_version,
+        expected_version=expected_version,
     )
     return {"version_id": version_id, "bytes": len(body), "committed": committed}
 
