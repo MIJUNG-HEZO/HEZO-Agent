@@ -6,6 +6,8 @@
 #   bash infra/build/deploy_ecs_service.sh --skip-build  # 이미지 빌드 생략 (기존 이미지 재사용)
 
 set -euo pipefail
+# Windows Git Bash에서 /path 형태가 Windows 경로로 변환되는 것을 방지
+export MSYS_NO_PATHCONV=1
 
 # ──────────────────────────────────────────────
 # 설정
@@ -44,9 +46,9 @@ for arg in "$@"; do
   [ "$arg" = "--skip-build" ] && SKIP_BUILD=true
 done
 
-log()  { echo "[INFO]  $*"; }
-ok()   { echo "[OK]    $*"; }
-warn() { echo "[WARN]  $*"; }
+log()  { echo "[INFO]  $*" >&2; }
+ok()   { echo "[OK]    $*" >&2; }
+warn() { echo "[WARN]  $*" >&2; }
 err()  { echo "[ERROR] $*" >&2; }
 
 aws_cmd() { aws --region "$REGION" "$@"; }
@@ -261,8 +263,9 @@ fi
 # 10. 태스크 정의 등록
 # ──────────────────────────────────────────────
 log "태스크 정의 등록: ${TASK_FAMILY}"
+TASK_DEF_JSON="$(cat "${SCRIPT_DIR}/task-definition.json")"
 TASK_DEF_ARN="$(aws_cmd ecs register-task-definition \
-  --cli-input-json "file://${SCRIPT_DIR}/task-definition.json" \
+  --cli-input-json "${TASK_DEF_JSON}" \
   --query "taskDefinition.taskDefinitionArn" --output text)"
 ok "태스크 정의 등록: ${TASK_DEF_ARN}"
 
