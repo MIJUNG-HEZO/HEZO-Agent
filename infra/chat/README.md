@@ -188,8 +188,44 @@ RUNTIME_STATUS=READY
 IMAGE_URI=...
 ```
 
+## AgentCore Runtime invoke smoke
+
+생성된 AgentCore Runtime에 실제 invoke 요청을 보내 Runtime 진입점이 동작하는지 확인한다.
+
+```bash
+source infra/chat/env.example
+bash infra/chat/invoke_agentcore_runtime.sh
+```
+
+기본 action은 `graph_smoke`이며, 필요하면 action을 바꿔 호출한다.
+
+```bash
+bash infra/chat/invoke_agentcore_runtime.sh --action session_start
+bash infra/chat/invoke_agentcore_runtime.sh --action chat_turn
+```
+
+스크립트 기준:
+
+- Runtime name: `HEZO_AGENTCORE_RUNTIME_NAME`
+- Runtime ARN: `bedrock-agentcore-control get-agent-runtime`으로 조회
+- Payload: `sessionId`, `inputText`, `sessionAttributes.action`
+- 기본 storage mode: `memory`
+
+정상 응답은 아래 형태를 포함해야 한다.
+
+```json
+{
+  "output": "chat_graph_smoke_complete ...",
+  "sessionState": {
+    "sessionId": "agentcore-smoke-session-001",
+    "action": "graph_smoke",
+    "stage": "..."
+  },
+  "metadata": {}
+}
+```
+
 ## 후속 작업
 
 - Backend/Frontend에서 호출할 HTTP 계약 확정
-- AgentCore Runtime invoke smoke 테스트
 - 운영 전 IAM 최소 권한 재점검
