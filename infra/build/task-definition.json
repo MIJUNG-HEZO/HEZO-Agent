@@ -1,0 +1,47 @@
+{
+  "family": "hezo-build-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::492554570964:role/hezo-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::492554570964:role/hezo-ecs-task-role",
+  "runtimePlatform": {
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "ARM64"
+  },
+  "containerDefinitions": [
+    {
+      "name": "build-worker",
+      "image": "492554570964.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-build-worker:latest",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "ARTIFACTS_BUCKET", "value": "hezo-artifacts" },
+        { "name": "SITE_BUCKET",       "value": "hezo-sites" },
+        { "name": "AWS_DEFAULT_REGION","value": "ap-northeast-2" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group":         "/hezo/build-worker",
+          "awslogs-region":        "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group":  "true"
+        }
+      },
+      "healthCheck": {
+        "command":     ["CMD-SHELL", "curl -sf http://localhost:8080/ping || exit 1"],
+        "interval":    30,
+        "timeout":     5,
+        "retries":     3,
+        "startPeriod": 30
+      },
+      "essential": true
+    }
+  ]
+}
