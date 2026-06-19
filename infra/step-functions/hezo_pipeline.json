@@ -262,10 +262,14 @@
         "StackName.$": "States.Format('hezo-customer-{}', $.site_id)",
         "TemplateURL": "${CFN_TEMPLATE_URL}",
         "Parameters": [
-          { "ParameterKey": "SiteId",          "ParameterValue.$": "$.site_id" },
-          { "ParameterKey": "DomainName",      "ParameterValue.$": "States.Format('{}.hezo.io', $.site_id)" },
-          { "ParameterKey": "HostedZoneId",    "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
-          { "ParameterKey": "WildcardCertArn", "ParameterValue": "${WILDCARD_CERT_ARN}" }
+          { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.site_id" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "$.domain_name" },
+          { "ParameterKey": "HostedZoneId",                  "ParameterValue.$": "$.hosted_zone_id" },
+          { "ParameterKey": "WildcardCertArn",               "ParameterValue.$": "$.cert_arn" },
+          { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
+          { "ParameterKey": "EcrImage",                      "ParameterValue": "${CUSTOMER_BACKEND_ECR_IMAGE}" },
+          { "ParameterKey": "TemplateType",                  "ParameterValue.$": "$.template_type" },
+          { "ParameterKey": "TemplateCategory",              "ParameterValue.$": "$.template_category" }
         ],
         "Capabilities": ["CAPABILITY_NAMED_IAM"],
         "Tags": [
@@ -305,10 +309,14 @@
         "StackName.$": "States.Format('hezo-customer-{}', $.site_id)",
         "TemplateURL": "${CFN_TEMPLATE_URL}",
         "Parameters": [
-          { "ParameterKey": "SiteId",          "ParameterValue.$": "$.site_id" },
-          { "ParameterKey": "DomainName",      "ParameterValue.$": "States.Format('{}.hezo.io', $.site_id)" },
-          { "ParameterKey": "HostedZoneId",    "ParameterValue": "${HEZO_HOSTED_ZONE_ID}" },
-          { "ParameterKey": "WildcardCertArn", "ParameterValue": "${WILDCARD_CERT_ARN}" }
+          { "ParameterKey": "SiteId",                        "ParameterValue.$": "$.site_id" },
+          { "ParameterKey": "DomainName",                    "ParameterValue.$": "$.domain_name" },
+          { "ParameterKey": "HostedZoneId",                  "ParameterValue.$": "$.hosted_zone_id" },
+          { "ParameterKey": "WildcardCertArn",               "ParameterValue.$": "$.cert_arn" },
+          { "ParameterKey": "HezoSitesBucketRegionalDomain", "ParameterValue": "${HEZO_SITES_BUCKET_DOMAIN}" },
+          { "ParameterKey": "EcrImage",                      "ParameterValue": "${CUSTOMER_BACKEND_ECR_IMAGE}" },
+          { "ParameterKey": "TemplateType",                  "ParameterValue.$": "$.template_type" },
+          { "ParameterKey": "TemplateCategory",              "ParameterValue.$": "$.template_category" }
         ],
         "Capabilities": ["CAPABILITY_NAMED_IAM"]
       },

@@ -116,6 +116,10 @@ WILDCARD_CERT_ARN=$(ssm_get "hezo-wildcard-cert-arn" "PLACEHOLDER_WILDCARD_CERT_
 REPORT_STATE_MACHINE_ARN=$(ssm_get "hezo-report-state-machine-arn" "PLACEHOLDER_REPORT_SM_ARN")
 SCHEDULER_ROLE_ARN=$(ssm_get "hezo-scheduler-role-arn" "PLACEHOLDER_SCHEDULER_ROLE_ARN")
 
+# hezo-customer-backend 연동 파라미터
+HEZO_SITES_BUCKET_DOMAIN=$(ssm_get "hezo-sites-bucket-domain" "hezo-sites.s3.ap-northeast-2.amazonaws.com")
+CUSTOMER_BACKEND_ECR_IMAGE=$(ssm_get "hezo-customer-backend-ecr-image" "PLACEHOLDER_CUSTOMER_BACKEND_ECR_IMAGE")
+
 if [[ "$GENERATION_AGENT_ENDPOINT" == PLACEHOLDER* ]]; then
     warn "hezo-generation-agent-endpoint SSM 없음 — placeholder 사용"
     warn "  등록: aws ssm put-parameter --name hezo-generation-agent-endpoint --value <URL> --type String --overwrite"
@@ -160,7 +164,7 @@ else
 fi
 
 if [[ "$WILDCARD_CERT_ARN" == PLACEHOLDER* ]]; then
-    warn "hezo-wildcard-cert-arn SSM 없음 (*.hezo.io ACM 인증서 — us-east-1 발급)"
+    warn "hezo-wildcard-cert-arn SSM 없음 (기본 ACM 인증서 ARN — us-east-1, 단 실행 입력 $.cert_arn 우선)"
     warn "  등록: aws ssm put-parameter --name hezo-wildcard-cert-arn --value <CERT_ARN> --type String --overwrite"
 else
     success "Wildcard Cert: $WILDCARD_CERT_ARN"
@@ -171,6 +175,15 @@ if [[ "$SCHEDULER_ROLE_ARN" == PLACEHOLDER* ]]; then
     warn "  등록: aws ssm put-parameter --name hezo-scheduler-role-arn --value <ROLE_ARN> --type String --overwrite"
 else
     success "Scheduler Role: $SCHEDULER_ROLE_ARN"
+fi
+
+success "Sites Bucket Domain: $HEZO_SITES_BUCKET_DOMAIN"
+
+if [[ "$CUSTOMER_BACKEND_ECR_IMAGE" == PLACEHOLDER* ]]; then
+    warn "hezo-customer-backend-ecr-image SSM 없음 (hezo-customer-backend ECR 이미지 URI)"
+    warn "  등록: aws ssm put-parameter --name hezo-customer-backend-ecr-image --value 492554570964.dkr.ecr.ap-northeast-2.amazonaws.com/hezo-customer-backend:latest --type String --overwrite"
+else
+    success "Customer Backend ECR: $CUSTOMER_BACKEND_ECR_IMAGE"
 fi
 
 # =============================================================================
@@ -191,23 +204,28 @@ python3 - "$DEFINITION_FILE" "$DEFINITION_TEMP" \
     "$HEZO_HOSTED_ZONE_ID" \
     "$WILDCARD_CERT_ARN" \
     "$REPORT_STATE_MACHINE_ARN" \
-    "$SCHEDULER_ROLE_ARN" <<'PYEOF'
+    "$SCHEDULER_ROLE_ARN" \
+    "$HEZO_SITES_BUCKET_DOMAIN" \
+    "$CUSTOMER_BACKEND_ECR_IMAGE" <<'PYEOF'
 import sys, json
 
 (src, dst, account, gen_ep, val_ep, build_ep, conn_arn,
- cfn_url, hosted_zone_id, wildcard_cert, report_sm_arn, scheduler_role) = sys.argv[1:]
+ cfn_url, hosted_zone_id, wildcard_cert, report_sm_arn, scheduler_role,
+ sites_bucket_domain, customer_backend_ecr) = sys.argv[1:]
 
 content = open(src, encoding='utf-8').read()
-content = content.replace('${AWS_ACCOUNT_ID}',           account)
-content = content.replace('${GENERATION_AGENT_ENDPOINT}', gen_ep)
-content = content.replace('${VALIDATION_AGENT_ENDPOINT}', val_ep)
-content = content.replace('${BUILD_AGENT_ENDPOINT}',      build_ep)
-content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}', conn_arn)
-content = content.replace('${CFN_TEMPLATE_URL}',          cfn_url)
-content = content.replace('${HEZO_HOSTED_ZONE_ID}',       hosted_zone_id)
-content = content.replace('${WILDCARD_CERT_ARN}',         wildcard_cert)
-content = content.replace('${REPORT_STATE_MACHINE_ARN}',  report_sm_arn)
-content = content.replace('${SCHEDULER_ROLE_ARN}',        scheduler_role)
+content = content.replace('${AWS_ACCOUNT_ID}',                account)
+content = content.replace('${GENERATION_AGENT_ENDPOINT}',     gen_ep)
+content = content.replace('${VALIDATION_AGENT_ENDPOINT}',     val_ep)
+content = content.replace('${BUILD_AGENT_ENDPOINT}',          build_ep)
+content = content.replace('${EVENTBRIDGE_CONNECTION_ARN}',    conn_arn)
+content = content.replace('${CFN_TEMPLATE_URL}',              cfn_url)
+content = content.replace('${HEZO_HOSTED_ZONE_ID}',           hosted_zone_id)
+content = content.replace('${WILDCARD_CERT_ARN}',             wildcard_cert)
+content = content.replace('${REPORT_STATE_MACHINE_ARN}',      report_sm_arn)
+content = content.replace('${SCHEDULER_ROLE_ARN}',            scheduler_role)
+content = content.replace('${HEZO_SITES_BUCKET_DOMAIN}',      sites_bucket_domain)
+content = content.replace('${CUSTOMER_BACKEND_ECR_IMAGE}',    customer_backend_ecr)
 
 # JSON 유효성 검증
 json.loads(content)
@@ -300,6 +318,8 @@ echo "  CFn Template URL   : $CFN_TEMPLATE_URL"
 echo "  Hosted Zone ID     : $HEZO_HOSTED_ZONE_ID"
 echo "  Wildcard Cert ARN  : $WILDCARD_CERT_ARN"
 echo "  Scheduler Role ARN : $SCHEDULER_ROLE_ARN"
+echo "  Sites Bucket Domain: $HEZO_SITES_BUCKET_DOMAIN"
+echo "  Customer Backend   : $CUSTOMER_BACKEND_ECR_IMAGE"
 echo
 echo "  [M8 고객사 CloudFormation 사전 등록 순서]"
 echo "  1. hezo-sites 버킷 정책 1회 업데이트 (계정 내 모든 CF 배포가 접근 가능하도록):"
@@ -316,5 +336,9 @@ echo
 echo "  [파이프라인 테스트 실행]"
 echo "  aws stepfunctions start-execution \\"
 echo "    --state-machine-arn '$STATE_MACHINE_ARN' \\"
-echo "    --input '{\"site_id\": \"site_tax_13_001\"}' \\"
+echo "    --input '{\"site_id\": \"site_tax_13_001\", \"template_type\": \"tax-accounting\", \"template_category\": \"landing\"}' \\"
 echo "    --region $REGION"
+echo
+echo "  [백엔드 publish 엔드포인트 수정 필요]"
+echo "  POST /sites/{id}/publish 의 Step Functions input에 template_type, template_category 추가 필요"
+echo "  (현재: {site_id} 만 전달 → CreateCustomerStack 에서 \$.template_type 참조 실패)"
