@@ -225,6 +225,18 @@ bash infra/chat/invoke_agentcore_runtime.sh --action chat_turn
 }
 ```
 
+AWS 저장 경로까지 확인하려면 별도 smoke 테스트를 실행한다.
+
+```bash
+python3 agents/chat/test_agentcore_aws_storage_smoke.py
+```
+
+이 테스트는 `storage_mode=aws`로 Runtime을 호출하고 아래 항목을 확인한 뒤 smoke 데이터를 정리한다.
+
+- DynamoDB `hezo_agent_chat` session metadata/checkpoint 저장
+- S3 `hezo-wiki` smoke P2 markdown 저장
+- S3 `hezo-artifacts` contract draft 저장
+
 ## 후속 작업
 
 - Backend/Frontend에서 호출할 HTTP 계약 확정
