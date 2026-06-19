@@ -165,6 +165,8 @@ __pycache__/
 build/
 # agents/build/는 P3 빌드 에이전트 소스 — gitignore 예외
 !agents/build/
+# infra/build/는 P3 ECS Fargate 인프라 코드 — gitignore 예외
+!infra/build/
 develop-eggs/
 dist/
 downloads/
