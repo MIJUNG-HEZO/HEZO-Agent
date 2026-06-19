@@ -130,8 +130,15 @@ def patch(site_id: str, render_spec: dict, blocking_issues: list[dict], contract
             applied.append(code)
 
         elif code == "MULTIPLE_H1":
-            # H1을 하나만 남기도록 blocks 중 첫 Hero의 h1 기준 유지, 나머지 표시 제거 안내
-            logger.warning("MULTIPLE_H1: 템플릿 레벨 문제 — render_spec 수정으로 해결 불가, 건너뜀")
+            # 첫 번째 Hero/Header 블록 이외 블록의 h1 필드를 h2로 강등
+            h1_count = 0
+            for block in page.get("blocks", []):
+                if block.get("h1"):
+                    h1_count += 1
+                    if h1_count > 1:
+                        block["h2"] = block.pop("h1")
+                        applied.append(code)
+                        break
 
         # ── JSON-LD ────────────────────────────────────────────────────────────
         elif code in ("NO_JSONLD", "NO_FAQ_PAGE_JSONLD"):
