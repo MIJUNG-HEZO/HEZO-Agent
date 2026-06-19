@@ -16,13 +16,35 @@
       "Action": [
         "s3:GetObject",
         "s3:PutObject",
+        "s3:DeleteObject",
         "s3:ListBucket"
       ],
       "Resource": [
         "arn:aws:s3:::hezo-artifacts",
         "arn:aws:s3:::hezo-artifacts/*",
         "arn:aws:s3:::hezo-sites",
-        "arn:aws:s3:::hezo-sites/*"
+        "arn:aws:s3:::hezo-sites/*",
+        "arn:aws:s3:::hezo-chat",
+        "arn:aws:s3:::hezo-chat/*",
+        "arn:aws:s3:::hezo-wiki",
+        "arn:aws:s3:::hezo-wiki/*",
+        "arn:aws:s3:::hezo-wiki-staging",
+        "arn:aws:s3:::hezo-wiki-staging/*"
+      ]
+    },
+    {
+      "Sid": "DynamoDBChatStateReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-2:${AWS_ACCOUNT_ID}:table/hezo_agent_chat"
       ]
     },
     {
