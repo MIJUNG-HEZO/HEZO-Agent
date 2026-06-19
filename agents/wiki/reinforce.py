@@ -23,7 +23,7 @@ from agents.shared.s3_utils import get_s3
 
 from agents.wiki import catalog
 from agents.wiki.catalog import get_entry
-from agents.wiki.constants import WIKI_BUCKET
+from agents.wiki.constants import STAGING_BUCKET
 from agents.wiki.generate import assemble_markdown, build_sources_block
 from agents.wiki.index_store import ConcurrencyConflict, WikiIndexStore
 from agents.wiki.llm import BedrockLLM
@@ -48,12 +48,12 @@ REINFORCE_REVIEW_SYSTEM = REVIEW_SYSTEM + (
 
 # ─── S3 입출력 (테스트 monkeypatch 지점) ─────────────────────────────────────
 def _read_pending(key: str) -> str:
-    resp = get_s3().get_object(Bucket=WIKI_BUCKET, Key=key)
+    resp = get_s3().get_object(Bucket=STAGING_BUCKET, Key=key)
     return resp["Body"].read().decode("utf-8")
 
 
 def _delete_pending(key: str) -> None:
-    get_s3().delete_object(Bucket=WIKI_BUCKET, Key=key)
+    get_s3().delete_object(Bucket=STAGING_BUCKET, Key=key)
 
 
 # ─── 파싱 헬퍼 ───────────────────────────────────────────────────────────────

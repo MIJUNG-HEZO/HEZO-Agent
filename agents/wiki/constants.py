@@ -1,14 +1,15 @@
 """HEZO Wiki (P2) 경로/버킷 상수 및 키 빌더.
 
-S3(hezo-wiki 버킷, 버전드 ON) 저장 형식 — 폴더 3개:
-- industries/{category}/{domain}.md   🟢 영구  위키 본문 (nested, 버전드)
-- pending/{category}/{domain}.md      🟠 임시  P1 보완 (보강 A 입력, S3 이벤트)
-- raw/{category}/{domain}/{date}.json 🟠 임시  크롤 원문 (Lifecycle 자동삭제)
+S3 = **2버킷** (버전드가 버킷 단위라 영구↔임시 분리, PRD §3.1):
+- 🟢 WIKI_BUCKET(hezo-wiki, 버전드 ON)  → industries/{category}/{domain}.md  영구 위키 본문. P1이 읽음
+- 🟠 STAGING_BUCKET(hezo-wiki-staging, 버전드 OFF, Lifecycle 삭제) → 임시:
+    - raw/{category}/{domain}/{date}.json  크롤 원문 (크롤→생성 핸드오프)
+    - pending/{category}/{domain}.md       P1 보완 (보강 A 입력, 처리 후 삭제)
 
 원칙:
 - 본문 읽기/쓰기 = 항상 S3 / "최신·상태·시드·만료" 메타 = 항상 DynamoDB(hezo_wiki_index).
+- 영구(industries)=WIKI_BUCKET / 임시(raw·pending)=STAGING_BUCKET. 키(경로)는 동일, 버킷만 다름.
 - 버킷명·리전·프로필은 환경변수로 주입 (credential은 코드/깃에 두지 않고 AWS 프로필만 참조).
-- 키 prefix는 코드 상수로 고정.
 
 상세 설계: 바탕화면 `HEZO_P2_위키저장소_PRD_v2_확정.md`.
 """
@@ -17,7 +18,8 @@ from __future__ import annotations
 import os
 
 # ─── 환경변수 (실제 키 값은 절대 코드/깃에 두지 않음 — 프로필/환경변수만 참조) ──
-WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki")
+WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki")              # 🟢 영구(industries), 버전드 ON, P1 읽음
+STAGING_BUCKET = os.environ.get("STAGING_BUCKET", "hezo-wiki-staging")  # 🟠 임시(raw·pending), 버전드 OFF
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "hezo-p2")
 
