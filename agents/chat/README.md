@@ -594,15 +594,18 @@ SK = GUARDRAIL#{created_at}#{target}
 저장 기준:
 
 - DynamoDB PK/SK 생성 규칙을 코드 상수로 고정
-- `save_session_metadata`, `append_message`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
+- `save_session_metadata`, `append_message`, `load_recent_messages`, `save_checkpoint`, `load_latest_checkpoint`, `save_guardrail_result` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryChatStateStore`로 저장/조회 검증
 - AWS dev smoke test에서는 `Boto3ChatStateStore`로 `hezo_agent_chat` write/read/delete 검증
 - chat graph는 `ChatStateStore` 주입을 통해 session metadata와 checkpoint를 저장
+- HTTP `chat_turn`은 `storage_mode=aws`에서 user/assistant message를 DynamoDB에 저장하고 최근 메시지를 조회
+- off-topic/ambiguous/needs_classification 등 `store_allowed=false` 턴은 message history에 저장하지 않음
 - 실제 DynamoDB table, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
 - TTL, GSI 설정은 후속 운영 이슈에서 처리
 
 이번 범위에서는 실제 `langgraph` package의 custom checkpointer 구현과 AgentCore Runtime 연결을 포함하지 않습니다.
 현재 graph checkpoint stage는 repository 경계(`ChatStateStore`)를 통해 DynamoDB 저장소로 전환 가능합니다.
+현재 message history는 다음 턴 context 조회용 최신 N개 저장/조회에 한정하며, 장기 transcript S3 저장은 별도 후속 범위입니다.
 
 AWS smoke test:
 
@@ -610,6 +613,7 @@ AWS smoke test:
 python3 -m pip install -r agents/chat/requirements.txt
 python3 agents/chat/test_dynamodb_aws_smoke.py
 python3 agents/chat/test_chat_graph_dynamodb_aws_smoke.py
+python3 agents/chat/test_chat_message_dynamodb_aws_smoke.py
 ```
 
 ## S3 Artifact Storage

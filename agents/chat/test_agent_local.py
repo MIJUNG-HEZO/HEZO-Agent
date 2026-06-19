@@ -1140,6 +1140,18 @@ def _validate_chat_state_store_cases() -> list[str]:
     )
     if message_item.item_type != "message":
         errors.append("append_message 결과 item_type은 message여야 합니다.")
+    store.append_message(
+        ChatMessage(
+            session_id="session_001",
+            message_id="msg_002",
+            role="assistant",
+            content="상담 방식은 무엇인가요?",
+            created_at="2026-06-16T10:00:01Z",
+        )
+    )
+    recent_messages = store.load_recent_messages("session_001", limit=1)
+    if len(recent_messages) != 1 or recent_messages[0].message_id != "msg_002":
+        errors.append("load_recent_messages는 최신 메시지를 순서대로 반환해야 합니다.")
 
     store.save_checkpoint(
         ChatCheckpoint(
@@ -1179,9 +1191,9 @@ def _validate_chat_state_store_cases() -> list[str]:
     if guardrail_item.item_type != "guardrail_summary":
         errors.append("guardrail 저장 결과 item_type은 guardrail_summary여야 합니다.")
 
-    if len(store.list_items("session_001")) != 5:
+    if len(store.list_items("session_001")) != 6:
         errors.append(
-            "session_001에는 metadata/message/checkpoint 2개/guardrail 총 5개가 있어야 합니다."
+            "session_001에는 metadata/message 2개/checkpoint 2개/guardrail 총 6개가 있어야 합니다."
         )
 
     fake_table = _FakeDynamoDBTable()
@@ -1203,6 +1215,15 @@ def _validate_chat_state_store_cases() -> list[str]:
             created_at="2026-06-16T10:00:00Z",
         )
     )
+    aws_store.append_message(
+        ChatMessage(
+            session_id="session_aws_001",
+            message_id="msg_002",
+            role="user",
+            content="전화 상담을 받습니다.",
+            created_at="2026-06-16T10:00:01Z",
+        )
+    )
     aws_store.save_checkpoint(
         ChatCheckpoint(
             session_id="session_aws_001",
@@ -1214,7 +1235,10 @@ def _validate_chat_state_store_cases() -> list[str]:
     aws_latest = aws_store.load_latest_checkpoint("session_aws_001")
     if aws_latest is None or aws_latest.stage != "slot_answer_state":
         errors.append("Boto3 DynamoDB adapter가 latest checkpoint를 조회해야 합니다.")
-    if len(aws_store.list_items("session_aws_001")) != 3:
+    aws_recent = aws_store.load_recent_messages("session_aws_001", limit=2)
+    if [message.message_id for message in aws_recent] != ["msg_001", "msg_002"]:
+        errors.append("Boto3 DynamoDB adapter가 최근 메시지를 시간순으로 조회해야 합니다.")
+    if len(aws_store.list_items("session_aws_001")) != 4:
         errors.append("Boto3 DynamoDB adapter가 session item 목록을 조회해야 합니다.")
     aws_store.delete_session_items("session_aws_001")
     if aws_store.list_items("session_aws_001"):
@@ -1999,6 +2023,11 @@ def _validate_chat_http_handler_cases() -> list[str]:
         errors.append("HTTP handler chat_turn은 answer_accepted 상태를 반환해야 합니다.")
     if chat_turn["sessionState"]["stage"] != "proactive_questioning":
         errors.append("HTTP handler chat_turn은 다음 stage를 sessionState에 반영해야 합니다.")
+    if len(chat_turn["metadata"].get("message_refs", [])) != 2:
+        errors.append("HTTP handler on-topic chat_turn은 user/assistant 메시지를 저장해야 합니다.")
+    recent_messages = chat_turn["metadata"].get("recent_messages", [])
+    if [message.get("role") for message in recent_messages] != ["user", "assistant"]:
+        errors.append("HTTP handler chat_turn은 최근 메시지를 user/assistant 순서로 반환해야 합니다.")
 
     off_topic_turn = handle_agentcore_payload(
         {
@@ -2016,6 +2045,10 @@ def _validate_chat_http_handler_cases() -> list[str]:
         errors.append("HTTP handler off-topic chat_turn은 off_topic_rejected를 반환해야 합니다.")
     if off_topic_turn["metadata"]["store_allowed"] is not False:
         errors.append("HTTP handler off-topic chat_turn은 store_allowed=false여야 합니다.")
+    if off_topic_turn["metadata"].get("message_refs") != []:
+        errors.append("HTTP handler off-topic chat_turn은 메시지를 저장하면 안 됩니다.")
+    if off_topic_turn["metadata"].get("recent_messages") != []:
+        errors.append("HTTP handler off-topic chat_turn은 최근 메시지를 추가하면 안 됩니다.")
 
     graph_smoke = handle_agentcore_payload(
         {

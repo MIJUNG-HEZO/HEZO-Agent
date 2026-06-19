@@ -120,6 +120,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 python3 agents/chat/test_chat_graph_s3_pipeline_aws_smoke.py
 python3 agents/chat/test_dynamodb_aws_smoke.py
 python3 agents/chat/test_chat_graph_dynamodb_aws_smoke.py
+python3 agents/chat/test_chat_message_dynamodb_aws_smoke.py
 ```
 
 `verify_dev_infra.sh`는 read-only AWS CLI 호출만 수행한다. 없는 리소스는 `MISSING`으로 표시하고,
