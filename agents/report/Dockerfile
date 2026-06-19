@@ -8,8 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agents/ ./agents/
 COPY libs/ ./libs/
 
+ENV PYTHONPATH=/app
 ENV AWS_DEFAULT_REGION=ap-northeast-2
-ENV MODEL_ID=global.anthropic.claude-haiku-4-5-20251001
+ENV MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0
 ENV ARTIFACTS_BUCKET=hezo-artifacts
 ENV SITE_BUCKET=hezo-sites
 ENV REPORTS_BUCKET=hezo-reports

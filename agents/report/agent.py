@@ -31,13 +31,17 @@ from agents.report.tools.report_saver import save_report
 from agents.report.tools.site_fetcher import fetch_site_content
 from agents.report.tools.llm_querier import run_benchmark
 from agents.report.tools.wiki_updater import detect_stale_wiki, request_recrawl
+from libs.telemetry import init_telemetry, record_llm_usage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("hezo.report")
 
 REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
-MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001")
+MODEL_ID = os.environ.get("MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 DYNAMODB_TABLE = os.environ.get("REPORT_SCORES_TABLE", "report_scores")
+
+# 관측 키트 초기화 (CloudWatch HEZO/Agents 로 비용·토큰·지연 직접 전송)
+init_telemetry("report", region=REGION)
 
 app = FastAPI(title="HEZO Report Agent")
 
@@ -95,11 +99,23 @@ def generate_queries(content: dict) -> list[str]:
         "max_tokens": 512,
         "messages": [{"role": "user", "content": prompt}],
     })
+    start = time.monotonic()
     resp = get_bedrock().invoke_model(
         modelId=MODEL_ID, body=body,
         contentType="application/json", accept="application/json",
     )
-    text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+    elapsed = (time.monotonic() - start) * 1000
+    result = json.loads(resp["body"].read())
+
+    _usage = result.get("usage", {})
+    record_llm_usage(
+        "report", "haiku",
+        _usage.get("input_tokens", 0),
+        _usage.get("output_tokens", 0),
+        ms=elapsed,
+    )
+
+    text = result["content"][0]["text"].strip()
     try:
         m = re.search(r"\[[\s\S]+\]", text)
         return json.loads(m.group() if m else text)

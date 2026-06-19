@@ -15,14 +15,17 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 import boto3
 
+from libs.telemetry import record_llm_usage
+
 logger = logging.getLogger(__name__)
 
 REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2")
-MODEL_ID_HAIKU = os.environ.get("MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001")
+MODEL_ID_HAIKU = os.environ.get("MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
 
@@ -54,11 +57,22 @@ def _query_claude(query: str, context: str) -> str:
         "system": "당신은 사용자의 지역 비즈니스 검색 질의에 답하는 AI 어시스턴트입니다.",
         "messages": [{"role": "user", "content": query}],
     })
+    start = time.monotonic()
     resp = _get_bedrock().invoke_model(
         modelId=MODEL_ID_HAIKU, body=body,
         contentType="application/json", accept="application/json",
     )
+    elapsed = (time.monotonic() - start) * 1000
     result = json.loads(resp["body"].read())
+
+    _usage = result.get("usage", {})
+    record_llm_usage(
+        "report", "haiku",
+        _usage.get("input_tokens", 0),
+        _usage.get("output_tokens", 0),
+        ms=elapsed,
+    )
+
     return result["content"][0]["text"]
 
 
