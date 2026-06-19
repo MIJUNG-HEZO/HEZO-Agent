@@ -16,13 +16,13 @@ _SEO_DESC_MAX = 160
 # AI 가시성 기준
 _FAQ_MIN = 5
 _H2_MIN = 5
-_LLMS_TXT_MIN_LEN = 200
+_LLMS_TXT_MIN_LEN = 350
 _QUICKANSWER_MIN = 50
 _QUICKANSWER_MAX = 120
 _KEYWORDS_MIN = 3
 
 # AI 크롤러 봇
-_REQUIRED_BOTS = ("GPTBot", "ClaudeBot", "PerplexityBot")
+_REQUIRED_BOTS = ("GPTBot", "ClaudeBot", "PerplexityBot", "Yeti")
 
 
 def evaluate_render_spec(
