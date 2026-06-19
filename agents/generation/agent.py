@@ -54,7 +54,12 @@ _bedrock: Any = None
 def get_bedrock():
     global _bedrock
     if _bedrock is None:
-        _bedrock = boto3.client("bedrock-runtime", region_name=REGION)
+        from botocore.config import Config
+        _bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=REGION,
+            config=Config(read_timeout=600, connect_timeout=10, retries={"max_attempts": 0}),
+        )
     return _bedrock
 
 
@@ -285,11 +290,18 @@ def llm_self_eval(render_spec: dict, contract: dict) -> dict:
         "max_tokens": 512,
         "messages": [{"role": "user", "content": prompt}],
     })
+    start = time.monotonic()
     resp = bedrock.invoke_model(
         modelId=MODEL_ID, body=body,
         contentType="application/json", accept="application/json",
     )
+    elapsed = (time.monotonic() - start) * 1000
     result = json.loads(resp["body"].read())
+    _usage = result.get("usage", {})
+    record_llm_usage(
+        "generation_self_eval", "sonnet",
+        _usage.get("input_tokens", 0), _usage.get("output_tokens", 0), ms=elapsed,
+    )
     text = result["content"][0]["text"].strip()
 
     m = re.search(r"\{[\s\S]+\}", text)
@@ -333,9 +345,17 @@ def regenerate_weak_sections(
             "max_tokens": 2048,
             "messages": [{"role": "user", "content": prompt}],
         })
+        _start = time.monotonic()
         resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
                                           contentType="application/json", accept="application/json")
-        text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        _result = json.loads(resp["body"].read())
+        record_llm_usage(
+            "generation_regen_faq", "sonnet",
+            _result.get("usage", {}).get("input_tokens", 0),
+            _result.get("usage", {}).get("output_tokens", 0),
+            ms=(time.monotonic() - _start) * 1000,
+        )
+        text = _result["content"][0]["text"].strip()
         try:
             m = re.search(r"\[[\s\S]+\]", text)
             new_faq = json.loads(m.group() if m else text)
@@ -367,9 +387,17 @@ def regenerate_weak_sections(
             "max_tokens": 256,
             "messages": [{"role": "user", "content": prompt}],
         })
+        _start = time.monotonic()
         resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
                                           contentType="application/json", accept="application/json")
-        new_qa = json.loads(resp["body"].read())["content"][0]["text"].strip().strip('"')
+        _result = json.loads(resp["body"].read())
+        record_llm_usage(
+            "generation_regen_qa", "sonnet",
+            _result.get("usage", {}).get("input_tokens", 0),
+            _result.get("usage", {}).get("output_tokens", 0),
+            ms=(time.monotonic() - _start) * 1000,
+        )
+        new_qa = _result["content"][0]["text"].strip().strip('"')
         for block in page.get("blocks", []):
             if block.get("type") == "QuickAnswer":
                 block["text"] = new_qa[:120]
@@ -395,9 +423,17 @@ def regenerate_weak_sections(
             "max_tokens": 512,
             "messages": [{"role": "user", "content": prompt}],
         })
+        _start = time.monotonic()
         resp = get_bedrock().invoke_model(modelId=MODEL_ID, body=body,
                                           contentType="application/json", accept="application/json")
-        text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        _result = json.loads(resp["body"].read())
+        record_llm_usage(
+            "generation_regen_seo", "sonnet",
+            _result.get("usage", {}).get("input_tokens", 0),
+            _result.get("usage", {}).get("output_tokens", 0),
+            ms=(time.monotonic() - _start) * 1000,
+        )
+        text = _result["content"][0]["text"].strip()
         try:
             m = re.search(r"\{[\s\S]+\}", text)
             new_seo = json.loads(m.group() if m else text)
