@@ -1929,6 +1929,23 @@ def _validate_chat_graph_cases() -> list[str]:
     if "contract_draft_artifact_saved" not in final_state.reasons:
         errors.append("chat graph 완료 사유에는 artifact 저장 결과가 포함되어야 합니다.")
 
+    ready_state = run_chat_graph(
+        _sample_chat_graph_state(
+            known_answers={
+                "business_name": "한빛 세무회계",
+                "contact_method": "전화 상담",
+            },
+            missing_slots=("core_services",),
+        )
+    )
+    ready_artifact_kinds = {
+        artifact["artifact_kind"] for artifact in ready_state.to_dict()["artifact_refs"]
+    }
+    if "contract_final" not in ready_artifact_kinds:
+        errors.append("preview_ready graph는 contract_final artifact ref를 저장해야 합니다.")
+    if "contract_final_artifact_saved" not in ready_state.reasons:
+        errors.append("contract final 저장 사유가 reasons에 포함되어야 합니다.")
+
     invalid_state = _sample_chat_graph_state(slot_registry={})
     try:
         run_chat_graph(invalid_state)

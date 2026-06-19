@@ -99,11 +99,14 @@ Chat state/checkpoint adapter는 single-table 구조를 전제로 한다.
 ```text
 s3://hezo-chat/sessions/{session_id}/transcripts/{seq}.json
 s3://hezo-chat/sessions/{session_id}/guardrails/{target}/{created_at}.json
-s3://hezo-wiki/{p2_prefix_tbd}
-s3://hezo-artifacts/{p4_contract_prefix_tbd}
+s3://hezo-wiki/industries/{category}/{domain}.md
+s3://hezo-artifacts/sites/{site_id}/contracts/draft/{version}.json
+s3://hezo-artifacts/sites/{site_id}/contract_final.json
 ```
 
-`hezo-wiki`, `hezo-artifacts` 내부 prefix는 P2/P4 코드 또는 팀원 합의 확인 후 확정한다.
+P2 markdown은 `source_s3_key`가 명시되면 해당 key를 우선 사용한다.
+P2 내부 prefix가 최종 확정되기 전까지 dev fallback은 `industries/{category}/{domain}.md`이다.
+P4 Contract artifact는 draft/final prefix를 위 기준으로 고정한다.
 
 ## 검증
 
@@ -112,15 +115,17 @@ s3://hezo-artifacts/{p4_contract_prefix_tbd}
 ```bash
 source infra/chat/env.example
 bash infra/chat/verify_dev_infra.sh
+python3 agents/chat/test_s3_aws_smoke.py
+python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
+python3 agents/chat/test_chat_graph_s3_pipeline_aws_smoke.py
 ```
 
-스크립트는 read-only AWS CLI 호출만 수행한다. 없는 리소스는 `MISSING`으로 표시하고,
-생성이나 수정은 하지 않는다.
+`verify_dev_infra.sh`는 read-only AWS CLI 호출만 수행한다. 없는 리소스는 `MISSING`으로 표시하고,
+생성이나 수정은 하지 않는다. `test_*_aws_smoke.py`는 dev bucket에 임시 객체를 쓰고 검증 후 삭제한다.
 
 ## 후속 작업
 
 - AgentCore Runtime 실제 생성 및 ECR 이미지 배포
 - Backend/Frontend에서 호출할 HTTP 계약 확정
 - DynamoDB state/checkpoint store 실제 구현
-- S3 artifact store 실제 구현
 - 운영 전 IAM 최소 권한 재점검
