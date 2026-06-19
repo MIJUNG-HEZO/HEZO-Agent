@@ -24,10 +24,138 @@ button,input,select{font:inherit}
 </style>
 </head>
 <body>
-<header class="nav"><a class="brand">Balance<span>Tax</span></a><nav><a>서비스</a><a>절세진단</a><a>상담</a></nav><button>상담 예약</button></header>
-<section class="hero"><div class="copy"><div class="eyebrow">PRIVATE TAX ADVISORY</div><h1>숫자를 정리하면 <em>사업의 다음 결정</em>이 보입니다.</h1><p>개인사업자, 법인, 프리랜서를 위한 세무 상담 랜딩입니다. 신고 업무를 넘어 비용 구조, 절세 포인트, 현금 흐름까지 한 번에 정리합니다.</p><div class="actions"><button class="primary">세무 상담 신청</button><button class="outline">서비스 보기</button></div></div><aside class="visual"><div class="report"><div><h3>Monthly Tax Review</h3><p>매출, 비용, 인건비, 신고 일정을 한 화면에서 정리합니다.</p></div><div class="mini"><div><span>VAT</span><strong>READY</strong></div><div><span>PAYROLL</span><strong>CHECK</strong></div><div><span>CASHFLOW</span><strong>VIEW</strong></div></div></div></aside></section>
-<section class="section service-ledger"><div class="container ledger-wrap"><aside class="ledger-title"><small>SERVICE LEDGER</small><h2>상황별 세무 업무를 행 단위로 정리합니다.</h2><p>카드가 아니라 세무 리포트처럼 필요한 업무, 대상, 결과를 바로 비교할 수 있게 구성했습니다.</p></aside><div class="ledger"><article class="ledger-row"><b>01</b><div><h3>신규 사업자 세팅</h3><p>사업자등록, 세금계산서, 초기 장부 구조를 안내합니다.</p></div><span>STARTER</span></article><article class="ledger-row"><b>02</b><div><h3>월 정기 기장</h3><p>매월 매출, 비용, 인건비를 정리하고 신고 리스크를 줄입니다.</p></div><span>MONTHLY</span></article><article class="ledger-row"><b>03</b><div><h3>절세 구조 진단</h3><p>현재 비용 처리와 신고 구조를 점검하고 개선 포인트를 제안합니다.</p></div><span>REVIEW</span></article></div></div></section>
-<section class="section case"><div class="container case-grid"><div class="case-photo"></div><article class="case-card"><h3>신고 전에 먼저 봐야 할 세 가지</h3><p>단순 신고 대행이 아니라 매출 구조, 비용 증빙, 예정 세액을 먼저 확인해 사업자가 미리 준비할 수 있게 돕습니다.</p><ul><li>누락 비용과 증빙 체크</li><li>부가세·종소세 예상액 안내</li><li>법인 전환 가능성 검토</li></ul></article></div></section>
-<section class="section contact"><div class="container contactbox"><h2>세무 상담을 시작하세요.</h2><form class="form"><input placeholder="성함"><input placeholder="연락처"><select><option>상담 유형</option><option>기장</option><option>부가세</option><option>종합소득세</option></select><button>문의 남기기</button></form></div></section>
+<header class="nav"><a class="brand">Balance<span>Tax</span></a><nav><a data-target="services">서비스</a><a data-target="services">절세진단</a><a data-target="contact">상담</a></nav><button data-scroll="contact">상담 예약</button></header>
+<section class="hero"><div class="copy"><div class="eyebrow">PRIVATE TAX ADVISORY</div><h1>숫자를 정리하면 <em>사업의 다음 결정</em>이 보입니다.</h1><p>개인사업자, 법인, 프리랜서를 위한 세무 상담 랜딩입니다. 신고 업무를 넘어 비용 구조, 절세 포인트, 현금 흐름까지 한 번에 정리합니다.</p><div class="actions"><button class="primary" data-scroll="contact">세무 상담 신청</button><button class="outline" data-scroll="services">서비스 보기</button></div></div><aside class="visual"><div class="report"><div><h3>Monthly Tax Review</h3><p>매출, 비용, 인건비, 신고 일정을 한 화면에서 정리합니다.</p></div><div class="mini"><div><span>VAT</span><strong>READY</strong></div><div><span>PAYROLL</span><strong>CHECK</strong></div><div><span>CASHFLOW</span><strong>VIEW</strong></div></div></div></aside></section>
+<section id="services" class="section service-ledger"><div class="container ledger-wrap"><aside class="ledger-title"><small>SERVICE LEDGER</small><h2>상황별 세무 업무를 행 단위로 정리합니다.</h2><p>카드가 아니라 세무 리포트처럼 필요한 업무, 대상, 결과를 바로 비교할 수 있게 구성했습니다.</p></aside><div id="serviceLedger" class="ledger"><article class="ledger-row"><b>01</b><div><h3>신규 사업자 세팅</h3><p>사업자등록, 세금계산서, 초기 장부 구조를 안내합니다.</p></div><span>STARTER</span></article><article class="ledger-row"><b>02</b><div><h3>월 정기 기장</h3><p>매월 매출, 비용, 인건비를 정리하고 신고 리스크를 줄입니다.</p></div><span>MONTHLY</span></article><article class="ledger-row"><b>03</b><div><h3>절세 구조 진단</h3><p>현재 비용 처리와 신고 구조를 점검하고 개선 포인트를 제안합니다.</p></div><span>REVIEW</span></article></div></div></section>
+<section class="section case"><div class="container case-grid"><div class="case-photo"></div><article class="case-card"><h3>절세 성공 사례</h3><p>단순 신고 대행이 아니라 매출 구조, 비용 증빙, 예정 세액을 먼저 확인해 사업자가 미리 준비할 수 있게 돕습니다.</p><ul id="caseList" style="margin-top:28px;display:grid;gap:14px;list-style:none"><li>누락 비용과 증빙 체크</li><li>부가세·종소세 예상액 안내</li><li>법인 전환 가능성 검토</li></ul></article></div></section>
+<section id="contact" class="section contact"><div class="container contactbox"><h2>세무 상담을 시작하세요.</h2><form id="consultForm" class="form"><input id="f-name" placeholder="성함" autocomplete="name"><input id="f-phone" placeholder="연락처" type="tel" autocomplete="tel"><select id="f-type"><option value="">상담 유형</option><option value="기장">기장</option><option value="부가세">부가세</option><option value="종합소득세">종합소득세</option></select><button type="submit">문의 남기기</button></form></div></section>
+<script>
+(function(){
+  /* ── 스크롤 헬퍼 ── */
+  function scrollTo(id){
+    var el=document.getElementById(id);
+    if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  document.querySelectorAll('[data-scroll]').forEach(function(btn){
+    btn.addEventListener('click',function(){ scrollTo(btn.dataset.scroll); });
+  });
+  document.querySelectorAll('[data-target]').forEach(function(a){
+    a.style.cursor='pointer';
+    a.addEventListener('click',function(){ scrollTo(a.dataset.target); });
+  });
+
+  /* ── 서비스 동적 로딩 ── */
+  function renderServices(list){
+    if(!list||!list.length) return;
+    var ledger=document.getElementById('serviceLedger');
+    if(!ledger) return;
+    ledger.innerHTML=list.map(function(s,i){
+      var num=String(i+1).padStart(2,'0');
+      return '<article class="ledger-row">'
+        +'<b>'+num+'</b>'
+        +'<div><h3>'+s.name+'</h3><p>'+(s.description||'')+'</p></div>'
+        +'<span>'+(s.price_label||s.category||'문의')+'</span>'
+        +'</article>';
+    }).join('');
+  }
+
+  /* ── 사례 동적 로딩 ── */
+  function renderCases(list){
+    if(!list||!list.length) return;
+    var box=document.getElementById('caseList');
+    if(!box) return;
+    box.innerHTML=list.map(function(c){
+      return '<li style="padding:16px;border-radius:18px;background:rgba(255,255,255,.08)">'
+        +'<strong style="display:block;margin-bottom:6px">'+c.title+'</strong>'
+        +'<span style="color:#9b6b2f;font-size:13px;font-weight:700">'+c.saving_label+'</span>'
+        +(c.summary?'<p style="color:#cbd0d6;font-size:14px;margin-top:6px;line-height:1.6">'+c.summary+'</p>':'')
+        +'</li>';
+    }).join('');
+  }
+
+  /* ── 체크리스트 동적 로딩 ── */
+  function renderChecklists(list){
+    if(!list||!list.length) return;
+    var box=document.getElementById('checklistItems');
+    if(!box) return;
+    box.innerHTML=list.map(function(c){
+      return '<li style="padding:14px 16px;border-radius:14px;background:#f4f1ea;display:flex;gap:12px;align-items:flex-start">'
+        +'<span style="color:#9b6b2f;font-weight:900;margin-top:1px">✓</span>'
+        +'<div><strong style="font-size:15px">'+c.title+'</strong>'
+        +(c.description?'<p style="color:#5f6673;font-size:13px;margin-top:3px">'+c.description+'</p>':'')
+        +'</div></li>';
+    }).join('');
+  }
+
+  function loadAll(){
+    fetch('/api/landing/tax/services').then(function(r){return r.json();}).then(renderServices).catch(function(){});
+    fetch('/api/landing/tax/cases').then(function(r){return r.json();}).then(renderCases).catch(function(){});
+    fetch('/api/landing/tax/checklists').then(function(r){return r.json();}).then(renderChecklists).catch(function(){});
+  }
+  loadAll();
+
+  /* ── 테스트 배너: seed 버튼 (화면 오른쪽 하단) ── */
+  var banner=document.createElement('div');
+  banner.id='testBanner';
+  banner.style.cssText='position:fixed;bottom:24px;right:24px;z-index:999;background:#171b22;color:#fff;border-radius:18px;padding:14px 20px;font-size:13px;font-family:monospace;box-shadow:0 8px 32px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:8px;min-width:200px';
+  banner.innerHTML='<span style="color:#9b6b2f;font-weight:700;margin-bottom:2px">🧪 TEST MODE</span>'
+    +'<button id="btnSeed" style="background:#9b6b2f;color:#fff;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:700">DB 시드 데이터 삽입</button>'
+    +'<button id="btnReload" style="background:#2a2f38;color:#fff;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:700">API 데이터 재로드</button>'
+    +'<div id="seedStatus" style="color:#6b7280;font-size:12px"></div>';
+  document.body.appendChild(banner);
+
+  document.getElementById('btnSeed').addEventListener('click',function(){
+    var status=document.getElementById('seedStatus');
+    var btn=document.getElementById('btnSeed');
+    btn.textContent='삽입 중…'; btn.disabled=true;
+    fetch('/api/landing/tax/seed',{method:'POST'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d.skipped){
+          status.textContent='이미 데이터 있음 (재로드 클릭)';
+        } else {
+          status.textContent='✓ 서비스 '+d.services+'개 / 체크리스트 '+d.checklists+'개 / 사례 '+d.cases+'개';
+          loadAll();
+        }
+        btn.textContent='DB 시드 완료';
+      })
+      .catch(function(){
+        status.textContent='오류 발생';
+        btn.textContent='DB 시드 데이터 삽입'; btn.disabled=false;
+      });
+  });
+
+  document.getElementById('btnReload').addEventListener('click',function(){
+    loadAll();
+    document.getElementById('seedStatus').textContent='재로드 완료';
+  });
+
+  /* ── 상담 폼 submit ── */
+  var form=document.getElementById('consultForm');
+  if(!form) return;
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    var name=document.getElementById('f-name').value.trim();
+    var phone=document.getElementById('f-phone').value.trim();
+    var type=document.getElementById('f-type').value;
+    var btn=form.querySelector('button[type=submit]');
+    if(!name||!phone){ alert('성함과 연락처를 입력해주세요.'); return; }
+    btn.textContent='전송 중…'; btn.disabled=true;
+    fetch('/api/landing/tax/consultations',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name,phone:phone,service_type:type||null})
+    })
+    .then(function(r){
+      if(!r.ok) throw new Error(r.status);
+      form.innerHTML='<p style="text-align:center;padding:32px 0;font-size:17px;line-height:1.8">✓ 상담 신청이 완료되었습니다.<br><span style="color:#9b6b2f;font-weight:700">빠른 시간 내 연락드리겠습니다.</span></p>';
+    })
+    .catch(function(){
+      btn.textContent='문의 남기기'; btn.disabled=false;
+      alert('오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    });
+  });
+})();
+</script>
 </body>
 </html>
