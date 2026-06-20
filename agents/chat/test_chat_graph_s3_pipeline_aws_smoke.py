@@ -65,12 +65,14 @@ def main() -> int:
     store = Boto3S3ArtifactStore()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     site_id = f"smoke_site_{timestamp}"
+    category = "smoke"
+    domain = f"tax_accounting_{timestamp.lower()}"
     source_s3_key = f"smoke/p2_p4_graph_pipeline/{timestamp}.md"
     p2_ref = build_p2_markdown_ref(
         P2MarkdownLoadInput(
-            category="landing",
-            domain="tax_accounting",
-            expected_domain="tax_accounting",
+            category=category,
+            domain=domain,
+            expected_domain=domain,
             slot_registry=SLOT_REGISTRY,
             source_s3_key=source_s3_key,
             source_count=2,
@@ -80,10 +82,10 @@ def main() -> int:
     store.put_artifact(
         ArtifactPayload(
             ref=p2_ref,
-            body="""
+            body=f"""
 ---
-domain: tax_accounting
-category: landing
+domain: {domain}
+category: {category}
 template_no: 13
 label: 세무/회계
 confidence: 0.82
@@ -117,8 +119,8 @@ source_urls:
                 site_id=site_id,
                 user_id="smoke_user_001",
                 stage="domain_selection",
-                category="landing",
-                domain="tax_accounting",
+                category=category,
+                domain=domain,
                 domain_label="세무/회계",
                 selected_template="landing/13-tax-accounting",
                 p2_source_s3_key=source_s3_key,
@@ -136,37 +138,61 @@ source_urls:
         )
         artifact_refs = final_state.artifact_refs
         artifact_kinds = {artifact["artifact_kind"] for artifact in artifact_refs}
-        if {"contract_draft", "contract_final"} - artifact_kinds:
-            print("[FAIL] graph did not save draft/final contract artifacts")
+        if {"enriched_markdown", "contract_draft", "contract_final"} - artifact_kinds:
+            print("[FAIL] graph did not save enriched markdown and draft/final contract artifacts")
             print(final_state.to_dict())
             return 1
 
         for artifact in artifact_refs:
             stored = store.get_artifact(
-                store.build_artifact_ref(
+                _build_artifact_ref_for_smoke(
+                    store,
                     artifact["artifact_kind"],
-                    site_id=site_id,
-                    version=1,
+                    site_id,
+                    category,
+                    domain,
                 )
             )
             if "tax_accounting" not in stored:
-                print("[FAIL] stored contract artifact body mismatch")
+                print("[FAIL] stored graph artifact body mismatch")
                 print(artifact)
                 return 1
     finally:
         store.delete_artifact(p2_ref)
         for artifact in artifact_refs:
             store.delete_artifact(
-                store.build_artifact_ref(
+                _build_artifact_ref_for_smoke(
+                    store,
                     artifact["artifact_kind"],
-                    site_id=site_id,
-                    version=1,
+                    site_id,
+                    category,
+                    domain,
                 )
             )
 
     print("[OK] P2/P4 graph S3 pipeline smoke")
     print({"p2_ref": p2_ref.uri(), "artifact_refs": artifact_refs})
     return 0
+
+
+def _build_artifact_ref_for_smoke(
+    store: Boto3S3ArtifactStore,
+    artifact_kind: str,
+    site_id: str,
+    category: str,
+    domain: str,
+):
+    if artifact_kind == "enriched_markdown":
+        return store.build_artifact_ref(
+            artifact_kind,
+            category=category,
+            domain=domain,
+        )
+    return store.build_artifact_ref(
+        artifact_kind,
+        site_id=site_id,
+        version=1,
+    )
 
 
 if __name__ == "__main__":

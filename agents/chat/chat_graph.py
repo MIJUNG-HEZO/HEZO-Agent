@@ -450,6 +450,19 @@ def s3_artifact_storage_node(
     state: ChatGraphState,
     store: S3ArtifactStore,
 ) -> ChatGraphState:
+    enriched_ref = store.build_artifact_ref(
+        "enriched_markdown",
+        category=state.category,
+        domain=state.domain,
+    )
+    stored_enriched_ref = store.put_artifact(
+        ArtifactPayload(
+            ref=enriched_ref,
+            body=_build_enriched_markdown(state),
+            guardrail_action=str(state.guardrail_result.get("action", "NONE")),
+            store_allowed=bool(state.guardrail_result.get("store_allowed", True)),
+        )
+    )
     draft_ref = store.build_artifact_ref(
         "contract_draft",
         site_id=state.site_id,
@@ -463,8 +476,14 @@ def s3_artifact_storage_node(
             store_allowed=bool(state.guardrail_result.get("store_allowed", True)),
         )
     )
-    artifact_refs = state.artifact_refs + (stored_draft_ref.to_dict(),)
-    reasons = state.reasons + ("contract_draft_artifact_saved",)
+    artifact_refs = state.artifact_refs + (
+        stored_enriched_ref.to_dict(),
+        stored_draft_ref.to_dict(),
+    )
+    reasons = state.reasons + (
+        "enriched_markdown_artifact_saved",
+        "contract_draft_artifact_saved",
+    )
     if bool(state.quality_check.get("preview_ready", False)):
         final_ref = store.build_artifact_ref("contract_final", site_id=state.site_id)
         stored_final_ref = store.put_artifact(
@@ -483,6 +502,59 @@ def s3_artifact_storage_node(
         artifact_refs=artifact_refs,
         reasons=reasons,
     )
+
+
+def _build_enriched_markdown(state: ChatGraphState) -> str:
+    evidence_refs = state.p2_markdown_parse.get("evidence_refs", [])
+    original_content = str(state.p2_markdown_load.get("content", "")).strip()
+    original_frontmatter, original_body = _split_markdown_frontmatter(original_content)
+
+    lines: list[str] = []
+    if original_frontmatter:
+        lines.extend([original_frontmatter, ""])
+    if original_body:
+        lines.append(original_body)
+
+    lines.extend(["", "## P1 보강 정보", "", "### 사용자 대화 기반 보강"])
+    for slot, meta in state.slot_registry.items():
+        label = str(meta.get("label", slot))
+        value = state.known_answers.get(slot)
+        value_text = str(value).strip() if value is not None else ""
+        if value_text:
+            lines.append(f"- {label}: {value_text}")
+
+    if state.missing_slots:
+        lines.extend(["", "### 아직 부족한 슬롯"])
+        for slot in state.missing_slots:
+            label = str(state.slot_registry.get(slot, {}).get("label", slot))
+            lines.append(f"- {label}")
+
+    if evidence_refs:
+        lines.extend(["", "### 참조 출처"])
+        for evidence in evidence_refs:
+            ref_id = str(evidence.get("ref_id", "")).strip()
+            text = str(evidence.get("text", "")).strip()
+            if ref_id and text:
+                lines.append(f"- [{ref_id}] {text}")
+
+    return "\n".join(lines)
+
+
+def _split_markdown_frontmatter(content: str) -> tuple[str, str]:
+    if not content.startswith("---\n"):
+        return "", content
+
+    end_marker = content.find("\n---", 4)
+    if end_marker < 0:
+        return "", content
+
+    marker_end = end_marker + len("\n---")
+    if marker_end < len(content) and content[marker_end] not in {"\n", "\r"}:
+        return "", content
+
+    frontmatter = content[:marker_end].strip()
+    body = content[marker_end:].lstrip("\r\n")
+    return frontmatter, body
 
 
 def _replace(state: ChatGraphState, **changes: Any) -> ChatGraphState:
