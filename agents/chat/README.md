@@ -642,7 +642,7 @@ key 설계:
 ```text
 sessions/{session_id}/transcripts/{version}.json
 industries/{category}/{domain}.md
-sites/{site_id}/wiki/enriched/{version}.md
+pending/{category}/{domain}.md
 sites/{site_id}/contracts/draft/{version}.json
 sites/{site_id}/contract_final.json
 sessions/{session_id}/guardrails/{target}/{timestamp}.json
@@ -657,7 +657,7 @@ P2 markdown load 정책:
 P1 enriched markdown 저장 정책:
 
 - P2 원본 markdown은 덮어쓰지 않습니다.
-- 사용자 대화와 보강 결과를 반영한 사이트별 markdown은 `hezo-wiki-staging/sites/{site_id}/wiki/enriched/{version}.md`에 저장합니다.
+- 사용자 대화와 보강 결과를 반영한 보강 markdown은 `hezo-wiki-staging/pending/{category}/{domain}.md`에 저장합니다.
 - Contract JSON은 `hezo-artifacts`에 저장하고, P1 보강 markdown 산출물은 `hezo-wiki-staging`에 저장해 책임을 분리합니다.
 
 P4 Contract 저장 정책:

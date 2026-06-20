@@ -105,14 +105,14 @@ Chat state/checkpoint adapter는 single-table 구조를 전제로 한다.
 s3://hezo-chat/sessions/{session_id}/transcripts/{seq}.json
 s3://hezo-chat/sessions/{session_id}/guardrails/{target}/{created_at}.json
 s3://hezo-wiki/industries/{category}/{domain}.md
-s3://hezo-wiki-staging/sites/{site_id}/wiki/enriched/{version}.md
+s3://hezo-wiki-staging/pending/{category}/{domain}.md
 s3://hezo-artifacts/sites/{site_id}/contracts/draft/{version}.json
 s3://hezo-artifacts/sites/{site_id}/contract_final.json
 ```
 
 P2 markdown은 `source_s3_key`가 명시되면 해당 key를 우선 사용한다.
 P2 내부 prefix가 최종 확정되기 전까지 dev fallback은 `industries/{category}/{domain}.md`이다.
-P1이 사용자 대화/보강 결과로 생성한 사이트별 enriched markdown은 `hezo-wiki-staging/sites/{site_id}/wiki/enriched/{version}.md`에 저장한다.
+P1이 사용자 대화/보강 결과로 생성한 enriched markdown은 `hezo-wiki-staging/pending/{category}/{domain}.md`에 저장한다.
 P4 Contract artifact는 draft/final prefix를 위 기준으로 고정한다.
 
 ## 검증
