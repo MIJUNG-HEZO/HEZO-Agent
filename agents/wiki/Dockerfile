@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 # 위키 코드 (agents.wiki.* 절대 import 위해 agents 패키지 전체 복사)
 COPY agents/ ${LAMBDA_TASK_ROOT}/agents/
 
+# 관측 키트 (libs.telemetry — record_llm_usage)
+COPY libs/ ${LAMBDA_TASK_ROOT}/libs/
+
 # 기본 핸들러 (람다 생성 시 핸들러별로 덮어씀)
 CMD ["agents.wiki.handlers.crawl_lambda.handler"]

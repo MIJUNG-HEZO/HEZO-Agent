@@ -24,6 +24,26 @@ DEFAULT_MODEL_ID = os.environ.get(
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.2
 
+# 관측(P5): LLM 호출마다 비용·토큰·지연을 CloudWatch(HEZO/Agents)로 전송.
+# libs 미탑재(일부 테스트)면 no-op으로 떨어져 chat 동작에는 영향 없음.
+try:
+    from libs.telemetry import init_telemetry, record_llm_usage
+
+    init_telemetry("chat", region=os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2"))
+except Exception:  # noqa: BLE001 — libs 없음/자격증명 없음 → 비용기록 없이 동작
+    def record_llm_usage(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+
+def _short_model(model_id: str) -> str:
+    """모델 id → telemetry 단가표 키(sonnet/haiku/opus)."""
+    m = model_id.lower()
+    if "haiku" in m:
+        return "haiku"
+    if "opus" in m:
+        return "opus"
+    return "sonnet"
+
 INJECTION_PATTERNS = [
     "이전 지시 무시",
     "앞의 지시 무시",
@@ -184,15 +204,19 @@ class Boto3BedrockClaudeInvoker:
         output_text = _extract_converse_text(response)
         usage = response.get("usage", {})
         metrics = response.get("metrics", {})
+        in_tok = int(usage.get("inputTokens", 0))
+        out_tok = int(usage.get("outputTokens", 0))
+        final_latency = int(metrics.get("latencyMs", latency_ms))
+
+        # 관측(P5): 비용·토큰·지연 기록 (chat 에이전트로 분류)
+        record_llm_usage("chat", _short_model(invocation_input.model_id), in_tok, out_tok, ms=final_latency)
+
         return ClaudeInvocationResult(
             status="succeeded",
             text=output_text,
             model_id=invocation_input.model_id,
-            usage=ClaudeUsage(
-                input_tokens=int(usage.get("inputTokens", 0)),
-                output_tokens=int(usage.get("outputTokens", 0)),
-            ),
-            latency_ms=int(metrics.get("latencyMs", latency_ms)),
+            usage=ClaudeUsage(input_tokens=in_tok, output_tokens=out_tok),
+            latency_ms=final_latency,
             reasons=("bedrock_invocation_succeeded", invocation_input.use_case),
         )
 

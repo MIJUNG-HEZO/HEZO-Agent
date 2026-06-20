@@ -35,6 +35,12 @@
       "Effect": "Allow",
       "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
       "Resource": "arn:aws:logs:ap-northeast-2:492554570964:*"
+    },
+    {
+      "Sid": "Telemetry",
+      "Effect": "Allow",
+      "Action": ["cloudwatch:PutMetricData"],
+      "Resource": "*"
     }
   ]
 }
