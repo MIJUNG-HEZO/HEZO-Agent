@@ -68,7 +68,7 @@ def main() -> int:
     source_s3_key = f"smoke/p2_p4_graph_pipeline/{timestamp}.md"
     p2_ref = build_p2_markdown_ref(
         P2MarkdownLoadInput(
-            category="services",
+            category="landing",
             domain="tax_accounting",
             expected_domain="tax_accounting",
             slot_registry=SLOT_REGISTRY,
@@ -83,7 +83,7 @@ def main() -> int:
             body="""
 ---
 domain: tax_accounting
-category: services
+category: landing
 template_no: 13
 label: 세무/회계
 confidence: 0.82
@@ -117,7 +117,7 @@ source_urls:
                 site_id=site_id,
                 user_id="smoke_user_001",
                 stage="domain_selection",
-                category="services",
+                category="landing",
                 domain="tax_accounting",
                 domain_label="세무/회계",
                 selected_template="landing/13-tax-accounting",

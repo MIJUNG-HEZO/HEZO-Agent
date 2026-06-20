@@ -177,7 +177,7 @@ Stages:
 MockState:
   session_id: session_001
   stage: p2_markdown_request
-  category: services
+  category: landing
   domain: tax_accounting
   domain_label: 세무/회계
   selected_template: landing/13-tax-accounting
@@ -185,7 +185,7 @@ MockState:
     session_start_status: ready_for_user_question
     next_stage: proactive_questioning
     llm_required: false
-    source_s3_key: industries/services/tax_accounting.md
+    source_s3_key: industries/landing/tax_accounting.md
     question_candidates:
       - slot: core_services
         question: 핵심 세무 서비스는 무엇인가요?
@@ -195,7 +195,7 @@ MockState:
   p2_markdown_request:
     payload_version: v0.2
     target_artifact: industry_domain_knowledge_markdown
-    category: services
+    category: landing
     request_reason: initial_domain_selected
     slot_registry:
       business_name:
@@ -217,19 +217,19 @@ MockState:
       - contact_method
   p2_markdown_load:
     p2_markdown_bucket: hezo-wiki
-    source_s3_key: industries/services/tax_accounting.md
+    source_s3_key: industries/landing/tax_accounting.md
     version: v001
     p2_markdown_content: loaded_from_s3
   p2_markdown_parse:
     parse_status: passed
-    source_s3_key: industries/services/tax_accounting.md
+    source_s3_key: industries/landing/tax_accounting.md
     version: v001
-    category: services
+    category: landing
     label: 세무/회계
     p2_confidence: 0.82
     frontmatter:
       domain: tax_accounting
-      category: services
+      category: landing
       label: 세무/회계
       confidence: 0.82
     knowledge_sections:
@@ -250,7 +250,7 @@ MockState:
       - parsed
   p2_markdown:
     status: reviewed
-    source_s3_key: industries/services/tax_accounting.md
+    source_s3_key: industries/landing/tax_accounting.md
     generated_s3_key:
     version: v001
     p2_confidence: 0.78
@@ -372,7 +372,7 @@ MockState:
     p2_markdown_bucket: dev-hezo-p2-markdowns
     contract_bucket: dev-hezo-p4-contracts
     transcript_key: sessions/session_001/transcripts/000001.json
-    p2_markdown_key: industries/services/tax_accounting.md
+    p2_markdown_key: industries/landing/tax_accounting.md
     contract_draft_key: sites/site_001/contracts/draft/000001.json
     contract_final_key: sites/site_001/contract_final.json
     guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
