@@ -68,11 +68,13 @@ from s3_artifact_store import (
     CHAT_BUCKET,
     CHAT_TRANSCRIPTS_BUCKET,
     CONTRACTS_BUCKET,
+    ENRICHED_MARKDOWNS_BUCKET,
     InMemoryS3ArtifactStore,
     P2_MARKDOWNS_BUCKET,
     chat_transcript_key,
     contract_draft_key,
     contract_final_key,
+    enriched_markdown_key,
     guardrail_report_key,
     p2_markdown_key,
 )
@@ -1326,6 +1328,8 @@ def _validate_s3_artifact_store_cases() -> list[str]:
         errors.append("chat transcript key 생성 규칙이 올바르지 않습니다.")
     if p2_markdown_key("landing", "tax_accounting") != "industries/landing/tax_accounting.md":
         errors.append("P2 markdown key 생성 규칙이 올바르지 않습니다.")
+    if enriched_markdown_key("landing", "tax_accounting") != "pending/landing/tax_accounting.md":
+        errors.append("enriched markdown key 생성 규칙이 올바르지 않습니다.")
     if contract_draft_key("site_001", 1) != "sites/site_001/contracts/draft/000001.json":
         errors.append("contract draft key 생성 규칙이 올바르지 않습니다.")
     if contract_final_key("site_001") != "sites/site_001/contract_final.json":
@@ -1363,6 +1367,22 @@ def _validate_s3_artifact_store_cases() -> list[str]:
     store.put_artifact(ArtifactPayload(ref=p2_ref, body="# 세무/회계 질문 가이드"))
     if "# 세무/회계 질문 가이드" != store.get_artifact(p2_ref):
         errors.append("P2 markdown artifact를 저장 후 조회할 수 있어야 합니다.")
+
+    enriched_ref = store.build_artifact_ref(
+        "enriched_markdown",
+        category="landing",
+        domain="tax_accounting",
+    )
+    if enriched_ref.bucket != ENRICHED_MARKDOWNS_BUCKET:
+        errors.append("enriched markdown bucket은 hezo-wiki-staging 기준이어야 합니다.")
+    store.put_artifact(
+        ArtifactPayload(
+            ref=enriched_ref,
+            body="# 사이트별 보강 지식\n\n- 업체명: 한빛 세무회계",
+        )
+    )
+    if "사이트별 보강 지식" not in store.get_artifact(enriched_ref):
+        errors.append("enriched markdown artifact를 저장 후 조회할 수 있어야 합니다.")
 
     draft_ref = store.build_artifact_ref("contract_draft", site_id="site_001", version=1)
     if draft_ref.bucket != CONTRACTS_BUCKET:
@@ -1439,6 +1459,11 @@ def _validate_s3_artifact_store_cases() -> list[str]:
             "p2_markdown_category_invalid",
         ),
         ("empty_domain", lambda: p2_markdown_key("landing", " "), "domain_missing"),
+        (
+            "empty_enriched_markdown_domain",
+            lambda: enriched_markdown_key("landing", " "),
+            "domain_missing",
+        ),
         ("empty_site_id", lambda: contract_final_key(" "), "site_id_missing"),
         (
             "guardrail_blocked",
@@ -1959,8 +1984,13 @@ def _validate_chat_graph_cases() -> list[str]:
         errors.append("chat graph는 session metadata ref를 포함해야 합니다.")
     if not final_dict["artifact_refs"] or "uri" not in final_dict["artifact_refs"][0]:
         errors.append("chat graph는 artifact_refs uri를 포함해야 합니다.")
+    artifact_kinds = {artifact["artifact_kind"] for artifact in final_dict["artifact_refs"]}
+    if "enriched_markdown" not in artifact_kinds:
+        errors.append("chat graph는 enriched markdown artifact ref를 저장해야 합니다.")
     if "contract_draft_artifact_saved" not in final_state.reasons:
         errors.append("chat graph 완료 사유에는 artifact 저장 결과가 포함되어야 합니다.")
+    if "enriched_markdown_artifact_saved" not in final_state.reasons:
+        errors.append("chat graph 완료 사유에는 enriched markdown 저장 결과가 포함되어야 합니다.")
 
     ready_state = run_chat_graph(
         _sample_chat_graph_state(

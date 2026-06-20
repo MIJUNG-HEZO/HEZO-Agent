@@ -133,6 +133,7 @@ Stages:
       - p2_markdown_bucket
       - contract_bucket
       - transcript_key
+      - enriched_markdown_key
       - contract_draft_key
       - contract_final_key
 
@@ -373,6 +374,7 @@ MockState:
     contract_bucket: dev-hezo-p4-contracts
     transcript_key: sessions/session_001/transcripts/000001.json
     p2_markdown_key: industries/landing/tax_accounting.md
+    enriched_markdown_key: pending/landing/tax_accounting.md
     contract_draft_key: sites/site_001/contracts/draft/000001.json
     contract_final_key: sites/site_001/contract_final.json
     guardrail_report_key: sessions/session_001/guardrails/contract_draft/2026-06-16T10:00:01Z.json
@@ -423,6 +425,7 @@ MockState:
       pk: SESSION#session_001
       sk: CHECKPOINT#bedrock_guardrails#000001
     graph_artifact_refs:
+      - uri: s3://hezo-wiki-staging/pending/landing/tax_accounting.md
       - uri: s3://dev-hezo-p4-contracts/sites/site_001/contracts/draft/000001.json
   chat_http_wrapper:
     endpoints:

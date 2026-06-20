@@ -450,6 +450,19 @@ def s3_artifact_storage_node(
     state: ChatGraphState,
     store: S3ArtifactStore,
 ) -> ChatGraphState:
+    enriched_ref = store.build_artifact_ref(
+        "enriched_markdown",
+        category=state.category,
+        domain=state.domain,
+    )
+    stored_enriched_ref = store.put_artifact(
+        ArtifactPayload(
+            ref=enriched_ref,
+            body=_build_enriched_markdown(state),
+            guardrail_action=str(state.guardrail_result.get("action", "NONE")),
+            store_allowed=bool(state.guardrail_result.get("store_allowed", True)),
+        )
+    )
     draft_ref = store.build_artifact_ref(
         "contract_draft",
         site_id=state.site_id,
@@ -463,8 +476,14 @@ def s3_artifact_storage_node(
             store_allowed=bool(state.guardrail_result.get("store_allowed", True)),
         )
     )
-    artifact_refs = state.artifact_refs + (stored_draft_ref.to_dict(),)
-    reasons = state.reasons + ("contract_draft_artifact_saved",)
+    artifact_refs = state.artifact_refs + (
+        stored_enriched_ref.to_dict(),
+        stored_draft_ref.to_dict(),
+    )
+    reasons = state.reasons + (
+        "enriched_markdown_artifact_saved",
+        "contract_draft_artifact_saved",
+    )
     if bool(state.quality_check.get("preview_ready", False)):
         final_ref = store.build_artifact_ref("contract_final", site_id=state.site_id)
         stored_final_ref = store.put_artifact(
@@ -483,6 +502,66 @@ def s3_artifact_storage_node(
         artifact_refs=artifact_refs,
         reasons=reasons,
     )
+
+
+def _build_enriched_markdown(state: ChatGraphState) -> str:
+    source_ref = state.p2_markdown_load.get("ref", {})
+    sections = state.p2_markdown_parse.get("knowledge_sections", [])
+    evidence_refs = state.p2_markdown_parse.get("evidence_refs", [])
+
+    lines = [
+        "---",
+        f"site_id: {state.site_id}",
+        f"user_id: {state.user_id}",
+        f"domain: {state.domain}",
+        f"category: {state.category}",
+        f"label: {state.domain_label}",
+        f"selected_template: {state.selected_template}",
+        "generated_by: p1-chat-agent",
+        "artifact_kind: enriched_markdown",
+        "version: 1",
+        f"source_s3_key: {source_ref.get('key', '')}",
+        f"p2_version: {state.p2_version or ''}",
+        "---",
+        "",
+        f"# {state.domain_label} 사이트별 보강 지식",
+        "",
+        "## P2 원본 지식 요약",
+    ]
+    if sections:
+        for section in sections:
+            title = str(section.get("title", "")).strip()
+            body = str(section.get("body", "")).strip()
+            if title:
+                lines.extend(["", f"### {title}"])
+            if body:
+                lines.extend(["", body])
+    else:
+        lines.extend(["", "P2 원본 지식 섹션이 충분하지 않습니다."])
+
+    lines.extend(["", "## 사용자 대화 기반 보강"])
+    for slot, meta in state.slot_registry.items():
+        label = str(meta.get("label", slot))
+        value = state.known_answers.get(slot)
+        value_text = str(value).strip() if value is not None else ""
+        if value_text:
+            lines.append(f"- {label}: {value_text}")
+
+    if state.missing_slots:
+        lines.extend(["", "## 아직 부족한 슬롯"])
+        for slot in state.missing_slots:
+            label = str(state.slot_registry.get(slot, {}).get("label", slot))
+            lines.append(f"- {label}")
+
+    if evidence_refs:
+        lines.extend(["", "## 출처"])
+        for evidence in evidence_refs:
+            ref_id = str(evidence.get("ref_id", "")).strip()
+            text = str(evidence.get("text", "")).strip()
+            if ref_id and text:
+                lines.append(f"- [{ref_id}] {text}")
+
+    return "\n".join(lines)
 
 
 def _replace(state: ChatGraphState, **changes: Any) -> ChatGraphState:

@@ -136,8 +136,8 @@ source_urls:
         )
         artifact_refs = final_state.artifact_refs
         artifact_kinds = {artifact["artifact_kind"] for artifact in artifact_refs}
-        if {"contract_draft", "contract_final"} - artifact_kinds:
-            print("[FAIL] graph did not save draft/final contract artifacts")
+        if {"enriched_markdown", "contract_draft", "contract_final"} - artifact_kinds:
+            print("[FAIL] graph did not save enriched markdown and draft/final contract artifacts")
             print(final_state.to_dict())
             return 1
 

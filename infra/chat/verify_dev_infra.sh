@@ -16,6 +16,7 @@ PROFILE="${AWS_PROFILE:-}"
 TABLE_NAME="${HEZO_AGENT_DYNAMODB_TABLE:-hezo_agent_chat}"
 CHAT_BUCKET="${HEZO_CHAT_BUCKET:-hezo-chat}"
 P2_MARKDOWNS_BUCKET="${HEZO_P2_MARKDOWNS_BUCKET:-hezo-wiki}"
+ENRICHED_MARKDOWNS_BUCKET="${HEZO_ENRICHED_MARKDOWNS_BUCKET:-hezo-wiki-staging}"
 CONTRACTS_BUCKET="${HEZO_CONTRACTS_BUCKET:-hezo-artifacts}"
 MODEL_ID="${HEZO_BEDROCK_MODEL_ID:-anthropic.claude-sonnet-4-5-20250929-v1:0}"
 GUARDRAIL_NAME="${HEZO_BEDROCK_GUARDRAIL_NAME:-hezo-dev-guardrail}"
@@ -151,6 +152,7 @@ main() {
   check_dynamodb
   check_bucket "$CHAT_BUCKET"
   check_bucket "$P2_MARKDOWNS_BUCKET"
+  check_bucket "$ENRICHED_MARKDOWNS_BUCKET"
   check_bucket "$CONTRACTS_BUCKET"
   check_bedrock_model
   check_guardrail
