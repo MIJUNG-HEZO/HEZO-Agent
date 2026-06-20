@@ -22,6 +22,26 @@ DEFAULT_MODEL_ID = os.environ.get(
 )
 READ_TIMEOUT = 300  # 생성 콜이 길 수 있어 read_timeout 여유
 
+# 관측(P5): LLM 호출마다 비용·토큰·지연을 CloudWatch(HEZO/Agents)로 전송.
+# libs 미탑재(일부 테스트)면 no-op으로 떨어져 위키 동작에는 영향 없음.
+try:
+    from libs.telemetry import init_telemetry, record_llm_usage
+
+    init_telemetry("wiki", region=os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2"))
+except Exception:  # noqa: BLE001 — libs 없음/자격증명 없음 → 비용기록 없이 동작
+    def record_llm_usage(*_a: Any, **_k: Any) -> None:  # type: ignore[misc]
+        return None
+
+
+def _short_model(model_id: str) -> str:
+    """모델 id → telemetry 단가표 키(sonnet/haiku/opus)."""
+    m = model_id.lower()
+    if "haiku" in m:
+        return "haiku"
+    if "opus" in m:
+        return "opus"
+    return "sonnet"
+
 
 @dataclass(frozen=True)
 class LLMResult:
@@ -91,10 +111,16 @@ class BedrockLLM:
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         usage = resp.get("usage", {})
+        in_tok = int(usage.get("inputTokens", 0))
+        out_tok = int(usage.get("outputTokens", 0))
+
+        # 관측(P5): 비용·토큰·지연 기록 (wiki 에이전트로 분류)
+        record_llm_usage("wiki", _short_model(self.model_id), in_tok, out_tok, ms=latency_ms)
+
         return LLMResult(
             text=_extract_text(resp),
-            input_tokens=int(usage.get("inputTokens", 0)),
-            output_tokens=int(usage.get("outputTokens", 0)),
+            input_tokens=in_tok,
+            output_tokens=out_tok,
             latency_ms=latency_ms,
             ok=True,
             stop_reason=str(resp.get("stopReason", "")),
