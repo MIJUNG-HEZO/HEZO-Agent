@@ -1,0 +1,98 @@
+{
+  "Comment": "HEZO P2 Wiki Augmentation (보강 B) — Pick(due+claim 얇은 람다) → Crawl → Review&Store",
+  "StartAt": "Pick",
+  "States": {
+
+    "Pick": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-pick",
+        "Payload": {}
+      },
+      "ResultPath": "$.pick",
+      "Next": "HasDomain",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
+      ]
+    },
+
+    "HasDomain": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.pick.Payload.found", "BooleanEquals": true, "Next": "Crawl" }
+      ],
+      "Default": "NoDomainsDue"
+    },
+
+    "Crawl": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-crawl",
+        "Payload": {
+          "category.$": "$.pick.Payload.category",
+          "domain.$": "$.pick.Payload.domain"
+        }
+      },
+      "ResultPath": "$.crawl",
+      "Next": "ReviewAndStore",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
+      ]
+    },
+
+    "ReviewAndStore": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-generate",
+        "Payload": {
+          "category.$": "$.pick.Payload.category",
+          "domain.$": "$.pick.Payload.domain",
+          "raw_key.$": "$.crawl.Payload.raw_key"
+        }
+      },
+      "ResultPath": "$.generate",
+      "Next": "PipelineSuccess",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
+      ]
+    },
+
+    "PipelineSuccess": { "Type": "Succeed" },
+
+    "NoDomainsDue": { "Type": "Succeed" },
+
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "WikiPipelineFailed",
+      "Cause": "Pick/Crawl/ReviewAndStore failed. Check CloudWatch Logs."
+    }
+
+  }
+}
