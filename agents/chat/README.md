@@ -97,7 +97,7 @@ domain_selection
 {
   "payload_version": "v0.2",
   "target_artifact": "industry_domain_knowledge_markdown",
-  "category": "services",
+  "category": "landing",
   "domain": "tax_accounting",
   "domain_label": "세무/회계",
   "selected_template": "landing/13-tax-accounting",
@@ -183,14 +183,14 @@ key 결정 기준:
 {
   "ref": {
     "bucket": "hezo-wiki",
-    "key": "industries/services/tax_accounting.md",
+    "key": "industries/landing/tax_accounting.md",
     "artifact_kind": "p2_markdown"
   },
   "parse_input": {
-    "category": "services",
+    "category": "landing",
     "domain": "tax_accounting",
     "expected_domain": "tax_accounting",
-    "source_s3_key": "industries/services/tax_accounting.md",
+    "source_s3_key": "industries/landing/tax_accounting.md",
     "version": "v001"
   }
 }
@@ -222,7 +222,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 ```json
 {
   "domain": "tax_accounting",
-  "category": "services",
+  "category": "landing",
   "label": "세무/회계",
   "p2_confidence": 0.82,
   "parse_status": "passed",
@@ -633,6 +633,7 @@ python3 agents/chat/test_chat_message_dynamodb_aws_smoke.py
 ```text
 hezo-chat
 hezo-wiki
+hezo-wiki-staging
 hezo-artifacts
 ```
 
@@ -641,6 +642,7 @@ key 설계:
 ```text
 sessions/{session_id}/transcripts/{version}.json
 industries/{category}/{domain}.md
+pending/{category}/{domain}.md
 sites/{site_id}/contracts/draft/{version}.json
 sites/{site_id}/contract_final.json
 sessions/{session_id}/guardrails/{target}/{timestamp}.json
@@ -651,6 +653,12 @@ P2 markdown load 정책:
 - `source_s3_key`가 명시되면 해당 key를 우선 사용합니다.
 - `source_s3_key`가 없으면 dev fallback으로 `industries/{category}/{domain}.md`를 사용합니다.
 - P2 팀의 최종 prefix가 확정되면 호출 payload의 `source_s3_key`만 조정하고 loader 계약은 유지합니다.
+
+P1 enriched markdown 저장 정책:
+
+- P2 원본 markdown은 덮어쓰지 않습니다.
+- 사용자 대화와 보강 결과를 반영한 보강 markdown은 `hezo-wiki-staging/pending/{category}/{domain}.md`에 저장합니다.
+- Contract JSON은 `hezo-artifacts`에 저장하고, P1 보강 markdown 산출물은 `hezo-wiki-staging`에 저장해 책임을 분리합니다.
 
 P4 Contract 저장 정책:
 
@@ -675,7 +683,7 @@ P4 Contract 저장 정책:
 - `build_artifact_ref`, `put_artifact`, `get_artifact` repository 경계 제공
 - 로컬 smoke test에서는 `InMemoryS3ArtifactStore`로 저장/조회 검증
 - AWS dev smoke test에서는 `Boto3S3ArtifactStore`로 `hezo-chat` write/read/delete 검증
-- graph S3 pipeline smoke test에서는 `hezo-wiki` P2 markdown load와 `hezo-artifacts` Contract draft/final 저장을 검증
+- graph S3 pipeline smoke test에서는 `hezo-wiki` P2 markdown load, `hezo-wiki-staging` enriched markdown 저장, `hezo-artifacts` Contract draft/final 저장을 검증
 - `store_allowed=false` 또는 `guardrail_action != NONE`이면 저장을 거부
 - 실제 S3 bucket, boto3 client, IAM 기준은 `infra/chat` 문서를 따른다.
 - KMS/SSE, lifecycle policy 고도화는 후속 운영 이슈에서 처리
@@ -1031,6 +1039,7 @@ curl -X POST http://localhost:8080/invocations \
 - `HEZO_BEDROCK_INFERENCE_PROFILE_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0`
 - `HEZO_CHAT_BUCKET=hezo-chat`
 - `HEZO_P2_MARKDOWNS_BUCKET=hezo-wiki`
+- `HEZO_ENRICHED_MARKDOWNS_BUCKET=hezo-wiki-staging`
 - `HEZO_CONTRACTS_BUCKET=hezo-artifacts`
 - `HEZO_AGENT_DYNAMODB_TABLE=hezo_agent_chat`
 - `HEZO_BEDROCK_GUARDRAIL_ID=q8dcjc2um846`

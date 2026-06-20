@@ -64,7 +64,7 @@ def main() -> int:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     source_s3_key = f"smoke/p2_markdown_loader/{timestamp}.md"
     load_input = P2MarkdownLoadInput(
-        category="services",
+        category="landing",
         domain="tax_accounting",
         expected_domain="tax_accounting",
         slot_registry=SLOT_REGISTRY,
@@ -80,7 +80,7 @@ def main() -> int:
             body="""
 ---
 domain: tax_accounting
-category: services
+category: landing
 template_no: 13
 label: 세무/회계
 confidence: 0.82

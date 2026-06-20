@@ -11,6 +11,7 @@ from typing import Any, Literal, Protocol
 ArtifactKind = Literal[
     "chat_transcript",
     "p2_markdown",
+    "enriched_markdown",
     "contract_draft",
     "contract_final",
     "guardrail_report",
@@ -19,7 +20,12 @@ ArtifactKind = Literal[
 CHAT_BUCKET = os.environ.get("HEZO_CHAT_BUCKET", "hezo-chat")
 CHAT_TRANSCRIPTS_BUCKET = CHAT_BUCKET
 P2_MARKDOWNS_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+ENRICHED_MARKDOWNS_BUCKET = os.environ.get(
+    "HEZO_ENRICHED_MARKDOWNS_BUCKET",
+    "hezo-wiki-staging",
+)
 CONTRACTS_BUCKET = os.environ.get("HEZO_CONTRACTS_BUCKET", "hezo-artifacts")
+P2_MARKDOWN_CATEGORIES = ("landing", "blog", "store")
 
 
 @dataclass(frozen=True)
@@ -108,6 +114,16 @@ class InMemoryS3ArtifactStore:
                 ),
                 artifact_kind=artifact_kind,
                 content_type="application/json",
+            )
+        if artifact_kind == "enriched_markdown":
+            return ArtifactRef(
+                bucket=ENRICHED_MARKDOWNS_BUCKET,
+                key=enriched_markdown_key(
+                    str(kwargs.get("category", "")),
+                    str(kwargs.get("domain", "")),
+                ),
+                artifact_kind=artifact_kind,
+                content_type="text/markdown; charset=utf-8",
             )
         if artifact_kind == "contract_final":
             return ArtifactRef(
@@ -219,9 +235,15 @@ def chat_transcript_key(session_id: str, version: int) -> str:
 
 
 def p2_markdown_key(category: str, domain: str) -> str:
+    category = _require_p2_markdown_category(category)
+    _require_text("domain", domain)
+    return f"industries/{category}/{domain.strip()}.md"
+
+
+def enriched_markdown_key(category: str, domain: str) -> str:
     _require_text("category", category)
     _require_text("domain", domain)
-    return f"industries/{category.strip()}/{domain.strip()}.md"
+    return f"pending/{category.strip()}/{domain.strip()}.md"
 
 
 def contract_draft_key(site_id: str, version: int) -> str:
@@ -257,6 +279,14 @@ def _serialize_body(body: str | dict[str, Any] | list[Any]) -> str:
 def _require_text(field_name: str, value: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name}_missing")
+
+
+def _require_p2_markdown_category(category: str) -> str:
+    _require_text("category", category)
+    normalized = category.strip()
+    if normalized not in P2_MARKDOWN_CATEGORIES:
+        raise ValueError("p2_markdown_category_invalid")
+    return normalized
 
 
 def _require_positive_version(version: int, field_name: str) -> None:

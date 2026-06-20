@@ -55,7 +55,7 @@ def main() -> int:
     artifact_store = Boto3S3ArtifactStore()
     p2_ref = build_p2_markdown_ref(
         P2MarkdownLoadInput(
-            category="services",
+            category="landing",
             domain="tax_accounting",
             expected_domain="tax_accounting",
             slot_registry=_slot_registry(),
@@ -151,7 +151,7 @@ def _invoke_agentcore(
             "site_id": site_id,
             "user_id": "agentcore_aws_storage_user_001",
             "storage_mode": "aws",
-            "category": "services",
+            "category": "landing",
             "domain": "tax_accounting",
             "domain_label": "세무/회계",
             "selected_template": "landing/13-tax-accounting",

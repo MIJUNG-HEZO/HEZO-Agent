@@ -71,7 +71,7 @@ def main() -> int:
                 site_id=f"smoke_site_{timestamp}",
                 user_id="smoke_user_001",
                 stage="domain_selection",
-                category="services",
+                category="landing",
                 domain="tax_accounting",
                 domain_label="세무/회계",
                 selected_template="landing/13-tax-accounting",
