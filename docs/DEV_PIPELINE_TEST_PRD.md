@@ -66,13 +66,20 @@ hezo-artifacts/{site_id}/
 - `SITE_BUCKET` 환경변수 추가
 - `supplementary_files` → llms.txt / llms-full.txt / sitemap.xml / robots.txt → hezo-sites 직접 저장
 
-### P3 빌드 워커 — ⏳ 연동 대기
+### P3 빌드 워커 — ✅ ECS Fargate 상시 서비스 배포
 
 | 항목 | 상태 |
 |---|---|
-| render_spec → next build/export | ✅ 스파이크 완료 |
-| ECS Fargate Task 정의 | ⏳ P3 팀 작업 중 |
-| Step Functions `WaitForBuildWorker` 실 연결 | ❌ 현재 Pass 스텁 |
+| render_spec → HTML + GEO 파일 생성 | ✅ |
+| ECS Task Definition (`infra/build/task-definition.json`) | ✅ arm64, 512CPU/1024MEM |
+| 배포 스크립트 (`infra/build/deploy_ecs_service.sh`) | ✅ ECR·ALB·서비스 통합 |
+| ECS 서비스: `hezo-build-worker-svc` (클러스터: `hezo-cluster`) | ✅ |
+| ALB: `hezo-build-worker-alb` (Default VPC, HTTP:80) | ✅ |
+| SSM: `hezo-build-agent-endpoint` | ✅ |
+| Step Functions `InvokeBuildWorker` HTTP Task 연동 | ✅ |
+
+재배포: `bash infra/build/deploy_ecs_service.sh`
+이미지 재사용: `bash infra/build/deploy_ecs_service.sh --skip-build`
 
 ### P4 검증 에이전트 — ❌ 미구현 (차후)
 

@@ -328,6 +328,14 @@ def _fix_css_paths(soup: BeautifulSoup) -> None:
 # 메인 렌더 함수
 # =============================================================================
 
+def _inject_hreflang(soup: BeautifulSoup, canonical: str) -> None:
+    head = soup.find("head")
+    if not head or not canonical:
+        return
+    if not soup.find("link", attrs={"rel": "alternate", "hreflang": "ko"}):
+        head.append(soup.new_tag("link", attrs={"rel": "alternate", "hreflang": "ko", "href": canonical}))
+
+
 def _inject_noindex(soup: BeautifulSoup) -> None:
     head = soup.find("head")
     if not head:
@@ -395,7 +403,12 @@ def render(template_html: str, render_spec: dict, is_preview: bool = False) -> s
     # 9. CSS 경로 패치
     _fix_css_paths(soup)
 
-    # 10. 프리뷰 noindex (검색 색인 차단)
+    # 10. hreflang (퍼블리시 전용 — 프리뷰에서는 불필요)
+    if not is_preview:
+        canonical = page.get("seo", {}).get("canonical", "")
+        _inject_hreflang(soup, canonical)
+
+    # 11. 프리뷰 noindex (검색 색인 차단)
     if is_preview:
         _inject_noindex(soup)
 

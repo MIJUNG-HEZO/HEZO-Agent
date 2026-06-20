@@ -50,7 +50,7 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         parsed = urlparse(canonical)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
     except (KeyError, IndexError, TypeError):
-        base_url = f"https://{site_id}.hezo.io"
+        base_url = f"https://{site_id}.doodo.cloud"
         logger.warning("canonical URL 파싱 실패 — fallback 사용: %s", base_url)
 
     prefix = f"sites/{site_id}/dist"
@@ -69,6 +69,11 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         logger.info("llms-full.txt 저장: s3://%s/%s", SITE_BUCKET, key)
 
     if sitemap_pages := supp.get("sitemap_pages", []):
+        # llms-full.txt가 sitemap에 없으면 자동 추가
+        if not any(p.get("path") == "/llms-full.txt" for p in sitemap_pages):
+            sitemap_pages = list(sitemap_pages) + [
+                {"path": "/llms-full.txt", "priority": 0.8, "changefreq": "monthly"}
+            ]
         xml = _build_sitemap_xml(sitemap_pages, base_url)
         key = f"{prefix}/sitemap.xml"
         write_text(SITE_BUCKET, key, xml, "application/xml")
@@ -76,6 +81,9 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         logger.info("sitemap.xml 저장: s3://%s/%s", SITE_BUCKET, key)
 
     if robots_rules := supp.get("robots_rules", []):
+        # Yeti(Naver Cue 크롤러)가 없으면 자동 추가
+        if not any("Yeti" in r for r in robots_rules):
+            robots_rules = list(robots_rules) + ["", "User-agent: Yeti", "Allow: /"]
         key = f"{prefix}/robots.txt"
         write_text(SITE_BUCKET, key, "\n".join(robots_rules))
         saved.append(key)
