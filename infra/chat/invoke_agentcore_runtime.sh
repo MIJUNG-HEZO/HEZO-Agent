@@ -108,7 +108,7 @@ payload = {
         "site_id": site_id,
         "user_id": user_id,
         "storage_mode": storage_mode,
-        "category": "services",
+        "category": "landing",
         "domain": "tax_accounting",
         "domain_label": "세무/회계",
         "selected_template": "landing/13-tax-accounting",

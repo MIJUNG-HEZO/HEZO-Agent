@@ -30,7 +30,7 @@ from s3_artifact_store import (
 )
 
 
-DEFAULT_CATEGORY = "services"
+DEFAULT_CATEGORY = "landing"
 DEFAULT_DOMAIN = "tax_accounting"
 DEFAULT_DOMAIN_LABEL = "세무/회계"
 DEFAULT_TEMPLATE = "landing/13-tax-accounting"

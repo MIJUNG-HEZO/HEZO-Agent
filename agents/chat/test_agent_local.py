@@ -305,7 +305,7 @@ def _sample_request_input(**overrides: object) -> P2MarkdownRequestInput:
     data = {
         "site_id": "site_001",
         "user_id": "user_001",
-        "category": "services",
+        "category": "landing",
         "domain": "tax_accounting",
         "domain_label": "세무/회계",
         "selected_template": "landing/13-tax-accounting",
@@ -361,7 +361,7 @@ def _sample_p2_markdown_parse_input(**overrides: object) -> P2MarkdownParseInput
         "expected_domain": request_input.domain,
         "content": _sample_p2_markdown_content(),
         "slot_registry": request_input.slot_registry,
-        "source_s3_key": "industries/services/tax_accounting.md",
+        "source_s3_key": "industries/landing/tax_accounting.md",
         "version": "v001",
         "source_count": 2,
         "source_grade": "mid",
@@ -433,7 +433,7 @@ def _sample_p2_markdown_content() -> str:
     return """
 ---
 domain: tax_accounting
-category: services
+category: landing
 template_no: 13
 label: 세무/회계
 confidence: 0.82
@@ -500,7 +500,7 @@ def _validate_request_cases() -> list[str]:
 
     if payload_dict["target_artifact"] != "industry_domain_knowledge_markdown":
         errors.append("request payload target_artifact 값이 올바르지 않습니다.")
-    if payload_dict["category"] != "services":
+    if payload_dict["category"] != "landing":
         errors.append("request payload category 값이 올바르지 않습니다.")
     if payload_dict["domain"] != "tax_accounting":
         errors.append("request payload domain 값이 올바르지 않습니다.")
@@ -540,7 +540,7 @@ def _validate_p2_markdown_parse_cases() -> list[str]:
         errors.append("정상 P2 markdown은 parse_status=passed여야 합니다.")
     if parsed.p2_confidence != 0.82:
         errors.append("confidence metadata를 p2_confidence로 파싱해야 합니다.")
-    if parsed.category != "services":
+    if parsed.category != "landing":
         errors.append("frontmatter category를 파싱해야 합니다.")
     if len(parsed.knowledge_sections) != 2:
         errors.append("도메인 지식 섹션을 knowledge_sections로 파싱해야 합니다.")
@@ -548,7 +548,7 @@ def _validate_p2_markdown_parse_cases() -> list[str]:
         errors.append("섹션 heading의 [S?] 인용을 source_refs로 파싱해야 합니다.")
     if len(parsed.evidence_refs) != 2:
         errors.append("출처 목록을 evidence_refs로 분리해야 합니다.")
-    if parsed_dict["source_s3_key"] != "industries/services/tax_accounting.md":
+    if parsed_dict["source_s3_key"] != "industries/landing/tax_accounting.md":
         errors.append("source_s3_key metadata를 보존해야 합니다.")
 
     request_input = _sample_request_input()
@@ -573,7 +573,7 @@ def _validate_p2_markdown_parse_cases() -> list[str]:
             content="""
 ---
 domain: tax_accounting
-category: services
+category: landing
 label: 세무/회계
 confidence: 0.82
 ---
@@ -621,7 +621,7 @@ def _validate_p2_markdown_loader_cases() -> list[str]:
     store.put_artifact(ArtifactPayload(ref=ref, body=_sample_p2_markdown_content()))
     loaded = load_p2_markdown_from_s3(load_input, store)
     parsed = parse_p2_markdown(loaded.parse_input)
-    if loaded.ref.key != "industries/services/tax_accounting.md":
+    if loaded.ref.key != "industries/landing/tax_accounting.md":
         errors.append("category/domain 기준 P2 markdown key 생성이 올바르지 않습니다.")
     if parsed.parse_status != "passed":
         errors.append("S3 loader 결과는 parser에서 passed로 처리되어야 합니다.")
@@ -697,7 +697,7 @@ def _validate_chat_session_start_cases() -> list[str]:
         errors.append("P2 markdown 질문이 충분하면 llm_required=false여야 합니다.")
     if not result.question_candidates or result.question_candidates[0].source != "p2_markdown":
         errors.append("세션 시작 결과는 P2 기반 첫 질문 후보를 반환해야 합니다.")
-    if result_dict["p2_markdown_load"]["ref"]["key"] != "industries/services/tax_accounting.md":
+    if result_dict["p2_markdown_load"]["ref"]["key"] != "industries/landing/tax_accounting.md":
         errors.append("세션 시작 결과는 P2 markdown load ref를 포함해야 합니다.")
 
     explicit_store = InMemoryS3ArtifactStore()
@@ -726,7 +726,7 @@ def _validate_chat_session_start_cases() -> list[str]:
             body="""
 ---
 domain: tax_accounting
-category: services
+category: landing
 label: 세무/회계
 confidence: 0.82
 ---
@@ -1324,7 +1324,7 @@ def _validate_s3_artifact_store_cases() -> list[str]:
 
     if chat_transcript_key("session_001", 1) != "sessions/session_001/transcripts/000001.json":
         errors.append("chat transcript key 생성 규칙이 올바르지 않습니다.")
-    if p2_markdown_key("services", "tax_accounting") != "industries/services/tax_accounting.md":
+    if p2_markdown_key("landing", "tax_accounting") != "industries/landing/tax_accounting.md":
         errors.append("P2 markdown key 생성 규칙이 올바르지 않습니다.")
     if contract_draft_key("site_001", 1) != "sites/site_001/contracts/draft/000001.json":
         errors.append("contract draft key 생성 규칙이 올바르지 않습니다.")
@@ -1355,7 +1355,7 @@ def _validate_s3_artifact_store_cases() -> list[str]:
 
     p2_ref = store.build_artifact_ref(
         "p2_markdown",
-        category="services",
+        category="landing",
         domain="tax_accounting",
     )
     if p2_ref.bucket != P2_MARKDOWNS_BUCKET:
@@ -1433,7 +1433,12 @@ def _validate_s3_artifact_store_cases() -> list[str]:
             "transcript_version_must_be_positive",
         ),
         ("empty_category", lambda: p2_markdown_key(" ", "tax_accounting"), "category_missing"),
-        ("empty_domain", lambda: p2_markdown_key("services", " "), "domain_missing"),
+        (
+            "invalid_p2_category",
+            lambda: p2_markdown_key("services", "tax_accounting"),
+            "p2_markdown_category_invalid",
+        ),
+        ("empty_domain", lambda: p2_markdown_key("landing", " "), "domain_missing"),
         ("empty_site_id", lambda: contract_final_key(" "), "site_id_missing"),
         (
             "guardrail_blocked",

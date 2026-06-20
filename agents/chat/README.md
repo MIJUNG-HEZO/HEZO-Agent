@@ -97,7 +97,7 @@ domain_selection
 {
   "payload_version": "v0.2",
   "target_artifact": "industry_domain_knowledge_markdown",
-  "category": "services",
+  "category": "landing",
   "domain": "tax_accounting",
   "domain_label": "세무/회계",
   "selected_template": "landing/13-tax-accounting",
@@ -183,14 +183,14 @@ key 결정 기준:
 {
   "ref": {
     "bucket": "hezo-wiki",
-    "key": "industries/services/tax_accounting.md",
+    "key": "industries/landing/tax_accounting.md",
     "artifact_kind": "p2_markdown"
   },
   "parse_input": {
-    "category": "services",
+    "category": "landing",
     "domain": "tax_accounting",
     "expected_domain": "tax_accounting",
-    "source_s3_key": "industries/services/tax_accounting.md",
+    "source_s3_key": "industries/landing/tax_accounting.md",
     "version": "v001"
   }
 }
@@ -222,7 +222,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 ```json
 {
   "domain": "tax_accounting",
-  "category": "services",
+  "category": "landing",
   "label": "세무/회계",
   "p2_confidence": 0.82,
   "parse_status": "passed",
