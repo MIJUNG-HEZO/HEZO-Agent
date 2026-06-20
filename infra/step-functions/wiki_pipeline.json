@@ -1,7 +1,37 @@
 {
-  "Comment": "HEZO P2 Wiki Augmentation (보강 B) — Crawl → Review&Store",
-  "StartAt": "Crawl",
+  "Comment": "HEZO P2 Wiki Augmentation (보강 B) — Pick(due+claim 얇은 람다) → Crawl → Review&Store",
+  "StartAt": "Pick",
   "States": {
+
+    "Pick": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-pick",
+        "Payload": {}
+      },
+      "ResultPath": "$.pick",
+      "Next": "HasDomain",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
+      ]
+    },
+
+    "HasDomain": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.pick.Payload.found", "BooleanEquals": true, "Next": "Crawl" }
+      ],
+      "Default": "NoDomainsDue"
+    },
 
     "Crawl": {
       "Type": "Task",
@@ -9,8 +39,8 @@
       "Parameters": {
         "FunctionName": "hezo-wiki-crawl",
         "Payload": {
-          "category.$": "$.category",
-          "domain.$": "$.domain"
+          "category.$": "$.pick.Payload.category",
+          "domain.$": "$.pick.Payload.domain"
         }
       },
       "ResultPath": "$.crawl",
@@ -24,11 +54,7 @@
         }
       ],
       "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed",
-          "ResultPath": "$.error"
-        }
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
       ]
     },
 
@@ -38,8 +64,8 @@
       "Parameters": {
         "FunctionName": "hezo-wiki-generate",
         "Payload": {
-          "category.$": "$.category",
-          "domain.$": "$.domain",
+          "category.$": "$.pick.Payload.category",
+          "domain.$": "$.pick.Payload.domain",
           "raw_key.$": "$.crawl.Payload.raw_key"
         }
       },
@@ -54,22 +80,18 @@
         }
       ],
       "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed",
-          "ResultPath": "$.error"
-        }
+        { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": "$.error" }
       ]
     },
 
-    "PipelineSuccess": {
-      "Type": "Succeed"
-    },
+    "PipelineSuccess": { "Type": "Succeed" },
+
+    "NoDomainsDue": { "Type": "Succeed" },
 
     "PipelineFailed": {
       "Type": "Fail",
       "Error": "WikiPipelineFailed",
-      "Cause": "Crawl or ReviewAndStore failed. Check Lambda CloudWatch Logs."
+      "Cause": "Pick/Crawl/ReviewAndStore failed. Check CloudWatch Logs."
     }
 
   }

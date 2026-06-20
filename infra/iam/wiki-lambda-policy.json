@@ -25,7 +25,10 @@
       "Sid": "WikiIndexTable",
       "Effect": "Allow",
       "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:DeleteItem"],
-      "Resource": "arn:aws:dynamodb:ap-northeast-2:492554570964:table/hezo_wiki_index"
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-2:492554570964:table/hezo_wiki_index",
+        "arn:aws:dynamodb:ap-northeast-2:492554570964:table/hezo_wiki_index/index/due-index"
+      ]
     },
     {
       "Sid": "Logs",

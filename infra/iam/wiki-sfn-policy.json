@@ -6,6 +6,7 @@
       "Effect": "Allow",
       "Action": ["lambda:InvokeFunction"],
       "Resource": [
+        "arn:aws:lambda:ap-northeast-2:492554570964:function:hezo-wiki-pick",
         "arn:aws:lambda:ap-northeast-2:492554570964:function:hezo-wiki-crawl",
         "arn:aws:lambda:ap-northeast-2:492554570964:function:hezo-wiki-generate"
       ]
