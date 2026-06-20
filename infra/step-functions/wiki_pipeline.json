@@ -1,0 +1,76 @@
+{
+  "Comment": "HEZO P2 Wiki Augmentation (보강 B) — Crawl → Review&Store",
+  "StartAt": "Crawl",
+  "States": {
+
+    "Crawl": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-crawl",
+        "Payload": {
+          "category.$": "$.category",
+          "domain.$": "$.domain"
+        }
+      },
+      "ResultPath": "$.crawl",
+      "Next": "ReviewAndStore",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PipelineFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "ReviewAndStore": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-wiki-generate",
+        "Payload": {
+          "category.$": "$.category",
+          "domain.$": "$.domain",
+          "raw_key.$": "$.crawl.Payload.raw_key"
+        }
+      },
+      "ResultPath": "$.generate",
+      "Next": "PipelineSuccess",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException", "States.Timeout"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PipelineFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "PipelineSuccess": {
+      "Type": "Succeed"
+    },
+
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "WikiPipelineFailed",
+      "Cause": "Crawl or ReviewAndStore failed. Check Lambda CloudWatch Logs."
+    }
+
+  }
+}

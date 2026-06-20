@@ -21,7 +21,7 @@ import os
 WIKI_BUCKET = os.environ.get("WIKI_BUCKET", "hezo-wiki")              # 🟢 영구(industries), 버전드 ON, P1 읽음
 STAGING_BUCKET = os.environ.get("STAGING_BUCKET", "hezo-wiki-staging")  # 🟠 임시(raw·pending), 버전드 OFF
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("REGION", "ap-northeast-2"))
-AWS_PROFILE = os.environ.get("AWS_PROFILE", "hezo-p2")
+AWS_PROFILE = os.environ.get("AWS_PROFILE", "")
 
 # DynamoDB 색인 테이블 (본문 없음, 메타만) — 후속 이슈(index_store)에서 사용
 WIKI_INDEX_TABLE = os.environ.get("WIKI_INDEX_TABLE", "hezo_wiki_index")

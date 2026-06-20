@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WikiBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:DeleteObject"],
+      "Resource": [
+        "arn:aws:s3:::hezo-wiki",
+        "arn:aws:s3:::hezo-wiki/*",
+        "arn:aws:s3:::hezo-wiki-staging",
+        "arn:aws:s3:::hezo-wiki-staging/*"
+      ]
+    },
+    {
+      "Sid": "BedrockInvoke",
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel"],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:*:492554570964:inference-profile/*"
+      ]
+    },
+    {
+      "Sid": "WikiIndexTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:DeleteItem"],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:492554570964:table/hezo_wiki_index"
+    },
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:ap-northeast-2:492554570964:*"
+    }
+  ]
+}
