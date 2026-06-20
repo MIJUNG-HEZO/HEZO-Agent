@@ -29,7 +29,12 @@ _bedrock: Any = None
 def _get_bedrock():
     global _bedrock
     if _bedrock is None:
-        _bedrock = boto3.client("bedrock-runtime", region_name=REGION)
+        from botocore.config import Config
+        _bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=REGION,
+            config=Config(read_timeout=600, connect_timeout=10, retries={"max_attempts": 0}),
+        )
     return _bedrock
 
 

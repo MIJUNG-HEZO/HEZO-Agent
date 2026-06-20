@@ -24,7 +24,7 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
 REGION = "ap-northeast-2"
-RUNTIME_ARN = "arn:aws:bedrock-agentcore:ap-northeast-2:492554570964:runtime/hezo_generation_agent-GPmRKmCFnL"
+RUNTIME_ARN = "arn:aws:bedrock-agentcore:ap-northeast-2:492554570964:runtime/hezo_generation_agent-m8jBlL8wFT"
 QUALIFIER = "DEFAULT"
 
 
