@@ -505,41 +505,17 @@ def s3_artifact_storage_node(
 
 
 def _build_enriched_markdown(state: ChatGraphState) -> str:
-    source_ref = state.p2_markdown_load.get("ref", {})
-    sections = state.p2_markdown_parse.get("knowledge_sections", [])
     evidence_refs = state.p2_markdown_parse.get("evidence_refs", [])
+    original_content = str(state.p2_markdown_load.get("content", "")).strip()
+    original_frontmatter, original_body = _split_markdown_frontmatter(original_content)
 
-    lines = [
-        "---",
-        f"site_id: {state.site_id}",
-        f"user_id: {state.user_id}",
-        f"domain: {state.domain}",
-        f"category: {state.category}",
-        f"label: {state.domain_label}",
-        f"selected_template: {state.selected_template}",
-        "generated_by: p1-chat-agent",
-        "artifact_kind: enriched_markdown",
-        "version: 1",
-        f"source_s3_key: {source_ref.get('key', '')}",
-        f"p2_version: {state.p2_version or ''}",
-        "---",
-        "",
-        f"# {state.domain_label} 사이트별 보강 지식",
-        "",
-        "## P2 원본 지식 요약",
-    ]
-    if sections:
-        for section in sections:
-            title = str(section.get("title", "")).strip()
-            body = str(section.get("body", "")).strip()
-            if title:
-                lines.extend(["", f"### {title}"])
-            if body:
-                lines.extend(["", body])
-    else:
-        lines.extend(["", "P2 원본 지식 섹션이 충분하지 않습니다."])
+    lines: list[str] = []
+    if original_frontmatter:
+        lines.extend([original_frontmatter, ""])
+    if original_body:
+        lines.append(original_body)
 
-    lines.extend(["", "## 사용자 대화 기반 보강"])
+    lines.extend(["", "## P1 보강 정보", "", "### 사용자 대화 기반 보강"])
     for slot, meta in state.slot_registry.items():
         label = str(meta.get("label", slot))
         value = state.known_answers.get(slot)
@@ -548,13 +524,13 @@ def _build_enriched_markdown(state: ChatGraphState) -> str:
             lines.append(f"- {label}: {value_text}")
 
     if state.missing_slots:
-        lines.extend(["", "## 아직 부족한 슬롯"])
+        lines.extend(["", "### 아직 부족한 슬롯"])
         for slot in state.missing_slots:
             label = str(state.slot_registry.get(slot, {}).get("label", slot))
             lines.append(f"- {label}")
 
     if evidence_refs:
-        lines.extend(["", "## 출처"])
+        lines.extend(["", "### 참조 출처"])
         for evidence in evidence_refs:
             ref_id = str(evidence.get("ref_id", "")).strip()
             text = str(evidence.get("text", "")).strip()
@@ -562,6 +538,23 @@ def _build_enriched_markdown(state: ChatGraphState) -> str:
                 lines.append(f"- [{ref_id}] {text}")
 
     return "\n".join(lines)
+
+
+def _split_markdown_frontmatter(content: str) -> tuple[str, str]:
+    if not content.startswith("---\n"):
+        return "", content
+
+    end_marker = content.find("\n---", 4)
+    if end_marker < 0:
+        return "", content
+
+    marker_end = end_marker + len("\n---")
+    if marker_end < len(content) and content[marker_end] not in {"\n", "\r"}:
+        return "", content
+
+    frontmatter = content[:marker_end].strip()
+    body = content[marker_end:].lstrip("\r\n")
+    return frontmatter, body
 
 
 def _replace(state: ChatGraphState, **changes: Any) -> ChatGraphState:
