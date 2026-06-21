@@ -1,0 +1,50 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AgentCoreInvoke",
+      "Effect": "Allow",
+      "Action": ["bedrock-agentcore:InvokeAgentRuntime"],
+      "Resource": [
+        "arn:aws:bedrock-agentcore:ap-northeast-2:492554570964:runtime/hezo_generation_agent-*",
+        "arn:aws:bedrock-agentcore:ap-northeast-2:492554570964:runtime/hezo_validation_agent-*"
+      ]
+    },
+    {
+      "Sid": "PipelineStateTable",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:PutItem"],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:492554570964:table/hezo_pipeline_state"
+    },
+    {
+      "Sid": "PublishEvent",
+      "Effect": "Allow",
+      "Action": ["events:PutEvents"],
+      "Resource": "arn:aws:events:ap-northeast-2:492554570964:event-bus/default"
+    },
+    {
+      "Sid": "RetrySelf",
+      "Effect": "Allow",
+      "Action": ["states:StartExecution"],
+      "Resource": "arn:aws:states:ap-northeast-2:492554570964:stateMachine:*"
+    },
+    {
+      "Sid": "HttpInvokeConnection",
+      "Effect": "Allow",
+      "Action": ["events:RetrieveConnectionCredentials"],
+      "Resource": "arn:aws:events:ap-northeast-2:492554570964:connection/*"
+    },
+    {
+      "Sid": "HttpInvokeSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+      "Resource": "arn:aws:secretsmanager:ap-northeast-2:492554570964:secret:events!connection/*"
+    },
+    {
+      "Sid": "HttpInvokeEndpoint",
+      "Effect": "Allow",
+      "Action": ["states:InvokeHTTPEndpoint"],
+      "Resource": "*"
+    }
+  ]
+}
