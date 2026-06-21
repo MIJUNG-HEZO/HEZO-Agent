@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
-QualityStatus = Literal["ready_for_preview", "needs_enrichment"]
+QualityStatus = Literal["contract_final_ready", "needs_enrichment"]
 
 
 @dataclass(frozen=True)
@@ -20,10 +20,10 @@ class ContractQualityInput:
 
 @dataclass(frozen=True)
 class ContractQualityResult:
-    """Quality result used before preview/generation handoff."""
+    """Quality result used before contract final handoff."""
 
     quality_status: QualityStatus
-    preview_ready: bool
+    contract_final_ready: bool
     generation_ready: bool
     quality_score: float
     missing_required_slots: tuple[str, ...]
@@ -32,7 +32,7 @@ class ContractQualityResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "quality_status": self.quality_status,
-            "preview_ready": self.preview_ready,
+            "contract_final_ready": self.contract_final_ready,
             "generation_ready": self.generation_ready,
             "quality_score": self.quality_score,
             "missing_required_slots": list(self.missing_required_slots),
@@ -41,7 +41,7 @@ class ContractQualityResult:
 
 
 def check_contract_quality(quality_input: ContractQualityInput) -> ContractQualityResult:
-    """Check whether a compiled contract draft is ready for preview."""
+    """Check whether a compiled contract draft can be saved as contract_final."""
 
     _validate_quality_input(quality_input)
 
@@ -71,12 +71,14 @@ def check_contract_quality(quality_input: ContractQualityInput) -> ContractQuali
     if quality_score < quality_input.required_slot_threshold:
         reasons.append("required_slot_threshold_not_met")
 
-    preview_ready = not reasons
-    quality_status: QualityStatus = "ready_for_preview" if preview_ready else "needs_enrichment"
+    contract_final_ready = not reasons
+    quality_status: QualityStatus = (
+        "contract_final_ready" if contract_final_ready else "needs_enrichment"
+    )
 
     return ContractQualityResult(
         quality_status=quality_status,
-        preview_ready=preview_ready,
+        contract_final_ready=contract_final_ready,
         generation_ready=False,
         quality_score=quality_score,
         missing_required_slots=missing_required_slots,

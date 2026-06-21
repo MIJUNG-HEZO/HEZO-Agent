@@ -151,7 +151,7 @@ REQUIRED_CONTRACT_FIELDS = [
 ]
 
 REQUIRED_QUALITY_FIELDS = [
-    "preview_ready",
+    "contract_final_ready",
     "generation_ready",
     "quality_score",
     "reasons",
@@ -981,10 +981,10 @@ def _validate_quality_cases() -> list[str]:
     ready_draft = compile_contract_draft(_sample_contract_input()).draft
     ready = check_contract_quality(ContractQualityInput(draft=ready_draft))
     ready_dict = ready.to_dict()
-    if ready_dict["quality_status"] != "ready_for_preview":
-        errors.append("품질 기준 충족 시 ready_for_preview 상태여야 합니다.")
-    if ready_dict["preview_ready"] is not True:
-        errors.append("품질 기준 충족 시 preview_ready=true여야 합니다.")
+    if ready_dict["quality_status"] != "contract_final_ready":
+        errors.append("품질 기준 충족 시 contract_final_ready 상태여야 합니다.")
+    if ready_dict["contract_final_ready"] is not True:
+        errors.append("품질 기준 충족 시 contract_final_ready=true여야 합니다.")
     if ready_dict["generation_ready"] is not False:
         errors.append("generation_ready는 이번 단계에서 false여야 합니다.")
     if ready_dict["quality_score"] != 1.0:
@@ -2005,7 +2005,7 @@ def _validate_chat_graph_cases() -> list[str]:
         artifact["artifact_kind"] for artifact in ready_state.to_dict()["artifact_refs"]
     }
     if "contract_final" not in ready_artifact_kinds:
-        errors.append("preview_ready graph는 contract_final artifact ref를 저장해야 합니다.")
+        errors.append("contract_final_ready graph는 contract_final artifact ref를 저장해야 합니다.")
     if "contract_final_artifact_saved" not in ready_state.reasons:
         errors.append("contract final 저장 사유가 reasons에 포함되어야 합니다.")
 
@@ -2547,7 +2547,7 @@ def main() -> None:
         for error in quality_case_errors:
             print(f"  [FAIL] {error}")
     else:
-        print("  [OK] preview ready / 누락 / 최소 slot / 빈 값 케이스 확인")
+        print("  [OK] contract final ready / 누락 / 최소 slot / 빈 값 케이스 확인")
 
     print("\n[25] storage guardrails 케이스 검증")
     guardrail_case_errors = _validate_guardrail_cases()

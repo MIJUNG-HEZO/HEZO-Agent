@@ -484,7 +484,7 @@ def s3_artifact_storage_node(
         "enriched_markdown_artifact_saved",
         "contract_draft_artifact_saved",
     )
-    if bool(state.quality_check.get("preview_ready", False)):
+    if bool(state.quality_check.get("contract_final_ready", False)):
         final_ref = store.build_artifact_ref("contract_final", site_id=state.site_id)
         stored_final_ref = store.put_artifact(
             ArtifactPayload(

@@ -73,7 +73,7 @@ domain_selection
 
 채팅 에이전트는 코드 룰베이스와 Guardrails adapter를 분리합니다.
 
-- 코드 룰베이스: HEZO workflow, slot 상태, Contract draft, preview ready 같은 비즈니스 규칙
+- 코드 룰베이스: HEZO workflow, slot 상태, Contract draft, contract final ready 같은 비즈니스 규칙
 - Guardrails adapter: 사용자 입력, P2 markdown, Contract draft, LLM 출력의 안전/보안 검사
 
 이번 스켈레톤의 Guardrails adapter는 실제 AWS Bedrock Guardrails 호출 없이 로컬 mock 규칙으로 동작합니다. 실제 `ApplyGuardrail` 호출, guardrail id/version 설정, boto3 client 연결은 후속 이슈에서 다룹니다.
@@ -489,7 +489,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 ## Contract Quality Check
 
-`contract_quality_check.py`는 Contract draft가 preview 단계로 넘어갈 수 있는지 로컬 규칙으로 판정합니다.
+`contract_quality_check.py`는 Contract draft를 final artifact로 저장할 수 있는지 로컬 규칙으로 판정합니다.
 
 입력 기준:
 
@@ -502,7 +502,7 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 ```json
 {
   "quality_status": "needs_enrichment",
-  "preview_ready": false,
+  "contract_final_ready": false,
   "generation_ready": false,
   "quality_score": 0.67,
   "missing_required_slots": ["contact_method"],
@@ -514,8 +514,8 @@ python3 agents/chat/test_p2_markdown_s3_aws_smoke.py
 
 - 필수 slot이 누락되면 `quality_status=needs_enrichment`
 - 채워진 slot 개수가 `minimum_filled_slots`보다 적으면 `needs_enrichment`
-- 필수 slot 충족률이 threshold 이상이고 최소 slot 개수를 만족하면 `ready_for_preview`
-- preview 가능 상태일 때만 `preview_ready=true`
+- 필수 slot 충족률이 threshold 이상이고 최소 slot 개수를 만족하면 `contract_final_ready`
+- Contract final 저장 가능 상태일 때만 `contract_final_ready=true`
 - `generation_ready`는 schema validation/P4 adapter 이후 단계에서만 true로 전환
 - 공백 문자열, 빈 list, 빈 dict 값은 미충족으로 처리
 
@@ -663,7 +663,7 @@ P1 enriched markdown 저장 정책:
 P4 Contract 저장 정책:
 
 - Contract draft는 `hezo-artifacts/sites/{site_id}/contracts/draft/{version}.json`에 저장합니다.
-- Contract final은 quality check가 `preview_ready=true`일 때 `hezo-artifacts/sites/{site_id}/contract_final.json`에 저장합니다.
+- Contract final은 quality check가 `contract_final_ready=true`일 때 `hezo-artifacts/sites/{site_id}/contract_final.json`에 저장합니다.
 
 출력 기준:
 
