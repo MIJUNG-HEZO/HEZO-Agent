@@ -13,7 +13,7 @@ export MSYS_NO_PATHCONV=1
 # 설정
 # ──────────────────────────────────────────────
 REGION="${AWS_REGION:-ap-northeast-2}"
-ACCOUNT_ID="492554570964"
+ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
 ECR_REPO="hezo-build-worker"
