@@ -17,6 +17,10 @@ from agents.wiki.llm import BedrockLLM
 
 MAX_SOURCES = 8           # 프롬프트에 넣는 출처 상한
 SOURCE_EXCERPT_CHARS = 1500  # 출처당 본문 발췌 상한(토큰 관리)
+# 생성 본문 토큰 천장(실제 쓴 만큼만 과금). precheck 본문상한 8000자와 정합 + 헤드룸.
+# 4000은 7섹션 위키엔 부족해 잘림(generation_truncated)이 잦았다(#169 실측 ~33%). 런어웨이는
+# precheck(8000자)가 잡으므로 천장을 넉넉히 둬 정상 위키가 안 잘리게 한다.
+MAX_OUTPUT_TOKENS = 8000
 _GRADE_RANK = {"high": 0, "mid": 1, "low": 2}
 
 # 60개 도메인 공통 H2 골격 (P1 파서가 ## 섹션을 지식 섹션으로 추출)
@@ -91,8 +95,8 @@ def generate(category: str, domain: str, docs: list[dict], *, llm: BedrockLLM | 
 
     user = build_generation_user(label, category, build_sources_block(selected))
     llm = llm or BedrockLLM()
-    # max_tokens는 천장(실제 쓴 만큼만 과금) — 본문이 중간에 안 잘리도록 넉넉히.
-    res = llm.complete(GENERATION_SYSTEM, user, max_tokens=4000, temperature=0.2)
+    # max_tokens는 천장(실제 쓴 만큼만 과금) — 본문이 중간에 안 잘리도록 넉넉히(MAX_OUTPUT_TOKENS).
+    res = llm.complete(GENERATION_SYSTEM, user, max_tokens=MAX_OUTPUT_TOKENS, temperature=0.2)
     if not res.ok or not res.text.strip():
         return GenerationResult(False, "", selected, reason=res.reason or "empty_generation")
     # 토큰 한도로 본문이 잘렸으면(stopReason=max_tokens) 미완성 → 실패 처리(백오프 재시도).
