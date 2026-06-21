@@ -68,6 +68,14 @@ Parameters:
     Default: ''
     Description: EC2 SSH 키 페어 이름 (비워두면 SSM Session Manager로 접속)
 
+  CustomApiLambdaDomain:
+    Type: String
+    Default: ''
+    Description: >
+      고객사 맞춤 Lambda Function URL 도메인
+      (e.g. abc123.lambda-url.ap-northeast-2.on.aws).
+      비워두면 /api/custom/* 경로 비활성 — 표준 플랜 고객사는 기본값 유지.
+
   VpcCidrBlock:
     Type: String
     Default: '10.100.0.0/16'
@@ -79,6 +87,7 @@ Parameters:
 Conditions:
   HasKeyName:      !Not [!Equals [!Ref EC2KeyName, '']]
   HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasCustomApi:    !Not [!Equals [!Ref CustomApiLambdaDomain, '']]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Resources
@@ -323,12 +332,32 @@ Resources:
               HTTPPort: 8080
               OriginProtocolPolicy: http-only
               OriginReadTimeout: 60
+          # 고객사 맞춤 API Lambda — HasCustomApi가 true일 때만 추가
+          - !If
+            - HasCustomApi
+            - Id: CustomLambdaOrigin
+              DomainName: !Ref CustomApiLambdaDomain
+              CustomOriginConfig:
+                HTTPSPort: 443
+                OriginProtocolPolicy: https-only
+                OriginReadTimeout: 30
+            - !Ref AWS::NoValue
         DefaultCacheBehavior:
           TargetOriginId: S3StaticOrigin
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
           Compress: true
         CacheBehaviors:
+          # /api/custom/* 는 /api/* 보다 먼저 등록해야 CloudFront가 올바르게 분기함
+          - !If
+            - HasCustomApi
+            - PathPattern: '/api/custom/*'
+              TargetOriginId: CustomLambdaOrigin
+              ViewerProtocolPolicy: redirect-to-https
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled
+              AllowedMethods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+              CachedMethods: [GET, HEAD]
+            - !Ref AWS::NoValue
           - PathPattern: '/api/*'
             TargetOriginId: EC2ApiOrigin
             ViewerProtocolPolicy: redirect-to-https
