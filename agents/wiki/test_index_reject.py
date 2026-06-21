@@ -4,7 +4,14 @@ run: PYTHONUTF8=1 py -m agents.wiki.test_index_reject
 """
 from __future__ import annotations
 
-from agents.wiki.index_store import STATUS_PENDING, WikiIndexStore, _backoff_days, _DAY
+from agents.wiki.index_store import (
+    CRAWL_LEASE_SECONDS,
+    STATUS_CRAWLING,
+    STATUS_PENDING,
+    WikiIndexStore,
+    _backoff_days,
+    _DAY,
+)
 
 
 class FakeTable:
@@ -122,8 +129,60 @@ def test_commit_cas():
         check("CAS 첫저장인데 이미 있음 → 충돌", True)
 
 
+class ClaimTable:
+    """claim()의 ConditionExpression(lease 기반 재선점)을 흉내내는 가짜 테이블."""
+
+    def __init__(self, item: dict):
+        self.item = dict(item)
+
+    def get_item(self, Key):
+        return {"Item": dict(self.item)} if self.item else {}
+
+    def update_item(self, Key, UpdateExpression, ExpressionAttributeNames=None,
+                    ExpressionAttributeValues=None, ConditionExpression=None, **kw):
+        v = ExpressionAttributeValues
+        if ConditionExpression:
+            if not self.item:  # attribute_exists(#dom)
+                raise ConditionalCheckFailedException()
+            st = self.item.get("status")
+            nra = self.item.get("next_refresh_at", 0)
+            # (status <> crawling) OR (next_refresh_at <= now)
+            if not (st != v[":crawling"] or nra <= v[":now"]):
+                raise ConditionalCheckFailedException()
+        self.item["status"] = v[":crawling"]
+        self.item["next_refresh_at"] = v[":lease"]
+        return {"Attributes": dict(self.item)}
+
+
+def test_claim_lease():
+    now = 1_000_000
+    lease = CRAWL_LEASE_SECONDS
+
+    # 1. pending → claim 성공: crawling + lease 기록
+    t = ClaimTable({"domain": "d", "status": STATUS_PENDING, "next_refresh_at": 0})
+    s = WikiIndexStore(table=t)
+    check("pending claim 성공", s.claim("d", now=now) is True)
+    check("status→crawling", t.item["status"] == STATUS_CRAWLING)
+    check("next_refresh_at=now+lease", t.item["next_refresh_at"] == now + lease)
+
+    # 2. 활성 crawling(lease 미만) → 재선점 불가 (동시 처리 보호)
+    t2 = ClaimTable({"domain": "d", "status": STATUS_CRAWLING, "next_refresh_at": now + lease})
+    check("활성 crawling claim 실패", WikiIndexStore(table=t2).claim("d", now=now) is False)
+
+    # 3. stale crawling(lease 만료) → 재선점 성공 + lease 갱신 (크래시 자가복구)
+    t3 = ClaimTable({"domain": "d", "status": STATUS_CRAWLING, "next_refresh_at": now - 1})
+    s3 = WikiIndexStore(table=t3)
+    check("stale crawling 재선점 성공", s3.claim("d", now=now) is True)
+    check("재선점 시 lease 갱신", t3.item["next_refresh_at"] == now + lease)
+
+    # 4. 이미 갇힌 도메인(next_refresh_at=0, 현 dev 상태) → 즉시 재선점 (배포 후 자동복구)
+    t4 = ClaimTable({"domain": "d", "status": STATUS_CRAWLING, "next_refresh_at": 0})
+    check("nra=0 갇힌 도메인 재선점 성공", WikiIndexStore(table=t4).claim("d", now=now) is True)
+
+
 if __name__ == "__main__":
-    for fn in [test_backoff_schedule, test_reject_requeues_with_backoff, test_commit_cas]:
+    for fn in [test_backoff_schedule, test_reject_requeues_with_backoff, test_commit_cas,
+               test_claim_lease]:
         print(f"\n[{fn.__name__}]")
         fn()
     print("\n전부 통과 ✅")

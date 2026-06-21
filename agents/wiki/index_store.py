@@ -35,6 +35,12 @@ TTL_DAYS: dict[str, int | None] = {"high": 7, "mid": 30, "low": None}
 # low(만료 없음): due-index에는 남되 절대 만료로 안 잡히도록 먼 미래 epoch 사용.
 NEVER_REFRESH = 9_999_999_999
 
+# 크롤 claim lease(초): claim 시 next_refresh_at=now+이값으로 둬 "처리 중"을 표시한다.
+# 한 파이프라인 실행은 실측 최대 ~2분이라 30분이면 정상 처리분을 실수로 재선점하지 않는다.
+# 실행이 commit/reject로 끝나면 next_refresh_at이 덮어써지고, 크래시·SFn死로 끝을 못 내면
+# lease 만료(next_refresh_at<=now) → due("crawling")가 stale로 잡아 재선점(자가복구).
+CRAWL_LEASE_SECONDS = 30 * 60
+
 # 검수 미달 재시도 백오프: attempts별 다음 시도까지 지연(일). 4회+부터 30일 고정.
 # 무인 운영 — 포기(failed) 대신 status=pending 유지 + 간격만 벌려 비용을 통제한다.
 # (일시적 실패는 곧 풀리고, 구조적 실패도 한 달에 한 번 정도만 헛돌아 비용 미미)
@@ -145,15 +151,28 @@ class WikiIndexStore:
         self._table.put_item(Item=item)
         return _to_native(item)
 
-    def claim(self, domain: str) -> bool:
-        """status=crawling으로 찜. 이미 crawling이면(중복) False."""
+    def claim(self, domain: str, *, now: int | None = None,
+              lease_seconds: int = CRAWL_LEASE_SECONDS) -> bool:
+        """status=crawling으로 찜 + lease(next_refresh_at=now+lease) 기록.
+
+        선점 가능 조건: pending·done이거나, crawling이어도 lease가 만료(next_refresh_at<=now)된
+        경우(=처리하다 죽어 방치된 stale). 활성 crawling(lease 미만)이면 False(중복/동시 선점 차단).
+        lease 덕에 크래시·SFn死로 갇힌 도메인도 lease 만료 후 재선점된다.
+        """
+        now = _now_epoch() if now is None else now
         try:
             self._table.update_item(
                 Key={"domain": domain},
-                UpdateExpression="SET #st = :crawling",
-                ConditionExpression="attribute_exists(#dom) AND #st <> :crawling",
+                UpdateExpression="SET #st = :crawling, next_refresh_at = :lease",
+                ConditionExpression=(
+                    "attribute_exists(#dom) AND (#st <> :crawling OR next_refresh_at <= :now)"
+                ),
                 ExpressionAttributeNames={"#st": "status", "#dom": "domain"},
-                ExpressionAttributeValues={":crawling": STATUS_CRAWLING},
+                ExpressionAttributeValues={
+                    ":crawling": STATUS_CRAWLING,
+                    ":lease": now + lease_seconds,
+                    ":now": now,
+                },
             )
             return True
         except Exception as error:  # ConditionalCheckFailedException 포함
