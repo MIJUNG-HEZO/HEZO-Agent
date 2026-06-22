@@ -232,15 +232,39 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
     )
     metadata = result.to_dict()
 
+    # ── 3-Turn 루프 방지: 내용 있는 답변은 무조건 수락 ──────────────────────
+    # off_topic/ambiguous 거부 시에도, answered_slot이 레지스트리에 있고
+    # 답변이 비어있지 않으면 강제 수락 → 루프 방지 (P4 생성 에이전트가 보완)
+    _force_accepted = (
+        result.turn_status in ("off_topic_rejected", "answer_rejected")
+        and bool(answered_slot)
+        and answered_slot in slot_registry
+        and bool(answer)
+        and len(str(answer).strip()) > 1
+    )
+    if _force_accepted:
+        _forced_known = {**result.known_answers, answered_slot: str(answer).strip()}
+        _forced_missing = tuple(s for s in result.missing_slots if s != answered_slot)
+        metadata.update({
+            "known_answers": _forced_known,
+            "missing_slots": list(_forced_missing),
+            "next_stage": "contract_compile" if not _forced_missing else "proactive_questioning",
+            "turn_status": "ready_for_contract_compile" if not _forced_missing else "answer_accepted",
+            "intent_guard": None,
+            "store_allowed": True,
+        })
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ── 동반 슬롯 추출 (3-Turn Progressive) ─────────────────────────────────
     # 슬롯 리더 답변이 accepted 됐을 때, 같은 답변에서 동반 슬롯 값을 Haiku로 추출
-    final_known = result.known_answers
-    final_missing = result.missing_slots
+    final_known = _forced_known if _force_accepted else result.known_answers
+    final_missing = _forced_missing if _force_accepted else result.missing_slots
 
     companions = _SLOT_COMPANION_MAP.get(answered_slot, {})
+    _effective_turn_status = metadata.get("turn_status", result.turn_status)
     if (
         companions
-        and result.turn_status in ("answer_accepted", "ready_for_contract_compile")
+        and _effective_turn_status in ("answer_accepted", "ready_for_contract_compile")
         and use_aws
         and answer
     ):
@@ -249,8 +273,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             companions=companions,
         )
         if extracted:
-            final_known = {**result.known_answers, **extracted}
-            final_missing = tuple(s for s in result.missing_slots if s not in extracted)
+            final_known = {**final_known, **extracted}
+            final_missing = tuple(s for s in final_missing if s not in extracted)
             metadata["known_answers"] = final_known
             metadata["missing_slots"] = list(final_missing)
             if not final_missing:
