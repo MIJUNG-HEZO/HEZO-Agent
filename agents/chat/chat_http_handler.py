@@ -298,10 +298,15 @@ def _sample_p2_markdown_content(domain: str, category: str, domain_label: str) -
 
 def _build_output_text(action: str, metadata: dict[str, Any]) -> str:
     stage = _metadata_stage(metadata)
+    if action == "chat_turn":
+        reply = metadata.get("assistant_reply")
+        if reply:
+            return str(reply)
+        # LLM 실패 시 rule-based 폴백
+        fallback = _fallback_assistant_content(metadata)
+        return fallback if fallback else f"chat_turn_complete — stage: {stage}"
     if action == "session_start":
         return f"chat_session_start_complete — stage: {stage}"
-    if action == "chat_turn":
-        return f"chat_turn_complete — stage: {stage}"
     return f"chat_graph_smoke_complete — stage: {stage}"
 
 
