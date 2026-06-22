@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from bedrock_claude_adapter import Boto3BedrockClaudeInvoker
+from bedrock_claude_adapter import Boto3BedrockClaudeInvoker, ClaudeMessage
 from chat_graph import ChatGraphState, run_chat_graph
+from guarded_claude_flow import GuardedClaudeReplyInput, run_guarded_claude_reply
 from chat_intent_guard import (
     ChatIntent,
     ChatIntentClassifier,
@@ -93,16 +94,19 @@ def _run_session_start(session_id: str, session_attrs: dict[str, Any]) -> dict[s
 
 def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, Any]:
     slot_registry = _slot_registry(session_attrs)
-    known_answers = _dict_value(
-        session_attrs.get("known_answers"),
-        default={"business_name": "한빛 세무회계"},
+    state_store = _state_store(session_attrs)
+
+    # 세션 복원: caller가 known_answers를 전달하지 않으면 DynamoDB 체크포인트에서 로드
+    known_answers, missing_slots = _restore_session_state(
+        session_id, session_attrs, state_store, slot_registry
     )
-    missing_slots = _tuple_value(
-        session_attrs.get("missing_slots"),
-        default=("core_services", "contact_method"),
-    )
+
     answered_slot = str(session_attrs.get("answered_slot", "core_services"))
     answer = session_attrs.get("answer", "기장 대리, 종합소득세 신고, 법인세 신고")
+
+    # 대화 히스토리 로드 (LLM 호출 전 — 현재 턴 메시지 저장 전이므로 이전 대화만 포함)
+    recent_messages = state_store.load_recent_messages(session_id, limit=10)
+
     result = handle_chat_turn(
         ChatTurnInput(
             session_id=session_id,
@@ -128,10 +132,41 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         )
     )
     metadata = result.to_dict()
-    state_store = _state_store(session_attrs)
+
+    # LLM 어시스턴트 응답 생성 (재시도 요청이 아닐 때만)
+    domain_label = str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL))
+    next_question = (
+        result.question_candidates[0].to_dict()["question"]
+        if result.question_candidates
+        else ""
+    )
+    reply = run_guarded_claude_reply(
+        GuardedClaudeReplyInput(
+            user_message=str(answer),
+            system_prompt=_build_system_prompt(
+                domain_label=domain_label,
+                slot_registry=slot_registry,
+                known_answers=result.known_answers,
+                missing_slots=result.missing_slots,
+                next_question=next_question,
+                next_stage=result.next_stage,
+                intent_guard=result.intent_guard.to_dict() if result.intent_guard else None,
+            ),
+            session_id=session_id,
+            site_id=str(session_attrs.get("site_id", "site_001")),
+            user_id=str(session_attrs.get("user_id", "user_001")),
+            conversation_history=_build_conversation_history(recent_messages),
+            max_tokens=512,
+        ),
+        claude_invoker=Boto3BedrockClaudeInvoker() if _use_aws(session_attrs) else None,
+    )
+    metadata["assistant_reply"] = reply.final_text
+    metadata["reply_status"] = reply.status
+
     message_refs = _persist_chat_turn_messages(
         session_id=session_id,
         answer=answer,
+        assistant_reply=reply.final_text if reply.status == "succeeded" else None,
         metadata=metadata,
         store=state_store,
     )
@@ -316,6 +351,7 @@ def _persist_chat_turn_messages(
     *,
     session_id: str,
     answer: Any,
+    assistant_reply: str | None,
     metadata: dict[str, Any],
     store: ChatStateStore,
 ) -> list[dict[str, str]]:
@@ -340,8 +376,9 @@ def _persist_chat_turn_messages(
             )
         )
 
-    assistant_content = _assistant_message_content(metadata)
-    if assistant_content is not None:
+    # LLM 응답이 있으면 우선 사용, 없으면 rule-based 폴백
+    final_assistant = assistant_reply or _fallback_assistant_content(metadata)
+    if final_assistant is not None:
         refs.append(
             _stored_ref(
                 store.append_message(
@@ -349,7 +386,7 @@ def _persist_chat_turn_messages(
                         session_id=session_id,
                         message_id="02_assistant",
                         role="assistant",
-                        content=assistant_content,
+                        content=final_assistant,
                         created_at=now,
                     )
                 )
@@ -359,7 +396,8 @@ def _persist_chat_turn_messages(
     return refs
 
 
-def _assistant_message_content(metadata: dict[str, Any]) -> str | None:
+def _fallback_assistant_content(metadata: dict[str, Any]) -> str | None:
+    """LLM 응답 실패 시 rule-based 폴백 메시지."""
     candidates = metadata.get("question_candidates")
     if isinstance(candidates, list) and candidates:
         first = candidates[0]
@@ -402,6 +440,132 @@ def _utc_timestamp() -> str:
         "+00:00",
         "Z",
     )
+
+
+def _use_aws(session_attrs: dict[str, Any]) -> bool:
+    return str(session_attrs.get("storage_mode", "memory")).lower() == "aws"
+
+
+def _restore_session_state(
+    session_id: str,
+    session_attrs: dict[str, Any],
+    state_store: ChatStateStore,
+    slot_registry: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """caller 제공 값 → DynamoDB 체크포인트 → 기본값 순서로 세션 상태 복원."""
+    raw_answers = session_attrs.get("known_answers")
+    if isinstance(raw_answers, dict) and raw_answers:
+        known_answers = raw_answers
+        missing_slots = _tuple_value(
+            session_attrs.get("missing_slots"),
+            default=tuple(slot_registry.keys()),
+        )
+        return known_answers, missing_slots
+
+    try:
+        checkpoint = state_store.load_latest_checkpoint(session_id)
+    except Exception:
+        checkpoint = None
+
+    if checkpoint is not None:
+        state = checkpoint.state
+        known_answers = _dict_value(state.get("known_answers"))
+        missing_slots = _tuple_value(
+            state.get("missing_slots", []),
+            default=tuple(slot_registry.keys()),
+        )
+        return known_answers, missing_slots
+
+    # 신규 세션
+    return {}, tuple(slot_registry.keys())
+
+
+def _build_conversation_history(messages: list[ChatMessage]) -> tuple[ClaudeMessage, ...]:
+    """최근 메시지를 Claude용 대화 히스토리로 변환. 토큰 버짓 초과 시 오래된 메시지 제거."""
+    MAX_CHARS = 6000  # ~1500 tokens (4 chars ≈ 1 token)
+    valid = [m for m in messages if m.role in {"user", "assistant"}]
+
+    # 토큰 버짓 역방향 적용
+    selected: list[ChatMessage] = []
+    total_chars = 0
+    for msg in reversed(valid):
+        if total_chars + len(msg.content) > MAX_CHARS:
+            break
+        selected.insert(0, msg)
+        total_chars += len(msg.content)
+
+    # Bedrock Converse API: user 메시지로 시작해야 함
+    while selected and selected[0].role != "user":
+        selected.pop(0)
+
+    return tuple(ClaudeMessage(role=m.role, content=m.content) for m in selected)  # type: ignore[arg-type]
+
+
+def _build_system_prompt(
+    *,
+    domain_label: str,
+    slot_registry: dict[str, dict[str, Any]],
+    known_answers: dict[str, Any],
+    missing_slots: tuple[str, ...],
+    next_question: str,
+    next_stage: str,
+    intent_guard: dict[str, Any] | None,
+) -> str:
+    """P1 어시스턴트 Claude 시스템 프롬프트 생성."""
+    filled_lines = [
+        f"- {slot_registry[k]['label']}: {v}"
+        for k, v in known_answers.items()
+        if k in slot_registry and v
+    ]
+    filled_summary = "\n".join(filled_lines) if filled_lines else "없음"
+
+    missing_labels = [
+        slot_registry[s]["label"]
+        for s in missing_slots
+        if s in slot_registry
+    ]
+    missing_summary = ", ".join(missing_labels) if missing_labels else "없음"
+
+    if next_stage == "contract_compile":
+        task_instruction = (
+            "모든 필수 정보 수집이 완료되었습니다. "
+            "사용자에게 수집 완료를 알리고 홈페이지 제작을 시작한다고 따뜻하게 안내해주세요."
+        )
+    elif intent_guard and intent_guard.get("intent") in {"off_topic", "ambiguous"}:
+        redirect = intent_guard.get("redirect_message", "")
+        task_instruction = (
+            f"사용자의 답변이 주제와 맞지 않습니다. "
+            f"부드럽게 원래 주제로 돌아와 달라고 안내하고 다시 질문해주세요.\n"
+            f"제안 메시지: {redirect}\n"
+            f"다음 질문: {next_question}"
+        )
+    elif next_stage == "retry_answer":
+        task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
+    else:
+        task_instruction = (
+            f"사용자의 답변을 1~2문장으로 자연스럽게 인정한 뒤 "
+            f"다음 질문으로 이어가주세요.\n다음 질문: {next_question}"
+        )
+
+    return f"""당신은 HEZO 홈페이지 제작 어시스턴트입니다.
+고객과 자연스러운 대화를 통해 홈페이지 제작에 필요한 정보를 수집합니다.
+
+[고객 업종]
+{domain_label}
+
+[수집된 정보]
+{filled_summary}
+
+[아직 필요한 정보]
+{missing_summary}
+
+[지시사항]
+{task_instruction}
+
+규칙:
+- 친근하고 전문적인 어조를 유지하세요
+- 200자 이내로 간결하게 답변하세요
+- 한 번에 하나의 질문만 하세요"""
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:
