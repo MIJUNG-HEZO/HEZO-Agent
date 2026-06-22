@@ -343,17 +343,46 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _force_accepted,
     )
 
-    # 슬롯 수집 완료 → contract_final.json을 S3에 저장 (P4 생성 에이전트 입력)
+    # 슬롯 수집 완료 → 3종 S3 저장 (contract_final, 채팅 transcript, P2 보강 A)
     if metadata.get("next_stage") == "contract_compile" and use_aws:
+        _site_id = str(session_attrs.get("site_id", ""))
+        _user_id = str(session_attrs.get("user_id", ""))
+        _category = str(session_attrs.get("category", "landing"))
+        _domain_label = str(session_attrs.get("domain_label", ""))
+        _template_id = str(session_attrs.get("selected_template", ""))
+        _known = metadata.get("known_answers", {})
+
         _save_contract_final(
-            site_id=str(session_attrs.get("site_id", "")),
-            user_id=str(session_attrs.get("user_id", "")),
+            site_id=_site_id,
+            user_id=_user_id,
             domain=domain,
-            domain_label=str(session_attrs.get("domain_label", "")),
-            template_id=str(session_attrs.get("selected_template", "")),
-            category=str(session_attrs.get("category", "landing")),
+            domain_label=_domain_label,
+            template_id=_template_id,
+            category=_category,
             slot_registry=slot_registry,
-            known_answers=metadata.get("known_answers", {}),
+            known_answers=_known,
+        )
+
+        # 채팅 전체 대화를 MD로 hezo-chat에 저장
+        all_messages = state_store.load_recent_messages(session_id, limit=30)
+        _save_chat_transcript(
+            site_id=_site_id,
+            session_id=session_id,
+            domain=domain,
+            domain_label=_domain_label,
+            template_id=_template_id,
+            category=_category,
+            known_answers=_known,
+            messages=list(all_messages),
+        )
+
+        # P2 wiki 보강 A: 채팅 수집 정보로 supplement MD 생성 → hezo-wiki-staging/pending/
+        _save_p2_supplement(
+            site_id=_site_id,
+            domain=domain,
+            domain_label=_domain_label,
+            category=_category,
+            known_answers=_known,
         )
 
     return metadata
@@ -699,6 +728,142 @@ def _save_contract_final(
         logger.info("contract_final.json 저장 완료: s3://%s/sites/%s/contract_final.json", _ARTIFACTS_BUCKET, site_id)
     except Exception as exc:
         logger.error("contract_final.json 저장 실패 site=%s: %s", site_id, exc)
+
+
+_CHAT_BUCKET = os.environ.get("CHAT_BUCKET", "hezo-chat")
+
+
+def _save_chat_transcript(
+    *,
+    site_id: str,
+    session_id: str,
+    domain: str,
+    domain_label: str,
+    template_id: str,
+    category: str,
+    known_answers: dict[str, Any],
+    messages: list[Any],
+) -> None:
+    """채팅 전체 대화를 MD로 hezo-chat/sites/{site_id}/chat_{session_id}.md에 저장."""
+    if not site_id:
+        return
+
+    lines: list[str] = [
+        "---",
+        f"site_id: {site_id}",
+        f"session_id: {session_id}",
+        f"domain: {domain}",
+        f"domain_label: {domain_label}",
+        f"template_id: {template_id}",
+        f"category: {category}",
+        f"created_at: {_utc_timestamp()}",
+        "---",
+        "",
+        f"# HEZO 챗봇 대화 기록 — {domain_label}",
+        "",
+        "## 수집된 슬롯",
+        "",
+    ]
+    for k, v in known_answers.items():
+        if v:
+            lines.append(f"- **{k}**: {v}")
+    lines += ["", "## 대화 내용", ""]
+    for msg in messages:
+        role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else "")
+        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
+        if not content:
+            continue
+        label = "사용자" if role == "user" else "HEZO AI"
+        lines.append(f"**{label}**: {content}")
+        lines.append("")
+
+    md = "\n".join(lines)
+    safe_session = session_id.replace(":", "_").replace("/", "_")
+    key = f"sites/{site_id}/chat_{safe_session}.md"
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        s3.put_object(
+            Bucket=_CHAT_BUCKET,
+            Key=key,
+            Body=md.encode("utf-8"),
+            ContentType="text/markdown; charset=utf-8",
+        )
+        logger.info("채팅 transcript 저장: s3://%s/%s (%d chars)", _CHAT_BUCKET, key, len(md))
+    except Exception as exc:
+        logger.error("채팅 transcript 저장 실패 site=%s: %s", site_id, exc)
+
+
+def _save_p2_supplement(
+    *,
+    site_id: str,
+    domain: str,
+    domain_label: str,
+    category: str,
+    known_answers: dict[str, Any],
+) -> None:
+    """P2 보강 A: 채팅 수집 정보로 supplement MD 생성 → hezo-wiki-staging/pending/{category}/{domain}.md."""
+    if not domain or not category:
+        return
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    core = known_answers.get("core_services", "")
+    region = known_answers.get("business_region", "")
+    audience = known_answers.get("target_audience", "")
+    hours = known_answers.get("business_hours", "")
+
+    # 보강 내용이 없으면 건너뜀
+    if not any([core, region, audience]):
+        logger.info("P2 보강 A 건너뜀 — 추가 정보 없음 site=%s domain=%s", site_id, domain)
+        return
+
+    lines: list[str] = [
+        "---",
+        f"domain: {domain}",
+        f"category: {category}",
+        f"label: {domain_label}",
+        "confidence: 0.65",
+        "volatility: medium",
+        f"last_updated: {today}",
+        "source_urls: []",
+        "---",
+        "",
+        f"# {domain_label} 실사업자 사례 보강 [S1]",
+        "",
+        "## 실제 운영 사례",
+        "",
+        f"HEZO 플랫폼 {domain_label} 업종 사용자 인터뷰(site_id={site_id})에서 수집된 운영 정보입니다.",
+        "",
+    ]
+    if core:
+        lines.append(f"- **주요 서비스**: {core}")
+    if region:
+        lines.append(f"- **운영 지역**: {region}")
+    if audience:
+        lines.append(f"- **주요 고객층**: {audience}")
+    if hours:
+        lines.append(f"- **운영 시간**: {hours}")
+    lines += [
+        "",
+        "## 출처",
+        f"- [S1] HEZO 챗봇 사용자 인터뷰 ({today})",
+    ]
+
+    md = "\n".join(lines)
+    # pending_key 규칙: pending/{category}/{domain}.md (domain에 하이픈 허용)
+    key = f"pending/{category}/{domain}.md"
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        s3.put_object(
+            Bucket="hezo-wiki-staging",
+            Key=key,
+            Body=md.encode("utf-8"),
+            ContentType="text/markdown; charset=utf-8",
+        )
+        logger.info("P2 보강 A supplement 저장: s3://hezo-wiki-staging/%s", key)
+    except Exception as exc:
+        logger.error("P2 보강 A 저장 실패 site=%s domain=%s: %s", site_id, domain, exc)
 
 
 def _restore_session_state(
