@@ -228,7 +228,7 @@ def _inject_phone(soup: BeautifulSoup, phone: str) -> None:
 
 
 def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
-    # data-hezo 기반 카드
+    # data-hezo 기반 카드 (wine-market, career-notebook 등)
     hezo_cards = soup.select("[data-hezo-idx]")
     if hezo_cards:
         for i, card in enumerate(hezo_cards):
@@ -241,6 +241,11 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
                 name_el.string = svc.get("name", "")
             if desc_el:
                 desc_el.string = svc.get("desc", "")
+            # 가격 필드가 있으면 .buy strong 에 주입 (wine-market 등 store 템플릿용)
+            if price := svc.get("price"):
+                price_el = card.select_one(".buy strong") or card.select_one(".price")
+                if price_el:
+                    price_el.string = str(price)
         return
 
     # info-card 기반

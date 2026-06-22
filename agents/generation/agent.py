@@ -204,8 +204,9 @@ slots.wine_lineup에 사용자가 입력한 와인 목록이 있다.
 
 Services.items: wine_lineup을 파싱해 와인 4개를 구성한다.
   - name: 와인 이름 (이탈리아 키안티, 프랑스 샤르도네 등)
-  - desc: "종류 · ₩가격 · 페어링 추천" 형식 (예: "레드 · ₩55,000 · 스테이크 & 치즈")
+  - desc: 페어링 추천 한 줄 (예: "스테이크 & 치즈와 잘 어울리는 묵직한 레드")
   - label: "Red" | "White" | "Sparkling" 중 하나
+  - price: "₩55,000" 형식 (숫자+원화 기호, 쉼표 포함)
 
 Hero.h1: slots.featured_wine이 있으면 그 와인 이름을 사용. 없으면 wine_lineup 첫 번째 항목 이름.
 Hero.subtext: 해당 와인의 페어링 추천 한 줄 (예: "스테이크와 딱 맞는 묵직한 레드 와인")
