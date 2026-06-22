@@ -252,17 +252,37 @@ def _slot_registry(session_attrs: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "business_name": {
             "label": "업체명",
             "required": True,
-            "question_hint": "사무소명은 무엇인가요?",
+            "question_hint": "어떤 이름으로 운영하고 계신가요?",
+        },
+        "business_region": {
+            "label": "지역",
+            "required": True,
+            "question_hint": "매장·사무소가 어느 지역에 있나요? (예: 서울 강남, 부산 해운대)",
         },
         "core_services": {
             "label": "핵심 서비스",
             "required": True,
-            "question_hint": "핵심 세무 서비스는 무엇인가요?",
+            "question_hint": "주력 서비스나 상품을 알려주세요. (쉼표로 구분)",
         },
-        "contact_method": {
-            "label": "상담 방식",
+        "target_audience": {
+            "label": "주요 고객",
             "required": True,
-            "question_hint": "상담 문의는 어떤 방식으로 받나요?",
+            "question_hint": "주로 어떤 분들이 고객인가요? (예: 30-40대 직장인, 개인사업자)",
+        },
+        "phone": {
+            "label": "전화번호",
+            "required": True,
+            "question_hint": "전화번호가 어떻게 되나요?",
+        },
+        "kakao_channel": {
+            "label": "카카오채널",
+            "required": False,
+            "question_hint": "카카오 채널 ID가 있으신가요? 없으시면 '없음'이라고 해주세요.",
+        },
+        "business_hours": {
+            "label": "영업시간",
+            "required": False,
+            "question_hint": "영업 시간이 어떻게 되나요? (예: 평일 9시-18시, 토요일 9시-13시)",
         },
     }
 
