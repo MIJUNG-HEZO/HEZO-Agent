@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -43,6 +45,80 @@ DEFAULT_DOMAIN_LABEL = "세무/회계"
 DEFAULT_TEMPLATE = "landing/13-tax-accounting"
 
 _HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
+_WIKI_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+
+# domain 값 → hezo-wiki S3 키 매핑 (프론트 TEMPLATE_DOMAIN의 domain 필드 기준)
+_DOMAIN_WIKI_KEY: dict[str, str] = {
+    # landing
+    "tax-accounting":  "industries/landing/tax_accounting.md",
+    "tax_accounting":  "industries/landing/tax_accounting.md",
+    "medical-clinic":  "industries/landing/lifting_clinic.md",
+    "lifting-clinic":  "industries/landing/lifting_clinic.md",
+    "saas-product":    "industries/landing/saas_product.md",
+    "pet-hospital":    "industries/landing/pet_hospital.md",
+    "mind-counseling": "industries/landing/mind_counseling.md",
+    "app-launch":      "industries/landing/app_launch.md",
+    # blog
+    "career":          "industries/blog/career.md",
+    "photo-diary":     "industries/blog/photo_diary.md",
+    "wellness":        "industries/blog/wellness.md",
+    "food-travel":     "industries/blog/photo_diary.md",  # 최근접 파일
+    # store
+    "book-curation":   "industries/store/book_curation.md",
+    "booking-service": "industries/store/booking_service.md",
+    "beauty-salon":    "industries/store/booking_service.md",  # 최근접
+    "jewelry":         "industries/store/jewelry.md",
+    "wine-market":     "industries/store/wine_market.md",
+}
+
+# template_id → domain key (domain 직접 매핑 실패 시 fallback)
+_TEMPLATE_WIKI_DOMAIN: dict[str, str] = {
+    "01-clinic-landing":   "medical-clinic",
+    "05-lifting-clinic":   "lifting-clinic",
+    "03-saas-product":     "saas-product",
+    "13-tax-accounting":   "tax-accounting",
+    "17-career-notebook":  "career",
+    "05-booking-service":  "booking-service",
+    "06-oops-nail":        "beauty-salon",
+    "10-wine-market":      "wine-market",
+}
+
+
+def _wiki_s3_key(domain: str, template_id: str) -> str | None:
+    """domain 또는 template_id로 wiki MD S3 key 결정."""
+    if domain in _DOMAIN_WIKI_KEY:
+        return _DOMAIN_WIKI_KEY[domain]
+    # template_id fallback
+    fallback_domain = _TEMPLATE_WIKI_DOMAIN.get(template_id)
+    if fallback_domain:
+        return _DOMAIN_WIKI_KEY.get(fallback_domain)
+    # 언더스코어/하이픈 정규화 후 재시도
+    norm = domain.replace("-", "_").lower()
+    for key, s3_key in _DOMAIN_WIKI_KEY.items():
+        if norm == key.replace("-", "_"):
+            return s3_key
+    return None
+
+
+def _load_wiki_content(domain: str, template_id: str) -> str:
+    """
+    hezo-wiki S3에서 도메인 wiki MD 읽기.
+    - frontmatter (--- ... ---) 제거
+    - 시스템 프롬프트 토큰 절약: 최대 1500자
+    """
+    s3_key = _wiki_s3_key(domain, template_id)
+    if not s3_key:
+        return ""
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        obj = s3.get_object(Bucket=_WIKI_BUCKET, Key=s3_key)
+        raw = obj["Body"].read().decode("utf-8")
+        # YAML frontmatter 제거 (--- ... --- 사이 블록)
+        content = re.sub(r"^---[\s\S]*?---\s*\n", "", raw, count=1)
+        return content[:1500]
+    except Exception:
+        return ""
 
 # 그룹 리더 슬롯 → 동반 추출 슬롯: {slot_key: extraction_hint}
 _SLOT_COMPANION_MAP: dict[str, dict[str, str]] = {
@@ -125,6 +201,11 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
 
     answered_slot = str(session_attrs.get("answered_slot", ""))
     answer = session_attrs.get("answer", "")
+    domain = str(session_attrs.get("domain", DEFAULT_DOMAIN))
+    template_id = str(session_attrs.get("selected_template", DEFAULT_TEMPLATE))
+
+    # ── P2 wiki 로드 (템플릿 선택 직후 첫 턴부터 도메인 지식 주입) ──────────
+    wiki_content = _load_wiki_content(domain, template_id) if use_aws else ""
 
     # 대화 히스토리 로드 (LLM 호출 전 — 현재 턴 메시지 저장 전이므로 이전 대화만 포함)
     recent_messages = state_store.load_recent_messages(session_id, limit=10)
@@ -134,7 +215,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             session_id=session_id,
             site_id=str(session_attrs.get("site_id", "site_001")),
             user_id=str(session_attrs.get("user_id", "user_001")),
-            domain=str(session_attrs.get("domain", DEFAULT_DOMAIN)),
+            domain=domain,
             domain_label=str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL)),
             slot_registry=slot_registry,
             known_answers=known_answers,
@@ -144,12 +225,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             p1_markdown_review_status=str(
                 session_attrs.get("p1_markdown_review_status", "passed")
             ),
-            p2_markdown_usable_for_questions=bool(
-                session_attrs.get("p2_markdown_usable_for_questions", True)
-            ),
-            p2_knowledge_summary=str(
-                session_attrs.get("p2_knowledge_summary", "핵심 서비스 범위, 상담 전환 정보")
-            ),
+            p2_markdown_usable_for_questions=bool(wiki_content),
+            p2_knowledge_summary="wiki_loaded" if wiki_content else "",
             intent_classifier=_intent_classifier(session_attrs),
         )
     )
@@ -197,6 +274,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
                 next_question=next_question,
                 next_stage=str(metadata.get("next_stage", result.next_stage)),
                 intent_guard=result.intent_guard.to_dict() if result.intent_guard else None,
+                wiki_content=wiki_content,
             ),
             session_id=session_id,
             site_id=str(session_attrs.get("site_id", "site_001")),
@@ -622,6 +700,7 @@ def _build_system_prompt(
     next_question: str,
     next_stage: str,
     intent_guard: dict[str, Any] | None,
+    wiki_content: str = "",
 ) -> str:
     """P1 어시스턴트 Claude 시스템 프롬프트 생성 (3-Turn Progressive)."""
     _COMPANION_LABELS = {
@@ -663,12 +742,18 @@ def _build_system_prompt(
             f"[다음 질문]: {next_question}"
         )
 
+    wiki_section = (
+        f"\n[{domain_label} 도메인 지식 — P2 wiki]\n{wiki_content}\n"
+        if wiki_content
+        else ""
+    )
+
     return f"""당신은 HEZO 홈페이지 제작 어시스턴트입니다.
 총 3번의 대화로 홈페이지 제작에 필요한 정보를 수집합니다.
 
 [고객 업종]
 {domain_label}
-
+{wiki_section}
 [수집된 정보]
 {filled_summary}
 
