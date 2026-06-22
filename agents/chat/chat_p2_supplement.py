@@ -176,10 +176,15 @@ def save_supplement_to_staging(
     *,
     domain: str,
     category: str,
+    site_id: str,
     markdown: str,
 ) -> None:
-    """hezo-wiki-staging/pending/{category}/{domain}.md 에 저장."""
-    key = f"pending/{category}/{domain}.md"
+    """hezo-wiki-staging/pending/{category}/{domain}_{site_id}.md 에 저장.
+
+    site_id로 파일명을 유니크하게 유지해 복수 사용자 제출이 서로 덮어쓰지 않도록 한다.
+    P2 reinforce Lambda는 ObjectCreated 이벤트로 파일 1개씩 독립 처리.
+    """
+    key = f"pending/{category}/{domain}_{site_id}.md"
     import boto3  # noqa: PLC0415
     s3 = boto3.client("s3", region_name=_AWS_REGION)
     s3.put_object(
@@ -225,6 +230,6 @@ def try_submit_p2_supplement(
     )
 
     try:
-        save_supplement_to_staging(domain=domain, category=category, markdown=md)
+        save_supplement_to_staging(domain=domain, category=category, site_id=site_id, markdown=md)
     except Exception as exc:
         logger.error("P2 보강 A S3 저장 실패 site=%s domain=%s: %s", site_id, domain, exc)
