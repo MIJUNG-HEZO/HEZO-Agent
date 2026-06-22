@@ -232,15 +232,17 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
     )
     metadata = result.to_dict()
 
-    # ── 3-Turn 루프 방지: 내용 있는 답변은 무조건 수락 ──────────────────────
-    # off_topic/ambiguous 거부 시에도, answered_slot이 레지스트리에 있고
-    # 답변이 비어있지 않으면 강제 수락 → 루프 방지 (P4 생성 에이전트가 보완)
+    # ── 3-Turn 루프 방지: ambiguous 거부만 강제 수락 ────────────────────────
+    # off_topic은 intent classifier가 명백한 거부 이유 제공 → 사용자에게 이유 안내 후 재질문
+    # ambiguous(단순 "응", 숫자만 등)는 intent 분류가 불확실하므로 force-accept
+    _intent = (result.intent_guard.intent if result.intent_guard else None)
     _force_accepted = (
-        result.turn_status in ("off_topic_rejected", "answer_rejected")
+        result.turn_status == "answer_rejected"  # ambiguous 경로만 (off_topic_rejected 제외)
+        and _intent == "ambiguous"
         and bool(answered_slot)
         and answered_slot in slot_registry
         and bool(answer)
-        and len(str(answer).strip()) > 1
+        and len(str(answer).strip()) > 4  # 너무 짧은 입력은 제외
     )
     if _force_accepted:
         _forced_known = {**result.known_answers, answered_slot: str(answer).strip()}
@@ -750,12 +752,18 @@ def _build_system_prompt(
             "사용자에게 감사 인사와 함께 홈페이지 제작을 곧 시작한다고 따뜻하게 안내해주세요."
         )
     elif intent_guard and intent_guard.get("intent") in {"off_topic", "ambiguous"}:
+        intent_type = intent_guard.get("intent", "")
         redirect = intent_guard.get("redirect_message", "")
+        if intent_type == "off_topic":
+            reason_prefix = "말씀해 주신 내용이 현재 질문과 맞지 않는 것 같아요."
+        else:  # ambiguous
+            reason_prefix = "말씀해 주신 내용이 너무 짧거나 모호해서 홈페이지에 반영하기 어렵습니다."
         task_instruction = (
-            f"사용자의 답변이 주제와 맞지 않습니다. "
-            f"부드럽게 원래 주제로 돌아와 달라고 안내하고 다시 질문해주세요.\n"
-            f"제안 메시지: {redirect}\n"
-            f"다음 질문: {next_question}"
+            f"먼저 아래 [거부 이유]를 사용자에게 명확하게 전달한 뒤, "
+            f"[다음 질문]을 다시 물어보세요.\n"
+            f"[거부 이유]: {reason_prefix}"
+            + (f" {redirect}" if redirect else "")
+            + f"\n[다음 질문]: {next_question}"
         )
     elif next_stage == "retry_answer":
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
