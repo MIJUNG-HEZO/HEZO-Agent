@@ -25,6 +25,7 @@ from chat_intent_guard import (
     ClaudeChatIntentClassifier,
     StaticChatIntentClassifier,
 )
+from chat_p2_supplement import try_submit_p2_supplement
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_state_store import (
     Boto3ChatStateStore,
@@ -376,8 +377,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             messages=list(all_messages),
         )
 
-        # P2 wiki 보강 A: 채팅 수집 정보로 supplement MD 생성 → hezo-wiki-staging/pending/
-        _save_p2_supplement(
+        # P2 wiki 보강 A: 룰셋 게이트 통과 시 staging 저장
+        try_submit_p2_supplement(
             site_id=_site_id,
             domain=domain,
             domain_label=_domain_label,
@@ -792,78 +793,6 @@ def _save_chat_transcript(
         logger.info("채팅 transcript 저장: s3://%s/%s (%d chars)", _CHAT_BUCKET, key, len(md))
     except Exception as exc:
         logger.error("채팅 transcript 저장 실패 site=%s: %s", site_id, exc)
-
-
-def _save_p2_supplement(
-    *,
-    site_id: str,
-    domain: str,
-    domain_label: str,
-    category: str,
-    known_answers: dict[str, Any],
-) -> None:
-    """P2 보강 A: 채팅 수집 정보로 supplement MD 생성 → hezo-wiki-staging/pending/{category}/{domain}.md."""
-    if not domain or not category:
-        return
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    core = known_answers.get("core_services", "")
-    region = known_answers.get("business_region", "")
-    audience = known_answers.get("target_audience", "")
-    hours = known_answers.get("business_hours", "")
-
-    # 보강 내용이 없으면 건너뜀
-    if not any([core, region, audience]):
-        logger.info("P2 보강 A 건너뜀 — 추가 정보 없음 site=%s domain=%s", site_id, domain)
-        return
-
-    lines: list[str] = [
-        "---",
-        f"domain: {domain}",
-        f"category: {category}",
-        f"label: {domain_label}",
-        "confidence: 0.65",
-        "volatility: medium",
-        f"last_updated: {today}",
-        "source_urls: []",
-        "---",
-        "",
-        f"# {domain_label} 실사업자 사례 보강 [S1]",
-        "",
-        "## 실제 운영 사례",
-        "",
-        f"HEZO 플랫폼 {domain_label} 업종 사용자 인터뷰(site_id={site_id})에서 수집된 운영 정보입니다.",
-        "",
-    ]
-    if core:
-        lines.append(f"- **주요 서비스**: {core}")
-    if region:
-        lines.append(f"- **운영 지역**: {region}")
-    if audience:
-        lines.append(f"- **주요 고객층**: {audience}")
-    if hours:
-        lines.append(f"- **운영 시간**: {hours}")
-    lines += [
-        "",
-        "## 출처",
-        f"- [S1] HEZO 챗봇 사용자 인터뷰 ({today})",
-    ]
-
-    md = "\n".join(lines)
-    # pending_key 규칙: pending/{category}/{domain}.md (domain에 하이픈 허용)
-    key = f"pending/{category}/{domain}.md"
-    try:
-        import boto3  # noqa: PLC0415
-        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
-        s3.put_object(
-            Bucket="hezo-wiki-staging",
-            Key=key,
-            Body=md.encode("utf-8"),
-            ContentType="text/markdown; charset=utf-8",
-        )
-        logger.info("P2 보강 A supplement 저장: s3://hezo-wiki-staging/%s", key)
-    except Exception as exc:
-        logger.error("P2 보강 A 저장 실패 site=%s domain=%s: %s", site_id, domain, exc)
 
 
 def _restore_session_state(
