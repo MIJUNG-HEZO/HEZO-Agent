@@ -8,6 +8,8 @@ volatility·seed.
   P2는 Contract의 category+domain으로만 라우팅하므로 P1 시맨틱 id는 쓰지 않는다.
 - volatility = 신선도 TTL 결정 (high 7일 / mid 30일 / low 무제한). 기본 mid.
 - seed = 초기 적재 대상 (카테고리당 1개, status=done). 나머지 57개는 pending.
+- query(선택) = 검색어 override. 없으면 label로 검색. 문자열 또는 리스트(멀티쿼리, 병합).
+  쇼핑몰 SEO가 센 커머스 등에서 지식 출처가 안 잡힐 때 "지식 의도" 검색어로 정교화.
 
 상세 설계: 바탕화면 `HEZO_P2_위키저장소_PRD_v2_확정.md` 부록 A.
 """
@@ -18,7 +20,7 @@ from agents.wiki.constants import CATEGORIES
 # domain → {category, template_no, template_id, label, volatility, seed}
 WIKI_CATALOG: dict[str, dict] = {
     # ─── landing (20) ───────────────────────────────────────────────────────
-    "dental_clinic":        {"category": "landing", "template_no": 1,  "template_id": "01-clinic-landing",       "label": "치과/병원",          "volatility": "mid",  "seed": False},
+    "dental_clinic":        {"category": "landing", "template_no": 1,  "template_id": "01-clinic-landing",       "label": "치과",          "volatility": "mid",  "seed": False},
     "dev_bootcamp":         {"category": "landing", "template_no": 2,  "template_id": "02-course-landing",       "label": "개발 부트캠프",      "volatility": "mid",  "seed": False},
     "saas_product":         {"category": "landing", "template_no": 3,  "template_id": "03-saas-product",         "label": "SaaS 제품",          "volatility": "mid",  "seed": False},
     "car_rental":           {"category": "landing", "template_no": 4,  "template_id": "04-long-term-rental",     "label": "장기 렌터카",        "volatility": "mid",  "seed": False},
@@ -30,7 +32,7 @@ WIKI_CATALOG: dict[str, dict] = {
     "wedding_studio":       {"category": "landing", "template_no": 10, "template_id": "10-wedding-studio",       "label": "웨딩 스튜디오",      "volatility": "low",  "seed": False},
     "language_academy":     {"category": "landing", "template_no": 11, "template_id": "11-language-academy",     "label": "어학원",             "volatility": "mid",  "seed": False},
     "interior_remodel":     {"category": "landing", "template_no": 12, "template_id": "12-interior-remodel",     "label": "인테리어 리모델링",   "volatility": "mid",  "seed": False},
-    "tax_accounting":       {"category": "landing", "template_no": 13, "template_id": "13-tax-accounting",       "label": "세무/회계",          "volatility": "high", "seed": True},
+    "tax_accounting":       {"category": "landing", "template_no": 13, "template_id": "13-tax-accounting",       "label": "세무",          "volatility": "high", "seed": True},
     "mind_counseling":      {"category": "landing", "template_no": 14, "template_id": "14-mind-counseling",      "label": "심리 상담",          "volatility": "mid",  "seed": False},
     "live_event":           {"category": "landing", "template_no": 15, "template_id": "15-live-event",           "label": "라이브 이벤트",      "volatility": "mid",  "seed": False},
     "franchise_startup":    {"category": "landing", "template_no": 16, "template_id": "16-franchise-startup",    "label": "프랜차이즈 창업",    "volatility": "mid",  "seed": False},
@@ -56,7 +58,7 @@ WIKI_CATALOG: dict[str, dict] = {
     "real_estate":          {"category": "blog", "template_no": 14, "template_id": "14-real-estate-journal", "label": "부동산",         "volatility": "high", "seed": False},
     "music_review":         {"category": "blog", "template_no": 15, "template_id": "15-music-review",        "label": "음악 리뷰",      "volatility": "mid",  "seed": False},
     "fitness_log":          {"category": "blog", "template_no": 16, "template_id": "16-fitness-diet-log",    "label": "피트니스 로그",  "volatility": "mid",  "seed": False},
-    "career":               {"category": "blog", "template_no": 17, "template_id": "17-career-notebook",    "label": "커리어",         "volatility": "high", "seed": True},
+    "career":               {"category": "blog", "template_no": 17, "template_id": "17-career-notebook",    "label": "커리어",         "volatility": "high", "seed": True, "query": ["커리어 성장", "직무 정보"]},
     "book_essay":           {"category": "blog", "template_no": 18, "template_id": "18-book-essay",          "label": "책 에세이",      "volatility": "low",  "seed": False},
     "photo_diary":          {"category": "blog", "template_no": 19, "template_id": "19-photo-diary",         "label": "포토 다이어리",  "volatility": "low",  "seed": False},
     "local_food":           {"category": "blog", "template_no": 20, "template_id": "20-local-food-guide",    "label": "동네 맛집",      "volatility": "mid",  "seed": False},
@@ -71,7 +73,7 @@ WIKI_CATALOG: dict[str, dict] = {
     "fruits":               {"category": "store", "template_no": 7,  "template_id": "07-fruits-basket",    "label": "청과",           "volatility": "mid",  "seed": False},
     "sneaker_drop":         {"category": "store", "template_no": 8,  "template_id": "08-sneaker-drop",     "label": "스니커즈 드롭",  "volatility": "high", "seed": False},
     "plant_shop":           {"category": "store", "template_no": 9,  "template_id": "09-plant-shop",       "label": "식물 샵",        "volatility": "low",  "seed": False},
-    "wine_market":          {"category": "store", "template_no": 10, "template_id": "10-wine-market",      "label": "와인 마켓",      "volatility": "mid",  "seed": True},
+    "wine_market":          {"category": "store", "template_no": 10, "template_id": "10-wine-market",      "label": "와인",           "volatility": "mid",  "seed": True, "query": ["와인 시장 동향", "와인 품종별 특징"]},
     "furniture_studio":     {"category": "store", "template_no": 11, "template_id": "11-furniture-studio", "label": "가구 스튜디오",  "volatility": "low",  "seed": False},
     "pet_supplies":         {"category": "store", "template_no": 12, "template_id": "12-pet-supplies",     "label": "반려동물 용품",  "volatility": "mid",  "seed": False},
     "skincare_lab":         {"category": "store", "template_no": 13, "template_id": "13-skincare-lab",     "label": "스킨케어 랩",    "volatility": "mid",  "seed": False},

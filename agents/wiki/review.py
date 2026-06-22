@@ -33,6 +33,9 @@ GATE_KEYS = [k for k, _, _, gate in RUBRIC if gate]
 GATE_MIN = 3.0   # 0~5 척도
 CUT = 0.70       # 합성점수 컷
 MAX_SCORE = 5.0
+# 검수 출력 천장(점수 8개 + 사유). 천장이라 실제 쓴 만큼만 과금 — 사유가 길어도 JSON이
+# 안 잘리게 넉넉히(600은 빠듯해 긴 사유 시 잘려 파싱 실패 위험).
+REVIEW_MAX_TOKENS = 1500
 
 REVIEW_SYSTEM = (
     "당신은 HEZO 도메인 지식 위키의 엄격한 검수자입니다. 주어진 본문을 함께 제공된 출처와 "
@@ -113,7 +116,7 @@ def review(
     label = get_entry(domain)["label"]
     block = sources_block if sources_block is not None else build_sources_block(selected)
     llm = llm or BedrockLLM()
-    res = llm.complete(system_prompt or REVIEW_SYSTEM, build_review_user(label, body, block), max_tokens=600, temperature=0.0)
+    res = llm.complete(system_prompt or REVIEW_SYSTEM, build_review_user(label, body, block), max_tokens=REVIEW_MAX_TOKENS, temperature=0.0)
     if not res.ok:
         return ReviewResult(False, False, 0.0, reason=res.reason or "review_call_failed")
 

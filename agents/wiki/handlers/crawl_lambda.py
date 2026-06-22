@@ -16,5 +16,5 @@ def handler(event: dict[str, Any], context: Any = None) -> dict:
     return collect(
         event["category"],
         event["domain"],
-        num=int(event.get("num", 10)),
+        num=int(event.get("num", 20)),
     )
