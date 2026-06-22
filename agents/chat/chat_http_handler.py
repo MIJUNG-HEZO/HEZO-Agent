@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger("hezo.chat")
 
 from bedrock_claude_adapter import (
     Boto3BedrockClaudeInvoker,
@@ -326,6 +329,19 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _chat_message_to_dict(message)
         for message in state_store.load_recent_messages(session_id, limit=6)
     ]
+
+    logger.info(
+        "chat_turn_result session=%s answered_slot=%s intent=%s "
+        "turn_status=%s next_stage=%s missing_slots=%s force_accepted=%s",
+        session_id,
+        answered_slot,
+        (result.intent_guard.intent if result.intent_guard else "none"),
+        metadata.get("turn_status"),
+        metadata.get("next_stage"),
+        metadata.get("missing_slots"),
+        _force_accepted,
+    )
+
     return metadata
 
 
