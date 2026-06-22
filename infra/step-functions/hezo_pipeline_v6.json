@@ -1,0 +1,289 @@
+{
+  "Comment": "HEZO Site Generation Pipeline v6 — 생성·검증=AgentCore 직접호출 / 빌드=http / 검증FAIL시 벨트 재시도(생성부터, attempt<3). 검증까지 + site-published 이벤트 발행이 P5 범위.",
+  "StartAt": "CheckIdempotency",
+  "States": {
+
+    "CheckIdempotency": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "ProjectionExpression": "publish_status"
+      },
+      "ResultPath": "$.idempotency",
+      "Next": "IsAlreadyPublished",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "IsAlreadyPublished": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            { "Variable": "$.idempotency.Item.publish_status.S", "IsPresent": true },
+            { "Variable": "$.idempotency.Item.publish_status.S", "StringEquals": "published" }
+          ],
+          "Next": "AlreadyPublished"
+        }
+      ],
+      "Default": "MarkBuilding"
+    },
+
+    "AlreadyPublished": { "Type": "Succeed" },
+
+    "MarkBuilding": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "UpdateExpression": "SET publish_status = :building, attempt = if_not_exists(attempt, :zero), updated_at = :now",
+        "ExpressionAttributeValues": {
+          ":building": { "S": "building" },
+          ":zero": { "N": "0" },
+          ":now": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "InvokeGenerationAgent",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "InvokeGenerationAgent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:bedrockagentcore:invokeAgentRuntime",
+      "Parameters": {
+        "AgentRuntimeArn": "${GENERATION_AGENT_ARN}",
+        "Qualifier": "${GENERATION_AGENT_QUALIFIER}",
+        "ContentType": "application/json",
+        "Accept": "application/json",
+        "RuntimeSessionId.$": "$$.Execution.Name",
+        "Payload.$": "States.Format('\\{\"site_id\":\"{}\",\"pipeline_run_id\":\"{}\"\\}', $.site_id, $$.Execution.Name)"
+      },
+      "ResultPath": "$.generation_result",
+      "Next": "InvokeBuildWorker",
+      "TimeoutSeconds": 300,
+      "Retry": [
+        { "ErrorEquals": ["BedrockAgentcore.ThrottlingException", "States.Timeout"], "IntervalSeconds": 15, "MaxAttempts": 2, "BackoffRate": 2 }
+      ],
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "InvokeBuildWorker": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::http:invoke",
+      "Parameters": {
+        "ApiEndpoint": "${BUILD_AGENT_ENDPOINT}/invocations",
+        "Method": "POST",
+        "Headers": { "Content-Type": "application/json" },
+        "RequestBody": {
+          "sessionId.$": "$$.Execution.Name",
+          "inputText.$": "States.Format('site_id={} mode=publish', $.site_id)",
+          "sessionAttributes": { "site_id.$": "$.site_id", "mode": "publish" }
+        },
+        "Authentication": { "ConnectionArn": "${EVENTBRIDGE_CONNECTION_ARN}" }
+      },
+      "ResultPath": "$.build_result",
+      "Next": "MarkValidating",
+      "TimeoutSeconds": 600,
+      "Retry": [
+        { "ErrorEquals": ["States.Http.StatusCode429", "States.Http.StatusCode503", "States.Timeout"], "IntervalSeconds": 15, "MaxAttempts": 2, "BackoffRate": 2 }
+      ],
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "MarkValidating": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "UpdateExpression": "SET publish_status = :validating",
+        "ExpressionAttributeValues": { ":validating": { "S": "validating" } }
+      },
+      "ResultPath": null,
+      "Next": "BuildValidationPayload"
+    },
+
+    "BuildValidationPayload": {
+      "Type": "Pass",
+      "Comment": "검증 에이전트는 sessionAttributes.site_id / inputText 형식만 읽음 (빌드워커와 동일).",
+      "Parameters": {
+        "sessionId.$": "$$.Execution.Name",
+        "inputText.$": "States.Format('site_id={}', $.site_id)",
+        "sessionAttributes": { "site_id.$": "$.site_id" }
+      },
+      "ResultPath": "$.val_payload",
+      "Next": "InvokeValidationAgent"
+    },
+
+    "InvokeValidationAgent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:bedrockagentcore:invokeAgentRuntime",
+      "Parameters": {
+        "AgentRuntimeArn": "${VALIDATION_AGENT_ARN}",
+        "Qualifier": "${VALIDATION_AGENT_QUALIFIER}",
+        "ContentType": "application/json",
+        "Accept": "application/json",
+        "RuntimeSessionId.$": "$$.Execution.Name",
+        "Payload.$": "States.JsonToString($.val_payload)"
+      },
+      "ResultPath": "$.validation_raw",
+      "Next": "ParseValidationResult",
+      "TimeoutSeconds": 1800,
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "ParseValidationResult": {
+      "Type": "Pass",
+      "Comment": "AgentCore 응답(Response, 문자열) → JSON 파싱. validation_status는 metadata 안에 있음.",
+      "Parameters": {
+        "parsed.$": "States.StringToJson($.validation_raw.Response)"
+      },
+      "ResultPath": "$.validation_result",
+      "Next": "CheckValidationResult"
+    },
+
+    "CheckValidationResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Or": [
+            { "Variable": "$.validation_result.parsed.metadata.validation_status", "StringEquals": "PASS" },
+            { "Variable": "$.validation_result.parsed.metadata.validation_status", "StringEquals": "PASS_WITH_WARNINGS" }
+          ],
+          "Next": "MarkPublished"
+        }
+      ],
+      "Default": "CheckRetryCount"
+    },
+
+    "MarkPublished": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "UpdateExpression": "SET publish_status = :published",
+        "ConditionExpression": "publish_status <> :published",
+        "ExpressionAttributeValues": { ":published": { "S": "published" } }
+      },
+      "ResultPath": null,
+      "Next": "ReadContract",
+      "Catch": [ { "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"], "Next": "PipelineSuccess", "ResultPath": null } ]
+    },
+
+    "ReadContract": {
+      "Type": "Task",
+      "Comment": "IaC가 필요로 하는 template 정보를 contract에서 읽어 이벤트에 싣기 위함.",
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+      "Parameters": {
+        "Bucket": "hezo-artifacts",
+        "Key.$": "States.Format('sites/{}/contract_final.json', $.site_id)"
+      },
+      "ResultSelector": { "parsed.$": "States.StringToJson($.Body)" },
+      "ResultPath": "$.contract",
+      "Next": "PublishSiteEvent",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
+    },
+
+    "PublishSiteEvent": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::events:putEvents",
+      "Parameters": {
+        "Entries": [
+          {
+            "EventBusName": "default",
+            "Source": "hezo.pipeline",
+            "DetailType": "site-published",
+            "Detail": {
+              "site_id.$": "$.site_id",
+              "execution_name.$": "$$.Execution.Name",
+              "template_category.$": "$.contract.parsed.template.category",
+              "template_type.$": "$.contract.parsed.template.slug"
+            }
+          }
+        ]
+      },
+      "ResultPath": null,
+      "Next": "PipelineSuccess"
+    },
+
+    "PipelineSuccess": { "Type": "Succeed" },
+
+    "CheckRetryCount": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "ProjectionExpression": "attempt"
+      },
+      "ResultPath": "$.retry",
+      "Next": "NormalizeAttempt"
+    },
+
+    "NormalizeAttempt": {
+      "Type": "Pass",
+      "Comment": "DynamoDB는 숫자를 문자열(.N)로 반환 → 숫자로 변환해야 NumericLessThan 비교 가능.",
+      "Parameters": {
+        "value.$": "States.StringToJson($.retry.Item.attempt.N)"
+      },
+      "ResultPath": "$.retry_num",
+      "Next": "RetryOrFail"
+    },
+
+    "RetryOrFail": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.retry_num.value", "NumericLessThan": 3, "Next": "IncrementAttempt" }
+      ],
+      "Default": "MarkFailed"
+    },
+
+    "IncrementAttempt": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "UpdateExpression": "SET attempt = attempt + :one, publish_status = :retrying",
+        "ExpressionAttributeValues": { ":one": { "N": "1" }, ":retrying": { "S": "retrying" } }
+      },
+      "ResultPath": null,
+      "Next": "StartNewExecution"
+    },
+
+    "StartNewExecution": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::states:startExecution",
+      "Parameters": {
+        "StateMachineArn.$": "$$.StateMachine.Id",
+        "Input": { "site_id.$": "$.site_id" }
+      },
+      "End": true
+    },
+
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.site_id" } },
+        "UpdateExpression": "SET publish_status = :failed",
+        "ExpressionAttributeValues": { ":failed": { "S": "failed" } }
+      },
+      "ResultPath": null,
+      "Next": "PipelineFailed",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "PipelineFailed", "ResultPath": null } ]
+    },
+
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "PipelineFailed",
+      "Cause": "Site generation pipeline failed after retries."
+    }
+
+  }
+}

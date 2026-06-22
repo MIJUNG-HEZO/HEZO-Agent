@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartPipelines",
+      "Effect": "Allow",
+      "Action": ["states:StartExecution"],
+      "Resource": [
+        "arn:aws:states:ap-northeast-2:492554570964:stateMachine:hezo-site-pipeline",
+        "arn:aws:states:ap-northeast-2:492554570964:stateMachine:hezo-iac-pipeline"
+      ]
+    }
+  ]
+}
