@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
-from bedrock_claude_adapter import Boto3BedrockClaudeInvoker, ClaudeMessage
+from bedrock_claude_adapter import (
+    Boto3BedrockClaudeInvoker,
+    ClaudeInvocationInput,
+    ClaudeMessage,
+)
+from bedrock_guardrails_adapter import Boto3BedrockGuardrailsClient
 from chat_graph import ChatGraphState, run_chat_graph
 from guarded_claude_flow import GuardedClaudeReplyInput, run_guarded_claude_reply
 from chat_intent_guard import (
@@ -35,6 +43,95 @@ DEFAULT_CATEGORY = "landing"
 DEFAULT_DOMAIN = "tax_accounting"
 DEFAULT_DOMAIN_LABEL = "세무/회계"
 DEFAULT_TEMPLATE = "landing/13-tax-accounting"
+
+_HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
+_WIKI_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+
+# domain 값 → hezo-wiki S3 키 매핑 (프론트 TEMPLATE_DOMAIN의 domain 필드 기준)
+_DOMAIN_WIKI_KEY: dict[str, str] = {
+    # landing
+    "tax-accounting":  "industries/landing/tax_accounting.md",
+    "tax_accounting":  "industries/landing/tax_accounting.md",
+    "medical-clinic":  "industries/landing/lifting_clinic.md",
+    "lifting-clinic":  "industries/landing/lifting_clinic.md",
+    "saas-product":    "industries/landing/saas_product.md",
+    "pet-hospital":    "industries/landing/pet_hospital.md",
+    "mind-counseling": "industries/landing/mind_counseling.md",
+    "app-launch":      "industries/landing/app_launch.md",
+    # blog
+    "career":          "industries/blog/career.md",
+    "photo-diary":     "industries/blog/photo_diary.md",
+    "wellness":        "industries/blog/wellness.md",
+    "food-travel":     "industries/blog/photo_diary.md",  # 최근접 파일
+    # store
+    "book-curation":   "industries/store/book_curation.md",
+    "booking-service": "industries/store/booking_service.md",
+    "beauty-salon":    "industries/store/booking_service.md",  # 최근접
+    "jewelry":         "industries/store/jewelry.md",
+    "wine-market":     "industries/store/wine_market.md",
+}
+
+# template_id → domain key (domain 직접 매핑 실패 시 fallback)
+_TEMPLATE_WIKI_DOMAIN: dict[str, str] = {
+    "01-clinic-landing":   "medical-clinic",
+    "05-lifting-clinic":   "lifting-clinic",
+    "03-saas-product":     "saas-product",
+    "13-tax-accounting":   "tax-accounting",
+    "17-career-notebook":  "career",
+    "05-booking-service":  "booking-service",
+    "06-oops-nail":        "beauty-salon",
+    "10-wine-market":      "wine-market",
+}
+
+
+def _wiki_s3_key(domain: str, template_id: str) -> str | None:
+    """domain 또는 template_id로 wiki MD S3 key 결정."""
+    if domain in _DOMAIN_WIKI_KEY:
+        return _DOMAIN_WIKI_KEY[domain]
+    # template_id fallback
+    fallback_domain = _TEMPLATE_WIKI_DOMAIN.get(template_id)
+    if fallback_domain:
+        return _DOMAIN_WIKI_KEY.get(fallback_domain)
+    # 언더스코어/하이픈 정규화 후 재시도
+    norm = domain.replace("-", "_").lower()
+    for key, s3_key in _DOMAIN_WIKI_KEY.items():
+        if norm == key.replace("-", "_"):
+            return s3_key
+    return None
+
+
+def _load_wiki_content(domain: str, template_id: str) -> str:
+    """
+    hezo-wiki S3에서 도메인 wiki MD 읽기.
+    - frontmatter (--- ... ---) 제거
+    - 시스템 프롬프트 토큰 절약: 최대 1500자
+    """
+    s3_key = _wiki_s3_key(domain, template_id)
+    if not s3_key:
+        return ""
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        obj = s3.get_object(Bucket=_WIKI_BUCKET, Key=s3_key)
+        raw = obj["Body"].read().decode("utf-8")
+        # YAML frontmatter 제거 (--- ... --- 사이 블록)
+        content = re.sub(r"^---[\s\S]*?---\s*\n", "", raw, count=1)
+        return content[:1500]
+    except Exception:
+        return ""
+
+# 그룹 리더 슬롯 → 동반 추출 슬롯: {slot_key: extraction_hint}
+_SLOT_COMPANION_MAP: dict[str, dict[str, str]] = {
+    "business_name": {
+        "business_region": "지역 (시·구·동 단위, 예: 서울 강남)",
+    },
+    "core_services": {
+        "target_audience": "주요 고객층 (예: 30-40대 직장인, 소상공인, null이면 생략)",
+    },
+    "phone": {
+        "kakao_channel": "카카오 채널 ID (@로 시작, 없으면 null)",
+    },
+}
 
 
 def handle_agentcore_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -95,14 +192,20 @@ def _run_session_start(session_id: str, session_attrs: dict[str, Any]) -> dict[s
 def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, Any]:
     slot_registry = _slot_registry(session_attrs)
     state_store = _state_store(session_attrs)
+    use_aws = _use_aws(session_attrs)
 
     # 세션 복원: caller가 known_answers를 전달하지 않으면 DynamoDB 체크포인트에서 로드
     known_answers, missing_slots = _restore_session_state(
         session_id, session_attrs, state_store, slot_registry
     )
 
-    answered_slot = str(session_attrs.get("answered_slot", "core_services"))
-    answer = session_attrs.get("answer", "기장 대리, 종합소득세 신고, 법인세 신고")
+    answered_slot = str(session_attrs.get("answered_slot", ""))
+    answer = session_attrs.get("answer", "")
+    domain = str(session_attrs.get("domain", DEFAULT_DOMAIN))
+    template_id = str(session_attrs.get("selected_template", DEFAULT_TEMPLATE))
+
+    # ── P2 wiki 로드 (템플릿 선택 직후 첫 턴부터 도메인 지식 주입) ──────────
+    wiki_content = _load_wiki_content(domain, template_id) if use_aws else ""
 
     # 대화 히스토리 로드 (LLM 호출 전 — 현재 턴 메시지 저장 전이므로 이전 대화만 포함)
     recent_messages = state_store.load_recent_messages(session_id, limit=10)
@@ -112,7 +215,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             session_id=session_id,
             site_id=str(session_attrs.get("site_id", "site_001")),
             user_id=str(session_attrs.get("user_id", "user_001")),
-            domain=str(session_attrs.get("domain", DEFAULT_DOMAIN)),
+            domain=domain,
             domain_label=str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL)),
             slot_registry=slot_registry,
             known_answers=known_answers,
@@ -122,35 +225,56 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             p1_markdown_review_status=str(
                 session_attrs.get("p1_markdown_review_status", "passed")
             ),
-            p2_markdown_usable_for_questions=bool(
-                session_attrs.get("p2_markdown_usable_for_questions", True)
-            ),
-            p2_knowledge_summary=str(
-                session_attrs.get("p2_knowledge_summary", "핵심 서비스 범위, 상담 전환 정보")
-            ),
+            p2_markdown_usable_for_questions=bool(wiki_content),
+            p2_knowledge_summary="wiki_loaded" if wiki_content else "",
             intent_classifier=_intent_classifier(session_attrs),
         )
     )
     metadata = result.to_dict()
 
-    # LLM 어시스턴트 응답 생성 (재시도 요청이 아닐 때만)
+    # ── 동반 슬롯 추출 (3-Turn Progressive) ─────────────────────────────────
+    # 슬롯 리더 답변이 accepted 됐을 때, 같은 답변에서 동반 슬롯 값을 Haiku로 추출
+    final_known = result.known_answers
+    final_missing = result.missing_slots
+
+    companions = _SLOT_COMPANION_MAP.get(answered_slot, {})
+    if (
+        companions
+        and result.turn_status in ("answer_accepted", "ready_for_contract_compile")
+        and use_aws
+        and answer
+    ):
+        extracted = _extract_companion_slots(
+            answer=str(answer),
+            companions=companions,
+        )
+        if extracted:
+            final_known = {**result.known_answers, **extracted}
+            final_missing = tuple(s for s in result.missing_slots if s not in extracted)
+            metadata["known_answers"] = final_known
+            metadata["missing_slots"] = list(final_missing)
+            if not final_missing:
+                metadata["next_stage"] = "contract_compile"
+                metadata["turn_status"] = "ready_for_contract_compile"
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # LLM 어시스턴트 응답 생성
     domain_label = str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL))
-    next_question = (
-        result.question_candidates[0].to_dict()["question"]
-        if result.question_candidates
-        else ""
-    )
+    candidates = metadata.get("question_candidates") or []
+    next_question = candidates[0]["question"] if candidates else ""
+
     reply = run_guarded_claude_reply(
         GuardedClaudeReplyInput(
             user_message=str(answer),
             system_prompt=_build_system_prompt(
                 domain_label=domain_label,
                 slot_registry=slot_registry,
-                known_answers=result.known_answers,
-                missing_slots=result.missing_slots,
+                known_answers=final_known,
+                missing_slots=final_missing,
                 next_question=next_question,
-                next_stage=result.next_stage,
+                next_stage=str(metadata.get("next_stage", result.next_stage)),
                 intent_guard=result.intent_guard.to_dict() if result.intent_guard else None,
+                wiki_content=wiki_content,
             ),
             session_id=session_id,
             site_id=str(session_attrs.get("site_id", "site_001")),
@@ -158,7 +282,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             conversation_history=_build_conversation_history(recent_messages),
             max_tokens=512,
         ),
-        claude_invoker=Boto3BedrockClaudeInvoker() if _use_aws(session_attrs) else None,
+        claude_invoker=Boto3BedrockClaudeInvoker() if use_aws else None,
+        guardrails_client=Boto3BedrockGuardrailsClient() if use_aws else None,
     )
     metadata["assistant_reply"] = reply.final_text
     metadata["reply_status"] = reply.status
@@ -248,19 +373,28 @@ def _slot_registry(session_attrs: dict[str, Any]) -> dict[str, dict[str, Any]]:
         return registry
     return {
         "business_name": {
-            "label": "업체명",
+            "label": "업체명 · 지역",
             "required": True,
-            "question_hint": "사무소명은 무엇인가요?",
+            "question_hint": (
+                "업체 이름과 운영 지역을 함께 알려주세요. "
+                "(예: '서울 강남에서 해조세무회계를 운영합니다')"
+            ),
         },
         "core_services": {
             "label": "핵심 서비스",
             "required": True,
-            "question_hint": "핵심 세무 서비스는 무엇인가요?",
+            "question_hint": (
+                "주력 서비스나 상품을 알려주세요. "
+                "주요 고객층도 함께 말씀해 주시면 맞춤 구성이 가능해요."
+            ),
         },
-        "contact_method": {
-            "label": "상담 방식",
+        "phone": {
+            "label": "연락처",
             "required": True,
-            "question_hint": "상담 문의는 어떤 방식으로 받나요?",
+            "question_hint": (
+                "전화번호와 카카오 채널 ID를 알려주세요. "
+                "카카오채널이 없으시면 '없음'이라고 해주세요."
+            ),
         },
     }
 
@@ -298,10 +432,15 @@ def _sample_p2_markdown_content(domain: str, category: str, domain_label: str) -
 
 def _build_output_text(action: str, metadata: dict[str, Any]) -> str:
     stage = _metadata_stage(metadata)
+    if action == "chat_turn":
+        reply = metadata.get("assistant_reply")
+        if reply:
+            return str(reply)
+        # LLM 실패 시 rule-based 폴백
+        fallback = _fallback_assistant_content(metadata)
+        return fallback if fallback else f"chat_turn_complete — stage: {stage}"
     if action == "session_start":
         return f"chat_session_start_complete — stage: {stage}"
-    if action == "chat_turn":
-        return f"chat_turn_complete — stage: {stage}"
     return f"chat_graph_smoke_complete — stage: {stage}"
 
 
@@ -454,13 +593,19 @@ def _restore_session_state(
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     """caller 제공 값 → DynamoDB 체크포인트 → 기본값 순서로 세션 상태 복원."""
     raw_answers = session_attrs.get("known_answers")
-    if isinstance(raw_answers, dict) and raw_answers:
-        known_answers = raw_answers
+    # sessionAttributes 값은 str이므로 JSON 파싱 시도
+    if isinstance(raw_answers, str) and raw_answers.strip().startswith("{"):
+        import json as _json
+        try:
+            raw_answers = _json.loads(raw_answers)
+        except Exception:
+            raw_answers = None
+    if isinstance(raw_answers, dict):
         missing_slots = _tuple_value(
             session_attrs.get("missing_slots"),
             default=tuple(slot_registry.keys()),
         )
-        return known_answers, missing_slots
+        return raw_answers, missing_slots
 
     try:
         checkpoint = state_store.load_latest_checkpoint(session_id)
@@ -501,6 +646,51 @@ def _build_conversation_history(messages: list[ChatMessage]) -> tuple[ClaudeMess
     return tuple(ClaudeMessage(role=m.role, content=m.content) for m in selected)  # type: ignore[arg-type]
 
 
+def _extract_companion_slots(
+    answer: str,
+    companions: dict[str, str],
+) -> dict[str, Any]:
+    """Bedrock Haiku로 동반 슬롯 값을 추출. 실패 시 빈 dict 반환."""
+    try:
+        invoker = Boto3BedrockClaudeInvoker()
+        fields = "\n".join(f'- "{k}": {desc}' for k, desc in companions.items())
+        example = json.dumps(
+            {k: f"<{desc.split('(')[0].strip()}>" for k, desc in companions.items()},
+            ensure_ascii=False,
+        )
+        result = invoker.invoke(
+            ClaudeInvocationInput(
+                use_case="slot_extraction",
+                system_prompt="텍스트에서 정보를 추출하는 JSON-only 추출기. 없는 값은 null.",
+                messages=(
+                    ClaudeMessage(
+                        role="user",
+                        content=(
+                            f"다음 텍스트에서 추출하세요:\n{fields}\n\n"
+                            f"텍스트: {answer}\n\n"
+                            f"JSON만 반환 (예: {example})"
+                        ),
+                    ),
+                ),
+                model_id=_HAIKU_MODEL_ID,
+                max_tokens=120,
+            )
+        )
+        if result.status != "succeeded":
+            return {}
+        raw = result.text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json\n").strip()
+        data = json.loads(raw)
+        return {
+            k: str(v).strip()
+            for k, v in data.items()
+            if v and str(v).strip() not in ("null", "None", "없음", "", "모름")
+        }
+    except Exception:
+        return {}
+
+
 def _build_system_prompt(
     *,
     domain_label: str,
@@ -510,26 +700,30 @@ def _build_system_prompt(
     next_question: str,
     next_stage: str,
     intent_guard: dict[str, Any] | None,
+    wiki_content: str = "",
 ) -> str:
-    """P1 어시스턴트 Claude 시스템 프롬프트 생성."""
+    """P1 어시스턴트 Claude 시스템 프롬프트 생성 (3-Turn Progressive)."""
+    _COMPANION_LABELS = {
+        "business_region": "지역",
+        "target_audience": "주요 고객",
+        "kakao_channel": "카카오채널",
+    }
+    ALL_LABELS = {**{k: v["label"] for k, v in slot_registry.items()}, **_COMPANION_LABELS}
+
     filled_lines = [
-        f"- {slot_registry[k]['label']}: {v}"
+        f"- {ALL_LABELS.get(k, k)}: {v}"
         for k, v in known_answers.items()
-        if k in slot_registry and v
+        if v
     ]
     filled_summary = "\n".join(filled_lines) if filled_lines else "없음"
 
-    missing_labels = [
-        slot_registry[s]["label"]
-        for s in missing_slots
-        if s in slot_registry
-    ]
+    missing_labels = [ALL_LABELS.get(s, s) for s in missing_slots if s in slot_registry]
     missing_summary = ", ".join(missing_labels) if missing_labels else "없음"
 
     if next_stage == "contract_compile":
         task_instruction = (
             "모든 필수 정보 수집이 완료되었습니다. "
-            "사용자에게 수집 완료를 알리고 홈페이지 제작을 시작한다고 따뜻하게 안내해주세요."
+            "사용자에게 감사 인사와 함께 홈페이지 제작을 곧 시작한다고 따뜻하게 안내해주세요."
         )
     elif intent_guard and intent_guard.get("intent") in {"off_topic", "ambiguous"}:
         redirect = intent_guard.get("redirect_message", "")
@@ -543,16 +737,23 @@ def _build_system_prompt(
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
     else:
         task_instruction = (
-            f"사용자의 답변을 1~2문장으로 자연스럽게 인정한 뒤 "
-            f"다음 질문으로 이어가주세요.\n다음 질문: {next_question}"
+            f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤, "
+            f"아래 [다음 질문]을 문자 그대로 전달하세요.\n"
+            f"[다음 질문]: {next_question}"
         )
 
+    wiki_section = (
+        f"\n[{domain_label} 도메인 지식 — P2 wiki]\n{wiki_content}\n"
+        if wiki_content
+        else ""
+    )
+
     return f"""당신은 HEZO 홈페이지 제작 어시스턴트입니다.
-고객과 자연스러운 대화를 통해 홈페이지 제작에 필요한 정보를 수집합니다.
+총 3번의 대화로 홈페이지 제작에 필요한 정보를 수집합니다.
 
 [고객 업종]
 {domain_label}
-
+{wiki_section}
 [수집된 정보]
 {filled_summary}
 
@@ -562,10 +763,11 @@ def _build_system_prompt(
 [지시사항]
 {task_instruction}
 
-규칙:
-- 친근하고 전문적인 어조를 유지하세요
-- 200자 이내로 간결하게 답변하세요
-- 한 번에 하나의 질문만 하세요"""
+절대 규칙:
+1. [다음 질문] 문장을 수정하거나 도메인 예시를 추가하지 마세요. 그대로 전달하세요.
+2. 200자 이내로 간결하게 답변하세요.
+3. [수집된 정보]에 있는 항목은 절대 다시 묻지 마세요.
+4. [아직 필요한 정보]가 "없음"이면 완료 안내만 하고 추가 질문하지 마세요."""
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:
