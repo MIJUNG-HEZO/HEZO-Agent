@@ -11,12 +11,17 @@ raw 원문(docs)을 근거로 도메인 지식 md '본문'을 생성한다. fron
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 from agents.wiki.catalog import get_entry
 from agents.wiki.llm import BedrockLLM
 
-MAX_SOURCES = 8           # 프롬프트에 넣는 출처 상한
-SOURCE_EXCERPT_CHARS = 1500  # 출처당 본문 발췌 상한(토큰 관리)
+# 모델이 지시를 어기고 본문에 직접 쓴 '## 출처/참고문헌' 섹션 (assemble가 정본을 또 붙이면 중복)
+_BODY_SOURCES_HEADING = re.compile(r"(?im)^#{1,6}\s*(?:출처|참고\s*문헌|references)\b.*")
+
+MAX_SOURCES = 10          # 프롬프트에 넣는 출처 상한
+MIN_SOURCES = 5           # 최소 출처 수 (권위 부족 시 low로 여기까지만 보충)
+SOURCE_EXCERPT_CHARS = 4000  # 출처당 본문 발췌 상한 — 권위 출처에서 더 많은 재료를 줘 위키를 풍부하게
 # 생성 본문 토큰 천장(실제 쓴 만큼만 과금). precheck 본문상한 8000자와 정합 + 헤드룸.
 # 4000은 7섹션 위키엔 부족해 잘림(generation_truncated)이 잦았다(#169 실측 ~33%). 런어웨이는
 # precheck(8000자)가 잡으므로 천장을 넉넉히 둬 정상 위키가 안 잘리게 한다.
@@ -49,10 +54,20 @@ GENERATION_SYSTEM = (
 
 
 def select_sources(docs: list[dict]) -> list[dict]:
-    """추출 성공(ok)·본문 있는 문서만, 등급 우선 정렬해 상위 MAX_SOURCES개."""
+    """추출 성공(ok)·본문 있는 문서만 선택. 권위(high/mid) 우선, low는 보충용.
+
+    권위 출처를 우선 쓰고, 저등급(low: 쇼핑·광고·상업 랜딩)은 권위가 MIN_SOURCES에
+    못 미칠 때만 그만큼 보충한다 — 권위가 충분하면 low를 배제해 중립성·신뢰도를 높인다.
+    (low가 섞이면 모델이 특정 업체 실적·홍보를 본문에 끌어와 중립성이 떨어짐)
+    """
     usable = [d for d in docs if d.get("ok") and (d.get("text") or "").strip()]
     usable.sort(key=lambda d: _GRADE_RANK.get(d.get("source_grade", "low"), 2))
-    return usable[:MAX_SOURCES]
+    authority = [d for d in usable if d.get("source_grade") in ("high", "mid")]
+    low = [d for d in usable if d.get("source_grade") not in ("high", "mid")]
+    selected = authority[:MAX_SOURCES]
+    if len(selected) < MIN_SOURCES:                       # 권위 부족분만 low로 보충
+        selected += low[: MIN_SOURCES - len(selected)]
+    return selected
 
 
 def build_sources_block(selected: list[dict]) -> str:
@@ -125,6 +140,8 @@ def assemble_markdown(
     frontmatter(domain·category·label·confidence)와 출처([Sn] url)는 코드가 결정적으로
     쓴다 — 파서의 domain/category 일치 검증과 근거 ref 추출을 보장하기 위해서다.
     """
+    # 모델이 본문에 직접 쓴 '## 출처' 섹션 제거 — 아래서 정본 출처를 붙이므로 중복 방지
+    body = _BODY_SOURCES_HEADING.split(body)[0].rstrip()
     front = [
         "---",
         f"domain: {domain}",
