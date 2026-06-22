@@ -88,6 +88,13 @@ def test_assemble_parseable():
     check("assemble: [S1] 근거 라인", re.search(r"\[S1\].*nts\.go\.kr", md) is not None)
     check("assemble: H2 지식 섹션 존재", "## 개요" in md)
 
+    # 모델이 본문에 직접 쓴 '## 출처'는 strip되고 정본만 남아야 (중복 방지)
+    dup = assemble_markdown("tax_accounting", "landing", "세무",
+                            BODY + "\n## 출처\n[S1] 모델이 직접 쓴 출처\n",
+                            select_sources(DOCS), confidence=0.8)
+    check("assemble: 모델 작성 '## 출처' strip → 1개만", dup.count("## 출처") == 1)
+    check("assemble: 모델 출처 내용 제거됨", "모델이 직접 쓴 출처" not in dup)
+
 
 def test_generate():
     llm = FakeLLM(BODY, GOOD_SCORES)
@@ -123,6 +130,14 @@ def test_precheck():
     ad = precheck(BODY + "\n지금 전화 주세요!\n", sel)
     check("precheck: 광고 금지어 차단", (not ad.passed)
           and any("banned_phrases" in v for v in ad.violations))
+
+    # '할인마트'(소매 업태=정상 지식)는 '할인' 때문에 차단되면 안 됨 (#오탐 방지)
+    fp = precheck(BODY + "\n편의점·대형할인마트도 유통 채널이다 [S1]\n", sel)
+    check("precheck: '할인마트' 오탐 안 함(통과)", fp.passed)
+    # 판촉 문구는 계속 차단
+    promo = precheck(BODY + "\n지금 할인 이벤트 중! [S1]\n", sel)
+    check("precheck: 판촉 문구(할인 이벤트) 차단", (not promo.passed)
+          and any("banned_phrases" in v for v in promo.violations))
 
 
 def test_pipeline(monkeypatch_like=None):

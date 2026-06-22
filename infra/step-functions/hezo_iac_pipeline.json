@@ -5,7 +5,7 @@
 
     "CreateCustomerStack": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::cloudformation:createStack.sync",
+      "Resource": "arn:aws:states:::aws-sdk:cloudformation:createStack",
       "Parameters": {
         "StackName.$": "States.Format('hezo-customer-{}', $.detail.site_id)",
         "TemplateURL": "${CFN_TEMPLATE_URL}",
@@ -52,7 +52,7 @@
 
     "UpdateCustomerStack": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::cloudformation:updateStack.sync",
+      "Resource": "arn:aws:states:::aws-sdk:cloudformation:updateStack",
       "Parameters": {
         "StackName.$": "States.Format('hezo-customer-{}', $.detail.site_id)",
         "TemplateURL": "${CFN_TEMPLATE_URL}",
