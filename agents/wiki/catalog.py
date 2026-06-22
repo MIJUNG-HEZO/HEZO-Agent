@@ -6,7 +6,8 @@ volatility·seed.
 
 - template_id = 정규 파일명 슬러그 (build/renderer/template_map.py 산출물명과 1:1).
   P2는 Contract의 category+domain으로만 라우팅하므로 P1 시맨틱 id는 쓰지 않는다.
-- volatility = 신선도 TTL 결정 (high 7일 / mid 30일 / low 무제한). 기본 mid.
+- volatility = 변동성 메타(high/mid/low). ※ 갱신 TTL은 모든 도메인 15일 균일이라(#194)
+  현재 TTL 결정에는 미사용 — 컬럼은 향후 참고용으로 유지.
 - seed = 초기 적재 대상 (카테고리당 1개, status=done). 나머지 57개는 pending.
 - query(선택) = 검색어 override. 없으면 label로 검색. 문자열 또는 리스트(멀티쿼리, 병합).
   쇼핑몰 SEO가 센 커머스 등에서 지식 출처가 안 잡힐 때 "지식 의도" 검색어로 정교화.

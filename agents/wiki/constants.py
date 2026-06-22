@@ -4,7 +4,8 @@ S3 = **2버킷** (버전드가 버킷 단위라 영구↔임시 분리, PRD §3.
 - 🟢 WIKI_BUCKET(hezo-wiki, 버전드 ON)  → industries/{category}/{domain}.md  영구 위키 본문. P1이 읽음
 - 🟠 STAGING_BUCKET(hezo-wiki-staging, 버전드 OFF, Lifecycle 삭제) → 임시:
     - raw/{category}/{domain}/{date}.json  크롤 원문 (크롤→생성 핸드오프)
-    - pending/{category}/{domain}.md       P1 보완 (보강 A 입력, 처리 후 삭제)
+    - pending/{category}/{domain}_{site_id}.md  P1 보완 (보강 A 입력, site_id로 유니크 →
+      복수 사용자 동시 제출 덮어쓰기 방지(#191). 처리 후 삭제)
 
 원칙:
 - 본문 읽기/쓰기 = 항상 S3 / "최신·상태·시드·만료" 메타 = 항상 DynamoDB(hezo_wiki_index).
@@ -61,9 +62,13 @@ def industry_key(category: str, domain: str) -> str:
 
 
 def pending_key(category: str, domain: str) -> str:
-    """P1 보완 md 임시 S3 키 (보강 A 입력, 비교 후 삭제).
+    """P1 보완 md 임시 S3 키의 base 경로 (보강 A 입력, 비교 후 삭제).
 
-    예: pending_key('landing', 'tax_accounting') -> 'pending/landing/tax_accounting.md'
+    실제 P1 업로드 키는 site_id를 붙여 유니크하게 한다 — 복수 사용자가 같은 도메인을
+    동시에 보완해도 서로 덮어쓰지 않게(#191): pending/{category}/{domain}_{site_id}.md
+    P2 reinforce는 이 빌더가 아니라 S3 이벤트의 실제 키로 처리하고, domain은 키가 아니라
+    md frontmatter에서 읽으므로 site_id 접미사가 붙어도 그대로 동작한다.
+    예: pending_key('landing', 'tax_accounting') -> 'pending/landing/tax_accounting.md' (base)
     """
     cat = _validate_category(category)
     return f"{PENDING_PREFIX}{cat}/{_validate_name(domain, 'domain')}.md"
