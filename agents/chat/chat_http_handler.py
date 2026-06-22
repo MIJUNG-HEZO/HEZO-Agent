@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from bedrock_claude_adapter import Boto3BedrockClaudeInvoker, ClaudeMessage
+from bedrock_guardrails_adapter import Boto3BedrockGuardrailsClient
 from chat_graph import ChatGraphState, run_chat_graph
 from guarded_claude_flow import GuardedClaudeReplyInput, run_guarded_claude_reply
 from chat_intent_guard import (
@@ -159,6 +160,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             max_tokens=512,
         ),
         claude_invoker=Boto3BedrockClaudeInvoker() if _use_aws(session_attrs) else None,
+        guardrails_client=Boto3BedrockGuardrailsClient() if _use_aws(session_attrs) else None,
     )
     metadata["assistant_reply"] = reply.final_text
     metadata["reply_status"] = reply.status
