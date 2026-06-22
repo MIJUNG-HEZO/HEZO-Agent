@@ -205,13 +205,23 @@
         "ProjectionExpression": "attempt"
       },
       "ResultPath": "$.retry",
+      "Next": "NormalizeAttempt"
+    },
+
+    "NormalizeAttempt": {
+      "Type": "Pass",
+      "Comment": "DynamoDB는 숫자를 문자열(.N)로 반환 → 숫자로 변환해야 NumericLessThan 비교 가능.",
+      "Parameters": {
+        "value.$": "States.StringToJson($.retry.Item.attempt.N)"
+      },
+      "ResultPath": "$.retry_num",
       "Next": "RetryOrFail"
     },
 
     "RetryOrFail": {
       "Type": "Choice",
       "Choices": [
-        { "Variable": "$.retry.Item.attempt.N", "NumericLessThan": 3, "Next": "IncrementAttempt" }
+        { "Variable": "$.retry_num.value", "NumericLessThan": 3, "Next": "IncrementAttempt" }
       ],
       "Default": "MarkFailed"
     },
