@@ -170,8 +170,22 @@
         "ExpressionAttributeValues": { ":published": { "S": "published" } }
       },
       "ResultPath": null,
-      "Next": "PublishSiteEvent",
+      "Next": "ReadContract",
       "Catch": [ { "ErrorEquals": ["DynamoDB.ConditionalCheckFailedException"], "Next": "PipelineSuccess", "ResultPath": null } ]
+    },
+
+    "ReadContract": {
+      "Type": "Task",
+      "Comment": "IaC가 필요로 하는 template 정보를 contract에서 읽어 이벤트에 싣기 위함.",
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+      "Parameters": {
+        "Bucket": "hezo-artifacts",
+        "Key.$": "States.Format('sites/{}/contract_final.json', $.site_id)"
+      },
+      "ResultSelector": { "parsed.$": "States.StringToJson($.Body)" },
+      "ResultPath": "$.contract",
+      "Next": "PublishSiteEvent",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "MarkFailed", "ResultPath": "$.error" } ]
     },
 
     "PublishSiteEvent": {
@@ -185,7 +199,9 @@
             "DetailType": "site-published",
             "Detail": {
               "site_id.$": "$.site_id",
-              "execution_name.$": "$$.Execution.Name"
+              "execution_name.$": "$$.Execution.Name",
+              "template_category.$": "$.contract.parsed.template.category",
+              "template_type.$": "$.contract.parsed.template.slug"
             }
           }
         ]
