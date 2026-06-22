@@ -643,10 +643,9 @@ def _restore_session_state(
         except Exception:
             raw_answers = None
     if isinstance(raw_answers, dict):
-        missing_slots = _tuple_value(
-            session_attrs.get("missing_slots"),
-            default=tuple(slot_registry.keys()),
-        )
+        # known_answers에 이미 있는 슬롯은 missing에서 제외 (backend가 missing_slots를 안 보내도 정확히 계산)
+        all_required = tuple(slot_registry.keys())
+        missing_slots = tuple(s for s in all_required if s not in raw_answers)
         return raw_answers, missing_slots
 
     try:
