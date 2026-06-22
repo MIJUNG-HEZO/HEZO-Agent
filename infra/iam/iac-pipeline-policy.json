@@ -1,38 +1,18 @@
 {
   "Version": "2012-10-17",
   "Statement": [
-    {
-      "Sid": "CloudFormation",
-      "Effect": "Allow",
-      "Action": ["cloudformation:CreateStack","cloudformation:UpdateStack","cloudformation:DescribeStacks","cloudformation:DeleteStack"],
-      "Resource": "arn:aws:cloudformation:ap-northeast-2:492554570964:stack/hezo-customer-*/*"
-    },
-    {
-      "Sid": "StackResources",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:*",
-        "cloudfront:*",
-        "route53:*",
-        "iam:CreateRole","iam:DeleteRole","iam:AttachRolePolicy","iam:DetachRolePolicy",
-        "iam:PutRolePolicy","iam:DeleteRolePolicy","iam:GetRole","iam:PassRole",
-        "iam:CreateInstanceProfile","iam:DeleteInstanceProfile",
-        "iam:AddRoleToInstanceProfile","iam:RemoveRoleFromInstanceProfile",
-        "iam:TagRole","iam:ListRolePolicies","iam:GetRolePolicy"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "PostStack",
-      "Effect": "Allow",
-      "Action": ["cloudfront:CreateInvalidation","scheduler:CreateSchedule","dynamodb:UpdateItem","dynamodb:PutItem"],
-      "Resource": "*"
-    },
-    {
-      "Sid": "FailAlert",
-      "Effect": "Allow",
-      "Action": ["sns:Publish"],
-      "Resource": "*"
-    }
+    { "Sid": "CloudFormation", "Effect": "Allow",
+      "Action": ["cloudformation:CreateStack","cloudformation:UpdateStack","cloudformation:DescribeStacks","cloudformation:DescribeStackEvents","cloudformation:DeleteStack"],
+      "Resource": "arn:aws:cloudformation:ap-northeast-2:492554570964:stack/hezo-customer-*/*" },
+    { "Sid": "CfnTemplateRead", "Effect": "Allow", "Action": ["s3:GetObject"], "Resource": "arn:aws:s3:::hezo-cfn-templates/*" },
+    { "Sid": "StackResources", "Effect": "Allow", "Action": ["ec2:*","cloudfront:*","route53:*"], "Resource": "*" },
+    { "Sid": "IamForStack", "Effect": "Allow",
+      "Action": ["iam:CreateRole","iam:DeleteRole","iam:AttachRolePolicy","iam:DetachRolePolicy","iam:PutRolePolicy","iam:DeleteRolePolicy","iam:GetRole","iam:PassRole","iam:CreateInstanceProfile","iam:DeleteInstanceProfile","iam:GetInstanceProfile","iam:AddRoleToInstanceProfile","iam:RemoveRoleFromInstanceProfile","iam:TagRole","iam:TagInstanceProfile","iam:ListRolePolicies","iam:GetRolePolicy","iam:ListInstanceProfilesForRole","iam:ListAttachedRolePolicies"],
+      "Resource": "*" },
+    { "Sid": "SsmAmi", "Effect": "Allow", "Action": ["ssm:GetParameter","ssm:GetParameters"],
+      "Resource": ["arn:aws:ssm:ap-northeast-2:492554570964:parameter/hezo-*","arn:aws:ssm:ap-northeast-2::parameter/aws/service/*"] },
+    { "Sid": "InvokeLambdas", "Effect": "Allow", "Action": ["lambda:InvokeFunction"],
+      "Resource": ["arn:aws:lambda:ap-northeast-2:492554570964:function:hezo-prepare-customer-name","arn:aws:lambda:ap-northeast-2:492554570964:function:hezo-setup-customer-domain"] },
+    { "Sid": "FailAlert", "Effect": "Allow", "Action": ["sns:Publish"], "Resource": "*" }
   ]
 }
