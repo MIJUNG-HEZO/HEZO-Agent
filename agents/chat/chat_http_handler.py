@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger("hezo.chat")
 
 from bedrock_claude_adapter import (
     Boto3BedrockClaudeInvoker,
@@ -232,15 +235,41 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
     )
     metadata = result.to_dict()
 
+    # ── 3-Turn 루프 방지: ambiguous 거부만 강제 수락 ────────────────────────
+    # off_topic은 intent classifier가 명백한 거부 이유 제공 → 사용자에게 이유 안내 후 재질문
+    # ambiguous(단순 "응", 숫자만 등)는 intent 분류가 불확실하므로 force-accept
+    _intent = (result.intent_guard.intent if result.intent_guard else None)
+    _force_accepted = (
+        result.turn_status == "answer_rejected"  # ambiguous 경로만 (off_topic_rejected 제외)
+        and _intent == "ambiguous"
+        and bool(answered_slot)
+        and answered_slot in slot_registry
+        and bool(answer)
+        and len(str(answer).strip()) > 4  # 너무 짧은 입력은 제외
+    )
+    if _force_accepted:
+        _forced_known = {**result.known_answers, answered_slot: str(answer).strip()}
+        _forced_missing = tuple(s for s in result.missing_slots if s != answered_slot)
+        metadata.update({
+            "known_answers": _forced_known,
+            "missing_slots": list(_forced_missing),
+            "next_stage": "contract_compile" if not _forced_missing else "proactive_questioning",
+            "turn_status": "ready_for_contract_compile" if not _forced_missing else "answer_accepted",
+            "intent_guard": None,
+            "store_allowed": True,
+        })
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ── 동반 슬롯 추출 (3-Turn Progressive) ─────────────────────────────────
     # 슬롯 리더 답변이 accepted 됐을 때, 같은 답변에서 동반 슬롯 값을 Haiku로 추출
-    final_known = result.known_answers
-    final_missing = result.missing_slots
+    final_known = _forced_known if _force_accepted else result.known_answers
+    final_missing = _forced_missing if _force_accepted else result.missing_slots
 
     companions = _SLOT_COMPANION_MAP.get(answered_slot, {})
+    _effective_turn_status = metadata.get("turn_status", result.turn_status)
     if (
         companions
-        and result.turn_status in ("answer_accepted", "ready_for_contract_compile")
+        and _effective_turn_status in ("answer_accepted", "ready_for_contract_compile")
         and use_aws
         and answer
     ):
@@ -249,8 +278,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             companions=companions,
         )
         if extracted:
-            final_known = {**result.known_answers, **extracted}
-            final_missing = tuple(s for s in result.missing_slots if s not in extracted)
+            final_known = {**final_known, **extracted}
+            final_missing = tuple(s for s in final_missing if s not in extracted)
             metadata["known_answers"] = final_known
             metadata["missing_slots"] = list(final_missing)
             if not final_missing:
@@ -300,6 +329,19 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _chat_message_to_dict(message)
         for message in state_store.load_recent_messages(session_id, limit=6)
     ]
+
+    logger.info(
+        "chat_turn_result session=%s answered_slot=%s intent=%s "
+        "turn_status=%s next_stage=%s missing_slots=%s force_accepted=%s",
+        session_id,
+        answered_slot,
+        (result.intent_guard.intent if result.intent_guard else "none"),
+        metadata.get("turn_status"),
+        metadata.get("next_stage"),
+        metadata.get("missing_slots"),
+        _force_accepted,
+    )
+
     return metadata
 
 
@@ -726,12 +768,18 @@ def _build_system_prompt(
             "사용자에게 감사 인사와 함께 홈페이지 제작을 곧 시작한다고 따뜻하게 안내해주세요."
         )
     elif intent_guard and intent_guard.get("intent") in {"off_topic", "ambiguous"}:
+        intent_type = intent_guard.get("intent", "")
         redirect = intent_guard.get("redirect_message", "")
+        if intent_type == "off_topic":
+            reason_prefix = "말씀해 주신 내용이 현재 질문과 맞지 않는 것 같아요."
+        else:  # ambiguous
+            reason_prefix = "말씀해 주신 내용이 너무 짧거나 모호해서 홈페이지에 반영하기 어렵습니다."
         task_instruction = (
-            f"사용자의 답변이 주제와 맞지 않습니다. "
-            f"부드럽게 원래 주제로 돌아와 달라고 안내하고 다시 질문해주세요.\n"
-            f"제안 메시지: {redirect}\n"
-            f"다음 질문: {next_question}"
+            f"먼저 아래 [거부 이유]를 사용자에게 명확하게 전달한 뒤, "
+            f"[다음 질문]을 다시 물어보세요.\n"
+            f"[거부 이유]: {reason_prefix}"
+            + (f" {redirect}" if redirect else "")
+            + f"\n[다음 질문]: {next_question}"
         )
     elif next_stage == "retry_answer":
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"

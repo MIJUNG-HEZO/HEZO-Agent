@@ -201,14 +201,18 @@ _INTENT_CLASSIFIER_PROMPT = """
   "confidence": 0.0-1.0,
   "reasons": ["..."],
   "normalized_answer_candidate": "on_topic일 때만 답변 후보, 아니면 null",
-  "redirect_message": "off_topic/ambiguous일 때 사용자에게 보여줄 짧은 문장"
+  "redirect_message": "off_topic/ambiguous일 때 사용자에게 보여줄 짧은 문장 (한국어, 30자 이내)"
 }
 
 판단 기준:
-- on_topic: 현재 질문/answered_slot/domain에 대한 답변이거나 일부라도 홈페이지 제작에 반영 가능한 정보
-- off_topic: 홈페이지 제작/현재 질문과 무관한 잡담, 일반 질문, 다른 주제
-- ambiguous: 너무 모호해서 slot에 저장하면 위험한 입력
+- on_topic: 현재 answered_slot에 대한 답변이거나 홈페이지에 반영 가능한 비즈니스 정보.
+  다소 짧거나 구체적이지 않아도 비즈니스와 관련되면 on_topic.
+  예) 핵심 서비스 질문에 "최저가 보장", "도매 유통", "커스텀 케이크 제작" → on_topic
+- off_topic: 홈페이지 제작과 완전히 무관한 내용 (잡담, 정치, 날씨, 주식 등).
+  또는 현재 slot과 명백히 다른 slot의 답변 (예: 핵심 서비스 질문에 전화번호·이메일 입력).
+- ambiguous: 의미 파악이 불가능한 입력 (단순 "응", "ㅇ", 숫자 단독, 특수문자만 등).
 
+비즈니스 관련 내용은 가능한 on_topic으로 판단하세요.
 off_topic/ambiguous는 저장하면 안 됩니다.
 """.strip()
 
