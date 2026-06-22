@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
-from bedrock_claude_adapter import Boto3BedrockClaudeInvoker, ClaudeMessage
+from bedrock_claude_adapter import (
+    Boto3BedrockClaudeInvoker,
+    ClaudeInvocationInput,
+    ClaudeMessage,
+)
 from bedrock_guardrails_adapter import Boto3BedrockGuardrailsClient
 from chat_graph import ChatGraphState, run_chat_graph
 from guarded_claude_flow import GuardedClaudeReplyInput, run_guarded_claude_reply
@@ -36,6 +41,21 @@ DEFAULT_CATEGORY = "landing"
 DEFAULT_DOMAIN = "tax_accounting"
 DEFAULT_DOMAIN_LABEL = "세무/회계"
 DEFAULT_TEMPLATE = "landing/13-tax-accounting"
+
+_HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
+
+# 그룹 리더 슬롯 → 동반 추출 슬롯: {slot_key: extraction_hint}
+_SLOT_COMPANION_MAP: dict[str, dict[str, str]] = {
+    "business_name": {
+        "business_region": "지역 (시·구·동 단위, 예: 서울 강남)",
+    },
+    "core_services": {
+        "target_audience": "주요 고객층 (예: 30-40대 직장인, 소상공인, null이면 생략)",
+    },
+    "phone": {
+        "kakao_channel": "카카오 채널 ID (@로 시작, 없으면 null)",
+    },
+}
 
 
 def handle_agentcore_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -96,6 +116,7 @@ def _run_session_start(session_id: str, session_attrs: dict[str, Any]) -> dict[s
 def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, Any]:
     slot_registry = _slot_registry(session_attrs)
     state_store = _state_store(session_attrs)
+    use_aws = _use_aws(session_attrs)
 
     # 세션 복원: caller가 known_answers를 전달하지 않으면 DynamoDB 체크포인트에서 로드
     known_answers, missing_slots = _restore_session_state(
@@ -134,23 +155,47 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
     )
     metadata = result.to_dict()
 
-    # LLM 어시스턴트 응답 생성 (재시도 요청이 아닐 때만)
+    # ── 동반 슬롯 추출 (3-Turn Progressive) ─────────────────────────────────
+    # 슬롯 리더 답변이 accepted 됐을 때, 같은 답변에서 동반 슬롯 값을 Haiku로 추출
+    final_known = result.known_answers
+    final_missing = result.missing_slots
+
+    companions = _SLOT_COMPANION_MAP.get(answered_slot, {})
+    if (
+        companions
+        and result.turn_status in ("answer_accepted", "ready_for_contract_compile")
+        and use_aws
+        and answer
+    ):
+        extracted = _extract_companion_slots(
+            answer=str(answer),
+            companions=companions,
+        )
+        if extracted:
+            final_known = {**result.known_answers, **extracted}
+            final_missing = tuple(s for s in result.missing_slots if s not in extracted)
+            metadata["known_answers"] = final_known
+            metadata["missing_slots"] = list(final_missing)
+            if not final_missing:
+                metadata["next_stage"] = "contract_compile"
+                metadata["turn_status"] = "ready_for_contract_compile"
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # LLM 어시스턴트 응답 생성
     domain_label = str(session_attrs.get("domain_label", DEFAULT_DOMAIN_LABEL))
-    next_question = (
-        result.question_candidates[0].to_dict()["question"]
-        if result.question_candidates
-        else ""
-    )
+    candidates = metadata.get("question_candidates") or []
+    next_question = candidates[0]["question"] if candidates else ""
+
     reply = run_guarded_claude_reply(
         GuardedClaudeReplyInput(
             user_message=str(answer),
             system_prompt=_build_system_prompt(
                 domain_label=domain_label,
                 slot_registry=slot_registry,
-                known_answers=result.known_answers,
-                missing_slots=result.missing_slots,
+                known_answers=final_known,
+                missing_slots=final_missing,
                 next_question=next_question,
-                next_stage=result.next_stage,
+                next_stage=str(metadata.get("next_stage", result.next_stage)),
                 intent_guard=result.intent_guard.to_dict() if result.intent_guard else None,
             ),
             session_id=session_id,
@@ -159,8 +204,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             conversation_history=_build_conversation_history(recent_messages),
             max_tokens=512,
         ),
-        claude_invoker=Boto3BedrockClaudeInvoker() if _use_aws(session_attrs) else None,
-        guardrails_client=Boto3BedrockGuardrailsClient() if _use_aws(session_attrs) else None,
+        claude_invoker=Boto3BedrockClaudeInvoker() if use_aws else None,
+        guardrails_client=Boto3BedrockGuardrailsClient() if use_aws else None,
     )
     metadata["assistant_reply"] = reply.final_text
     metadata["reply_status"] = reply.status
@@ -250,39 +295,28 @@ def _slot_registry(session_attrs: dict[str, Any]) -> dict[str, dict[str, Any]]:
         return registry
     return {
         "business_name": {
-            "label": "업체명",
+            "label": "업체명 · 지역",
             "required": True,
-            "question_hint": "어떤 이름으로 운영하고 계신가요?",
-        },
-        "business_region": {
-            "label": "지역",
-            "required": True,
-            "question_hint": "매장·사무소가 어느 지역에 있나요? (예: 서울 강남, 부산 해운대)",
+            "question_hint": (
+                "업체 이름과 운영 지역을 함께 알려주세요. "
+                "(예: '서울 강남에서 해조세무회계를 운영합니다')"
+            ),
         },
         "core_services": {
             "label": "핵심 서비스",
             "required": True,
-            "question_hint": "주력 서비스나 상품을 알려주세요. (쉼표로 구분)",
-        },
-        "target_audience": {
-            "label": "주요 고객",
-            "required": True,
-            "question_hint": "주로 어떤 분들이 고객인가요? (예: 30-40대 직장인, 개인사업자)",
+            "question_hint": (
+                "주력 서비스나 상품을 알려주세요. "
+                "주요 고객층도 함께 말씀해 주시면 맞춤 구성이 가능해요."
+            ),
         },
         "phone": {
-            "label": "전화번호",
+            "label": "연락처",
             "required": True,
-            "question_hint": "전화번호가 어떻게 되나요?",
-        },
-        "kakao_channel": {
-            "label": "카카오채널",
-            "required": False,
-            "question_hint": "카카오 채널 ID가 있으신가요? 없으시면 '없음'이라고 해주세요.",
-        },
-        "business_hours": {
-            "label": "영업시간",
-            "required": False,
-            "question_hint": "영업 시간이 어떻게 되나요? (예: 평일 9시-18시, 토요일 9시-13시)",
+            "question_hint": (
+                "전화번호와 카카오 채널 ID를 알려주세요. "
+                "카카오채널이 없으시면 '없음'이라고 해주세요."
+            ),
         },
     }
 
@@ -534,6 +568,51 @@ def _build_conversation_history(messages: list[ChatMessage]) -> tuple[ClaudeMess
     return tuple(ClaudeMessage(role=m.role, content=m.content) for m in selected)  # type: ignore[arg-type]
 
 
+def _extract_companion_slots(
+    answer: str,
+    companions: dict[str, str],
+) -> dict[str, Any]:
+    """Bedrock Haiku로 동반 슬롯 값을 추출. 실패 시 빈 dict 반환."""
+    try:
+        invoker = Boto3BedrockClaudeInvoker()
+        fields = "\n".join(f'- "{k}": {desc}' for k, desc in companions.items())
+        example = json.dumps(
+            {k: f"<{desc.split('(')[0].strip()}>" for k, desc in companions.items()},
+            ensure_ascii=False,
+        )
+        result = invoker.invoke(
+            ClaudeInvocationInput(
+                use_case="slot_extraction",
+                system_prompt="텍스트에서 정보를 추출하는 JSON-only 추출기. 없는 값은 null.",
+                messages=(
+                    ClaudeMessage(
+                        role="user",
+                        content=(
+                            f"다음 텍스트에서 추출하세요:\n{fields}\n\n"
+                            f"텍스트: {answer}\n\n"
+                            f"JSON만 반환 (예: {example})"
+                        ),
+                    ),
+                ),
+                model_id=_HAIKU_MODEL_ID,
+                max_tokens=120,
+            )
+        )
+        if result.status != "succeeded":
+            return {}
+        raw = result.text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json\n").strip()
+        data = json.loads(raw)
+        return {
+            k: str(v).strip()
+            for k, v in data.items()
+            if v and str(v).strip() not in ("null", "None", "없음", "", "모름")
+        }
+    except Exception:
+        return {}
+
+
 def _build_system_prompt(
     *,
     domain_label: str,
@@ -544,25 +623,28 @@ def _build_system_prompt(
     next_stage: str,
     intent_guard: dict[str, Any] | None,
 ) -> str:
-    """P1 어시스턴트 Claude 시스템 프롬프트 생성."""
+    """P1 어시스턴트 Claude 시스템 프롬프트 생성 (3-Turn Progressive)."""
+    _COMPANION_LABELS = {
+        "business_region": "지역",
+        "target_audience": "주요 고객",
+        "kakao_channel": "카카오채널",
+    }
+    ALL_LABELS = {**{k: v["label"] for k, v in slot_registry.items()}, **_COMPANION_LABELS}
+
     filled_lines = [
-        f"- {slot_registry[k]['label']}: {v}"
+        f"- {ALL_LABELS.get(k, k)}: {v}"
         for k, v in known_answers.items()
-        if k in slot_registry and v
+        if v
     ]
     filled_summary = "\n".join(filled_lines) if filled_lines else "없음"
 
-    missing_labels = [
-        slot_registry[s]["label"]
-        for s in missing_slots
-        if s in slot_registry
-    ]
+    missing_labels = [ALL_LABELS.get(s, s) for s in missing_slots if s in slot_registry]
     missing_summary = ", ".join(missing_labels) if missing_labels else "없음"
 
     if next_stage == "contract_compile":
         task_instruction = (
             "모든 필수 정보 수집이 완료되었습니다. "
-            "사용자에게 수집 완료를 알리고 홈페이지 제작을 시작한다고 따뜻하게 안내해주세요."
+            "사용자에게 감사 인사와 함께 홈페이지 제작을 곧 시작한다고 따뜻하게 안내해주세요."
         )
     elif intent_guard and intent_guard.get("intent") in {"off_topic", "ambiguous"}:
         redirect = intent_guard.get("redirect_message", "")
@@ -576,12 +658,12 @@ def _build_system_prompt(
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
     else:
         task_instruction = (
-            f"사용자의 답변을 1~2문장으로 자연스럽게 인정한 뒤 "
+            f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤 "
             f"다음 질문으로 이어가주세요.\n다음 질문: {next_question}"
         )
 
     return f"""당신은 HEZO 홈페이지 제작 어시스턴트입니다.
-고객과 자연스러운 대화를 통해 홈페이지 제작에 필요한 정보를 수집합니다.
+총 3번의 대화로 홈페이지 제작에 필요한 정보를 수집합니다.
 
 [고객 업종]
 {domain_label}
@@ -598,10 +680,9 @@ def _build_system_prompt(
 규칙:
 - 친근하고 전문적인 어조를 유지하세요
 - 200자 이내로 간결하게 답변하세요
-- 한 번에 하나의 질문만 하세요
 - [수집된 정보]에 이미 있는 항목은 절대 다시 묻지 마세요
 - [아직 필요한 정보]가 "없음"이면 추가 질문 없이 완료 안내만 하세요
-- [지시사항]에 명시된 "다음 질문" 외의 추가 질문(로고·이미지·주소·운영시간 등)은 하지 마세요"""
+- [지시사항]의 "다음 질문"을 그대로 물어보세요. 다른 항목(로고·이미지 등)은 묻지 마세요"""
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:

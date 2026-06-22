@@ -13,6 +13,7 @@ ClaudeUseCase = Literal[
     "contract_enrichment",
     "assistant_reply",
     "intent_classification",
+    "slot_extraction",
 ]
 InvocationStatus = Literal["succeeded", "failed"]
 
