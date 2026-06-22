@@ -140,6 +140,9 @@ def check_layer1(
         )
 
         text = result["content"][0]["text"].strip()
+        # Claude가 JSON을 ```json ... ``` 코드블록으로 감싸 답하는 경우 포장지 제거
+        if text.startswith("```"):
+            text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         check = json.loads(text)
     except Exception as exc:
         logger.warning("Layer 1 LLM 호출 실패 — 건너뜀: %s", exc)
