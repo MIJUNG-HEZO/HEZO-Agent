@@ -9,7 +9,7 @@ boto3 래퍼는 팀 패턴(agents/chat/chat_state_store.py)을 따른다.
   last_updated(ISO8601) · next_refresh_at(epoch) · source_urls · attempts
 GSI due-index (PK=status, SK=next_refresh_at) — pending/만료 done 쿼리.
 
-신선도 TTL (commit 시 next_refresh_at = now + TTL): high 7일 / mid 30일 / low 만료없음.
+신선도 TTL (commit 시 next_refresh_at = now + TTL): 모든 도메인 15일 균일 (#194, 무제한 폐지).
 
 credential은 코드/깃에 두지 않는다. 프로필/리전은 constants(환경변수)로만 참조.
 """
@@ -31,9 +31,9 @@ STATUS_REJECTED = "rejected"
 STATUS_FAILED = "failed"
 
 _DAY = 86_400
-TTL_DAYS: dict[str, int | None] = {"high": 7, "mid": 30, "low": None}
-# low(만료 없음): due-index에는 남되 절대 만료로 안 잡히도록 먼 미래 epoch 사용.
-NEVER_REFRESH = 9_999_999_999
+# 갱신 주기 = 모든 도메인 15일 균일 (2026-06-22 결정, #194). volatility별 차등·"무제한(never)"
+# 폐지 — 어떤 도메인도 영영 안 갱신하면 위키가 낡으므로, 모두 최소 2주마다 최신화한다.
+REFRESH_DAYS = 15
 
 # 크롤 claim lease(초): claim 시 next_refresh_at=now+이값으로 둬 "처리 중"을 표시한다.
 # 한 파이프라인 실행은 실측 최대 ~2분이라 30분이면 정상 처리분을 실수로 재선점하지 않는다.
@@ -64,11 +64,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def next_refresh_at(volatility: str, now: int | None = None) -> int:
-    """volatility별 다음 갱신 시각(epoch). low는 NEVER_REFRESH."""
+def next_refresh_at(volatility: str | None = None, now: int | None = None) -> int:
+    """다음 갱신 시각(epoch) = now + 15일 (모든 도메인 균일, #194).
+
+    volatility 인자는 호환 위해 받기만 하고 쓰지 않는다(차등 폐지). 백오프(reject 재시도)는
+    이와 별개로 _backoff_days가 담당한다.
+    """
     now = _now_epoch() if now is None else now
-    days = TTL_DAYS.get(volatility, 30)  # 알 수 없는 값은 mid로
-    return NEVER_REFRESH if days is None else now + days * _DAY
+    return now + REFRESH_DAYS * _DAY
 
 
 def _to_native(value: Any) -> Any:

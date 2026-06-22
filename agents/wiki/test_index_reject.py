@@ -6,11 +6,13 @@ from __future__ import annotations
 
 from agents.wiki.index_store import (
     CRAWL_LEASE_SECONDS,
+    REFRESH_DAYS,
     STATUS_CRAWLING,
     STATUS_PENDING,
     WikiIndexStore,
     _backoff_days,
     _DAY,
+    next_refresh_at,
 )
 
 
@@ -180,9 +182,18 @@ def test_claim_lease():
     check("nra=0 갇힌 도메인 재선점 성공", WikiIndexStore(table=t4).claim("d", now=now) is True)
 
 
+def test_next_refresh_uniform():
+    now = 1_000_000
+    check("REFRESH_DAYS=15", REFRESH_DAYS == 15)
+    check("모든 volatility 동일 15일", next_refresh_at("high", now) == next_refresh_at("low", now)
+          == next_refresh_at("mid", now) == now + REFRESH_DAYS * _DAY)
+    check("volatility 인자 없어도 15일", next_refresh_at(now=now) == now + 15 * _DAY)
+    check("무제한(never) 폐지 — 먼 미래값 안 나옴", next_refresh_at("low", now) < now + 365 * _DAY)
+
+
 if __name__ == "__main__":
     for fn in [test_backoff_schedule, test_reject_requeues_with_backoff, test_commit_cas,
-               test_claim_lease]:
+               test_claim_lease, test_next_refresh_uniform]:
         print(f"\n[{fn.__name__}]")
         fn()
     print("\n전부 통과 ✅")
