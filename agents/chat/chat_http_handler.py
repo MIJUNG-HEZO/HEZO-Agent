@@ -101,8 +101,8 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         session_id, session_attrs, state_store, slot_registry
     )
 
-    answered_slot = str(session_attrs.get("answered_slot", "core_services"))
-    answer = session_attrs.get("answer", "기장 대리, 종합소득세 신고, 법인세 신고")
+    answered_slot = str(session_attrs.get("answered_slot", ""))
+    answer = session_attrs.get("answer", "")
 
     # 대화 히스토리 로드 (LLM 호출 전 — 현재 턴 메시지 저장 전이므로 이전 대화만 포함)
     recent_messages = state_store.load_recent_messages(session_id, limit=10)
@@ -459,13 +459,19 @@ def _restore_session_state(
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     """caller 제공 값 → DynamoDB 체크포인트 → 기본값 순서로 세션 상태 복원."""
     raw_answers = session_attrs.get("known_answers")
-    if isinstance(raw_answers, dict) and raw_answers:
-        known_answers = raw_answers
+    # sessionAttributes 값은 str이므로 JSON 파싱 시도
+    if isinstance(raw_answers, str) and raw_answers.strip().startswith("{"):
+        import json as _json
+        try:
+            raw_answers = _json.loads(raw_answers)
+        except Exception:
+            raw_answers = None
+    if isinstance(raw_answers, dict):
         missing_slots = _tuple_value(
             session_attrs.get("missing_slots"),
             default=tuple(slot_registry.keys()),
         )
-        return known_answers, missing_slots
+        return raw_answers, missing_slots
 
     try:
         checkpoint = state_store.load_latest_checkpoint(session_id)
