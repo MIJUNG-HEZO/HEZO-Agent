@@ -40,6 +40,11 @@ from s3_artifact_store import (
     InMemoryS3ArtifactStore,
     S3ArtifactStore,
 )
+from template_slot_registries import (
+    ALL_COMPANION_LABELS,
+    get_companion_map,
+    get_slot_registry,
+)
 
 
 DEFAULT_CATEGORY = "landing"
@@ -123,18 +128,7 @@ def _load_wiki_content(domain: str, template_id: str) -> str:
     except Exception:
         return ""
 
-# 그룹 리더 슬롯 → 동반 추출 슬롯: {slot_key: extraction_hint}
-_SLOT_COMPANION_MAP: dict[str, dict[str, str]] = {
-    "business_name": {
-        "business_region": "지역 (시·구·동 단위, 예: 서울 강남)",
-    },
-    "core_services": {
-        "target_audience": "주요 고객층 (예: 30-40대 직장인, 소상공인, null이면 생략)",
-    },
-    "phone": {
-        "kakao_channel": "카카오 채널 ID (@로 시작, 없으면 null)",
-    },
-}
+# _SLOT_COMPANION_MAP은 template_slot_registries.get_companion_map()으로 대체됨
 
 
 def handle_agentcore_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -265,7 +259,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
     final_known = _forced_known if _force_accepted else result.known_answers
     final_missing = _forced_missing if _force_accepted else result.missing_slots
 
-    companions = _SLOT_COMPANION_MAP.get(answered_slot, {})
+    companions = get_companion_map(template_id).get(answered_slot, {})
     _effective_turn_status = metadata.get("turn_status", result.turn_status)
     if (
         companions
@@ -413,32 +407,8 @@ def _slot_registry(session_attrs: dict[str, Any]) -> dict[str, dict[str, Any]]:
     registry = session_attrs.get("slot_registry")
     if isinstance(registry, dict) and registry:
         return registry
-    return {
-        "business_name": {
-            "label": "업체명 · 지역",
-            "required": True,
-            "question_hint": (
-                "업체 이름과 운영 지역을 함께 알려주세요. "
-                "(예: '서울 강남에서 해조세무회계를 운영합니다')"
-            ),
-        },
-        "core_services": {
-            "label": "핵심 서비스",
-            "required": True,
-            "question_hint": (
-                "주력 서비스나 상품을 알려주세요. "
-                "주요 고객층도 함께 말씀해 주시면 맞춤 구성이 가능해요."
-            ),
-        },
-        "phone": {
-            "label": "연락처",
-            "required": True,
-            "question_hint": (
-                "전화번호와 카카오 채널 ID를 알려주세요. "
-                "카카오채널이 없으시면 '없음'이라고 해주세요."
-            ),
-        },
-    }
+    selected_template = str(session_attrs.get("selected_template", ""))
+    return get_slot_registry(selected_template)
 
 
 def _sample_p2_markdown_content(domain: str, category: str, domain_label: str) -> str:
@@ -745,12 +715,7 @@ def _build_system_prompt(
     wiki_content: str = "",
 ) -> str:
     """P1 어시스턴트 Claude 시스템 프롬프트 생성 (3-Turn Progressive)."""
-    _COMPANION_LABELS = {
-        "business_region": "지역",
-        "target_audience": "주요 고객",
-        "kakao_channel": "카카오채널",
-    }
-    ALL_LABELS = {**{k: v["label"] for k, v in slot_registry.items()}, **_COMPANION_LABELS}
+    ALL_LABELS = {**{k: v["label"] for k, v in slot_registry.items()}, **ALL_COMPANION_LABELS}
 
     filled_lines = [
         f"- {ALL_LABELS.get(k, k)}: {v}"

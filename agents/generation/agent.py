@@ -194,6 +194,69 @@ education      → EducationalOrganization
 - robots_rules에 GPTBot/ClaudeBot/PerplexityBot/Yeti Allow 필수
 - FAQPage JSON-LD 필수
 - Service JSON-LD 필수 (대표 서비스 1개 이상)
+
+## 템플릿별 render_spec 특화 지침
+
+Contract JSON의 template.template_id가 아래 중 하나이면 해당 지침을 반드시 따른다.
+
+### store/10-wine-market (와인샵)
+slots.wine_lineup에 사용자가 입력한 와인 목록이 있다.
+
+Services.items: wine_lineup을 파싱해 와인 4개를 구성한다.
+  - name: 와인 이름 (이탈리아 키안티, 프랑스 샤르도네 등)
+  - desc: "종류 · ₩가격 · 페어링 추천" 형식 (예: "레드 · ₩55,000 · 스테이크 & 치즈")
+  - label: "Red" | "White" | "Sparkling" 중 하나
+
+Hero.h1: slots.featured_wine이 있으면 그 와인 이름을 사용. 없으면 wine_lineup 첫 번째 항목 이름.
+Hero.subtext: 해당 와인의 페어링 추천 한 줄 (예: "스테이크와 딱 맞는 묵직한 레드 와인")
+
+JSON-LD @type: "LocalBusiness", specialty 필드에 "와인 전문점" 추가.
+FAQ 예시 주제: 주문 방법, 배송 가능 지역, 와인 추천 기준, 가격대, 선물 포장 여부.
+
+llms_txt/llms-full_txt: 와인 목록과 가격, 페어링 정보 중심으로 작성.
+QuickAnswer: "{업체명}은 {지역} 위치의 와인 전문샵으로 {featured_wine_name} 등 엄선된 와인을 판매합니다." 형식.
+
+### landing/13-tax-accounting (세무회계사무소)
+slots.tax_services에 사용자가 입력한 세무 서비스 목록이 있다.
+
+Services.items: tax_services를 파싱해 서비스 3개를 구성한다.
+  - name: 서비스명 (예: 월 기장대리, 부가세 신고, 절세 컨설팅)
+  - desc: 대상 고객과 서비스 내용 한 줄 (예: "개인사업자를 위한 매월 매출·비용·인건비 정리")
+  - label: "STARTER" | "MONTHLY" | "REVIEW" | "ADVISORY" 중 맥락에 맞게 선택
+
+Hero.h1: 세무 전문성과 지역명을 결합한 임팩트 있는 문구 (예: "숫자를 정리하면 사업의 다음 결정이 보입니다").
+  h1에 업체명을 직접 넣지 말 것 — JSON-LD와 브랜드 셀렉터가 처리함.
+
+slots.target_clients가 있으면 QuickAnswer에 포함: "{업체명}은 {target_clients} 전문 세무사무소입니다."
+slots.success_case가 있으면 Services 마지막 항목 desc에 "[실제 사례] {success_case}" 형식으로 추가.
+
+JSON-LD @type: "Accountant".
+FAQ 예시 주제: 기장 비용, 부가세 신고 주기, 종합소득세 신고 방법, 법인 vs 개인사업자 절세, 첫 상담 방법.
+
+### blog/17-career-notebook (커리어 블로그)
+slots.author_info 또는 slots.author_name + slots.career_field + slots.career_level로 블로그 주인공 정보가 있다.
+
+Hero.h1: "{career_level} {career_field}의 커리어 기록" 형식 (50자 이내, 예: "3년차 프론트엔드 개발자의 커리어 기록").
+  author_info 원문에서 직군·경력을 추출해 사용.
+Hero.subtext: 블로그 목적 한 줄 (예: "일한 흔적을 다음 기회로 바꾸는 성장 로그").
+
+Services.items: slots.portfolio_projects를 파싱해 3개 note card를 구성한다.
+  - name: 프로젝트·경험 제목 (간결하게, 30자 이내)
+  - desc: 성과·배운 점 한 줄 (구체적 수치 포함 시 +1점)
+  - label: "Case Study" | "Resume" | "Portfolio" | "Interview" 중 맥락에 맞게 선택
+
+QuickAnswer: "{author_name}의 커리어 블로그. {career_field} 분야 {career_level}의 프로젝트 회고, 이력서 개선, 면접 준비 기록."
+
+slots.learning_activities가 있으면 FAQ.items에 학습 활동을 Q/A 형식으로 변환:
+  Q: "최근 커리어 준비로 무엇을 하고 있나요?" A: {learning_activities 내용}
+  추가 FAQ: 포트폴리오 작성법, 이직 준비 타임라인, 개발자 이력서 작성 팁 등 직군 맞춤 질문 포함.
+
+JSON-LD @type: "Person" (name: author_name) + "Blog" (@type: "Blog", author: Person).
+  LocalBusiness나 Service JSON-LD 대신 Person + Blog 구조 사용.
+  Service JSON-LD는 blog 템플릿에서 생략 가능.
+
+llms_txt/llms-full_txt: 비용·가격 정보 불필요. 커리어 성장 기록 중심으로 작성.
+  ## 핵심 페이지에 포트폴리오·이력서·면접 관련 섹션 링크 포함.
 """
 
 
