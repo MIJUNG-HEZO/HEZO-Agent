@@ -25,6 +25,7 @@ from chat_intent_guard import (
     ClaudeChatIntentClassifier,
     StaticChatIntentClassifier,
 )
+from chat_p2_supplement import try_submit_p2_supplement
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_state_store import (
     Boto3ChatStateStore,
@@ -49,6 +50,7 @@ DEFAULT_TEMPLATE = "landing/13-tax-accounting"
 
 _HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
 _WIKI_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+_ARTIFACTS_BUCKET = os.environ.get("ARTIFACTS_BUCKET", "hezo-artifacts")
 
 # domain 값 → hezo-wiki S3 키 매핑 (프론트 TEMPLATE_DOMAIN의 domain 필드 기준)
 _DOMAIN_WIKI_KEY: dict[str, str] = {
@@ -342,6 +344,48 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _force_accepted,
     )
 
+    # 슬롯 수집 완료 → 3종 S3 저장 (contract_final, 채팅 transcript, P2 보강 A)
+    if metadata.get("next_stage") == "contract_compile" and use_aws:
+        _site_id = str(session_attrs.get("site_id", ""))
+        _user_id = str(session_attrs.get("user_id", ""))
+        _category = str(session_attrs.get("category", "landing"))
+        _domain_label = str(session_attrs.get("domain_label", ""))
+        _template_id = str(session_attrs.get("selected_template", ""))
+        _known = metadata.get("known_answers", {})
+
+        _save_contract_final(
+            site_id=_site_id,
+            user_id=_user_id,
+            domain=domain,
+            domain_label=_domain_label,
+            template_id=_template_id,
+            category=_category,
+            slot_registry=slot_registry,
+            known_answers=_known,
+        )
+
+        # 채팅 전체 대화를 MD로 hezo-chat에 저장
+        all_messages = state_store.load_recent_messages(session_id, limit=30)
+        _save_chat_transcript(
+            site_id=_site_id,
+            session_id=session_id,
+            domain=domain,
+            domain_label=_domain_label,
+            template_id=_template_id,
+            category=_category,
+            known_answers=_known,
+            messages=list(all_messages),
+        )
+
+        # P2 wiki 보강 A: 룰셋 게이트 통과 시 staging 저장
+        try_submit_p2_supplement(
+            site_id=_site_id,
+            domain=domain,
+            domain_label=_domain_label,
+            category=_category,
+            known_answers=_known,
+        )
+
     return metadata
 
 
@@ -627,6 +671,130 @@ def _use_aws(session_attrs: dict[str, Any]) -> bool:
     return str(session_attrs.get("storage_mode", "memory")).lower() == "aws"
 
 
+def _save_contract_final(
+    *,
+    site_id: str,
+    user_id: str,
+    domain: str,
+    domain_label: str,
+    template_id: str,
+    category: str,
+    slot_registry: dict[str, dict[str, Any]],
+    known_answers: dict[str, Any],
+) -> None:
+    """슬롯 수집 완료 후 contract_final.json을 hezo-artifacts S3에 저장한다."""
+    if not site_id:
+        logger.warning("contract_final 저장 건너뜀: site_id 없음")
+        return
+
+    slot_status = {}
+    slots = {}
+    evidence = {}
+    for key, meta in slot_registry.items():
+        val = known_answers.get(key)
+        filled = bool(val) if not isinstance(val, str) else bool(val.strip())
+        slots[key] = val if filled else None
+        slot_status[key] = "filled" if filled else "empty"
+        if filled:
+            evidence[key] = {"source": "user", "confirmed": True}
+
+    # companion 슬롯(slot_registry에 없는 것)도 포함
+    for key, val in known_answers.items():
+        if key not in slots:
+            slots[key] = val
+            slot_status[key] = "filled" if val else "empty"
+            if val:
+                evidence[key] = {"source": "user", "confirmed": True}
+
+    contract = {
+        "schema_version": "1.0.0",
+        "ids": {"site_id": site_id, "user_id": user_id},
+        "template": {"template_id": template_id, "template_category": category},
+        "slots": slots,
+        "slot_status": slot_status,
+        "evidence": evidence,
+        "gates": {"preview_ready": True, "generation_ready": True},
+        "meta": {"domain": domain, "domain_label": domain_label},
+    }
+
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        s3.put_object(
+            Bucket=_ARTIFACTS_BUCKET,
+            Key=f"sites/{site_id}/contract_final.json",
+            Body=json.dumps(contract, ensure_ascii=False, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
+        logger.info("contract_final.json 저장 완료: s3://%s/sites/%s/contract_final.json", _ARTIFACTS_BUCKET, site_id)
+    except Exception as exc:
+        logger.error("contract_final.json 저장 실패 site=%s: %s", site_id, exc)
+
+
+_CHAT_BUCKET = os.environ.get("CHAT_BUCKET", "hezo-chat")
+
+
+def _save_chat_transcript(
+    *,
+    site_id: str,
+    session_id: str,
+    domain: str,
+    domain_label: str,
+    template_id: str,
+    category: str,
+    known_answers: dict[str, Any],
+    messages: list[Any],
+) -> None:
+    """채팅 전체 대화를 MD로 hezo-chat/sites/{site_id}/chat_{session_id}.md에 저장."""
+    if not site_id:
+        return
+
+    lines: list[str] = [
+        "---",
+        f"site_id: {site_id}",
+        f"session_id: {session_id}",
+        f"domain: {domain}",
+        f"domain_label: {domain_label}",
+        f"template_id: {template_id}",
+        f"category: {category}",
+        f"created_at: {_utc_timestamp()}",
+        "---",
+        "",
+        f"# HEZO 챗봇 대화 기록 — {domain_label}",
+        "",
+        "## 수집된 슬롯",
+        "",
+    ]
+    for k, v in known_answers.items():
+        if v:
+            lines.append(f"- **{k}**: {v}")
+    lines += ["", "## 대화 내용", ""]
+    for msg in messages:
+        role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else "")
+        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
+        if not content:
+            continue
+        label = "사용자" if role == "user" else "HEZO AI"
+        lines.append(f"**{label}**: {content}")
+        lines.append("")
+
+    md = "\n".join(lines)
+    safe_session = session_id.replace(":", "_").replace("/", "_")
+    key = f"sites/{site_id}/chat_{safe_session}.md"
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        s3.put_object(
+            Bucket=_CHAT_BUCKET,
+            Key=key,
+            Body=md.encode("utf-8"),
+            ContentType="text/markdown; charset=utf-8",
+        )
+        logger.info("채팅 transcript 저장: s3://%s/%s (%d chars)", _CHAT_BUCKET, key, len(md))
+    except Exception as exc:
+        logger.error("채팅 transcript 저장 실패 site=%s: %s", site_id, exc)
+
+
 def _restore_session_state(
     session_id: str,
     session_attrs: dict[str, Any],
@@ -643,10 +811,9 @@ def _restore_session_state(
         except Exception:
             raw_answers = None
     if isinstance(raw_answers, dict):
-        missing_slots = _tuple_value(
-            session_attrs.get("missing_slots"),
-            default=tuple(slot_registry.keys()),
-        )
+        # known_answers에 이미 있는 슬롯은 missing에서 제외 (backend가 missing_slots를 안 보내도 정확히 계산)
+        all_required = tuple(slot_registry.keys())
+        missing_slots = tuple(s for s in all_required if s not in raw_answers)
         return raw_answers, missing_slots
 
     try:
