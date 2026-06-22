@@ -34,8 +34,7 @@ PROMPT_INJECTION_PATTERNS = [
 ]
 
 PII_PATTERNS = {
-    "email_detected": re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
-    "phone_detected": re.compile(r"(?:010|011|016|017|018|019)[-\s]?\d{3,4}[-\s]?\d{4}"),
+    # 전화번호·이메일·이름·주소는 홈페이지 제작 챗봇의 수집 대상 — 차단 제외
     "resident_registration_number_detected": re.compile(r"\d{6}[-\s]?[1-4]\d{6}"),
 }
 
