@@ -49,6 +49,7 @@ DEFAULT_TEMPLATE = "landing/13-tax-accounting"
 
 _HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
 _WIKI_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
+_ARTIFACTS_BUCKET = os.environ.get("ARTIFACTS_BUCKET", "hezo-artifacts")
 
 # domain 값 → hezo-wiki S3 키 매핑 (프론트 TEMPLATE_DOMAIN의 domain 필드 기준)
 _DOMAIN_WIKI_KEY: dict[str, str] = {
@@ -342,6 +343,19 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _force_accepted,
     )
 
+    # 슬롯 수집 완료 → contract_final.json을 S3에 저장 (P4 생성 에이전트 입력)
+    if metadata.get("next_stage") == "contract_compile" and use_aws:
+        _save_contract_final(
+            site_id=str(session_attrs.get("site_id", "")),
+            user_id=str(session_attrs.get("user_id", "")),
+            domain=domain,
+            domain_label=str(session_attrs.get("domain_label", "")),
+            template_id=str(session_attrs.get("selected_template", "")),
+            category=str(session_attrs.get("category", "landing")),
+            slot_registry=slot_registry,
+            known_answers=metadata.get("known_answers", {}),
+        )
+
     return metadata
 
 
@@ -625,6 +639,66 @@ def _utc_timestamp() -> str:
 
 def _use_aws(session_attrs: dict[str, Any]) -> bool:
     return str(session_attrs.get("storage_mode", "memory")).lower() == "aws"
+
+
+def _save_contract_final(
+    *,
+    site_id: str,
+    user_id: str,
+    domain: str,
+    domain_label: str,
+    template_id: str,
+    category: str,
+    slot_registry: dict[str, dict[str, Any]],
+    known_answers: dict[str, Any],
+) -> None:
+    """슬롯 수집 완료 후 contract_final.json을 hezo-artifacts S3에 저장한다."""
+    if not site_id:
+        logger.warning("contract_final 저장 건너뜀: site_id 없음")
+        return
+
+    slot_status = {}
+    slots = {}
+    evidence = {}
+    for key, meta in slot_registry.items():
+        val = known_answers.get(key)
+        filled = bool(val) if not isinstance(val, str) else bool(val.strip())
+        slots[key] = val if filled else None
+        slot_status[key] = "filled" if filled else "empty"
+        if filled:
+            evidence[key] = {"source": "user", "confirmed": True}
+
+    # companion 슬롯(slot_registry에 없는 것)도 포함
+    for key, val in known_answers.items():
+        if key not in slots:
+            slots[key] = val
+            slot_status[key] = "filled" if val else "empty"
+            if val:
+                evidence[key] = {"source": "user", "confirmed": True}
+
+    contract = {
+        "schema_version": "1.0.0",
+        "ids": {"site_id": site_id, "user_id": user_id},
+        "template": {"template_id": template_id, "template_category": category},
+        "slots": slots,
+        "slot_status": slot_status,
+        "evidence": evidence,
+        "gates": {"preview_ready": True, "generation_ready": True},
+        "meta": {"domain": domain, "domain_label": domain_label},
+    }
+
+    try:
+        import boto3  # noqa: PLC0415
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+        s3.put_object(
+            Bucket=_ARTIFACTS_BUCKET,
+            Key=f"sites/{site_id}/contract_final.json",
+            Body=json.dumps(contract, ensure_ascii=False, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
+        logger.info("contract_final.json 저장 완료: s3://%s/sites/%s/contract_final.json", _ARTIFACTS_BUCKET, site_id)
+    except Exception as exc:
+        logger.error("contract_final.json 저장 실패 site=%s: %s", site_id, exc)
 
 
 def _restore_session_state(
