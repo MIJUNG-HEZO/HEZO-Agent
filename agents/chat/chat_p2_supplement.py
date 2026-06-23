@@ -79,9 +79,10 @@ def evaluate_supplement(known_answers: dict[str, Any], template_id: str = "") ->
     region = str(known_answers.get("business_region") or "").strip()
 
     # ── MUST ──────────────────────────────────────────────────────────────────
-    # R1: 메인 필드 15자 이상
-    if len(field) < 15:
-        reasons.append(f"R1_fail: {field_name} {len(field)}자 < 15자")
+    # R1: 메인 필드 최소 길이 (template-specific)
+    MIN_LEN = 8 if "wine" in str(template_id) else 15  # wine: 8자, 기타: 15자
+    if len(field) < MIN_LEN:
+        reasons.append(f"R1_fail: {field_name} {len(field)}자 < {MIN_LEN}자")
         return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # R2: 블랙리스트 패턴
@@ -102,9 +103,10 @@ def evaluate_supplement(known_answers: dict[str, Any], template_id: str = "") ->
         return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # ── QUALITY ───────────────────────────────────────────────────────────────
-    if len(field) >= 25:
+    Q1_LEN = 15 if "wine" in str(template_id) else 25  # wine: 15자, 기타: 25자
+    if len(field) >= Q1_LEN:
         q += 1
-        reasons.append(f"Q1_pass: {field_name} 25자 이상")
+        reasons.append(f"Q1_pass: {field_name} {Q1_LEN}자 이상")
 
     if len(target) >= 5:
         q += 1
@@ -120,11 +122,14 @@ def evaluate_supplement(known_answers: dict[str, Any], template_id: str = "") ->
             reasons.append(f"Q4_pass: 서비스 동사 '{verb}' 포함")
             break
 
-    if q < 2:
-        reasons.append(f"quality_fail: Q={q} < 2 (최소 2개 필요)")
-        return SupplementCheckResult(False, q, 0.0, reasons)
+    # wine-market은 R1 통과 후 바로 저장 (Q 조건 스킵)
+    if "wine" not in str(template_id):
+        MIN_Q = 2
+        if q < MIN_Q:
+            reasons.append(f"quality_fail: Q={q} < {MIN_Q} (최소 {MIN_Q}개 필요)")
+            return SupplementCheckResult(False, q, 0.0, reasons)
 
-    confidence = {2: 0.62, 3: 0.72, 4: 0.82}.get(q, 0.62)
+    confidence = {1: 0.52, 2: 0.62, 3: 0.72, 4: 0.82}.get(q, 0.52)
     reasons.append(f"passed: Q={q} confidence={confidence}")
     return SupplementCheckResult(True, q, confidence, reasons)
 
