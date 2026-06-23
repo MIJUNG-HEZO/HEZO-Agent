@@ -8,16 +8,24 @@ from agents.shared.s3_utils import ARTIFACTS_BUCKET, read_json, validate_site_id
 logger = logging.getLogger(__name__)
 
 
-def load_render_spec(site_id: str) -> dict:
+def load_render_spec(site_id: str, is_preview: bool = False) -> dict:
     """
-    hezo-artifacts/sites/{site_id}/render_spec.json 로드.
+    render_spec.json 로드.
+
+    Args:
+        site_id: 대상 사이트 ID
+        is_preview: True면 preview/render_spec.json, False면 render_spec.json
+
     반환: { "render_spec": dict, "template_category": str }
     """
     site_id = validate_site_id(site_id)
 
-    render_spec = read_json(ARTIFACTS_BUCKET, f"sites/{site_id}/render_spec.json")
-    logger.info("render_spec 로드 완료 — site_id=%s, template_id=%s",
-                site_id, render_spec.get("template_id", "unknown"))
+    # ✅ Preview와 배포용 경로 분리
+    spec_key = f"sites/{site_id}/preview/render_spec.json" if is_preview else f"sites/{site_id}/render_spec.json"
+    render_spec = read_json(ARTIFACTS_BUCKET, spec_key)
+    mode_label = "preview" if is_preview else "publish"
+    logger.info("render_spec 로드 완료 — site_id=%s, mode=%s, template_id=%s, path=%s",
+                site_id, mode_label, render_spec.get("template_id", "unknown"), spec_key)
 
     # template_category: render_spec에 있으면 바로 사용, 없으면 contract에서 조회
     template_category = render_spec.get("template_category", "")
