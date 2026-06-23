@@ -130,10 +130,10 @@ def test_p1_wins():
 
 
 def test_low_score_kept():
-    # P1(0.77) <= 기존 저장점수(0.80) → 기존 유지 (재채점 안 함)
+    # P1(0.77) < 80%*기존저장(0.98)=0.784 → 점수 80% 미달 → 기존 유지
     st = _setup(P1_MD)
-    out = reinforce("pending/x.md", llm=SeqLLM(MID), index=FakeIndex("v0", confidence=0.80))
-    check(f"P1 점수 낮음 → kept_existing (stage={out['stage']})", (not out["adopted"]) and out["stage"] == "kept_existing")
+    out = reinforce("pending/x.md", llm=SeqLLM(MID), index=FakeIndex("v0", confidence=0.98))
+    check(f"P1 점수 80% 미달 → kept_existing (stage={out['stage']})", (not out["adopted"]) and out["stage"] == "kept_existing")
     check("저장 안 함", st["saved_md"] is None and st["save_calls"] == 0)
 
 
