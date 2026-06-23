@@ -233,7 +233,9 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     if hezo_cards:
         for i, card in enumerate(hezo_cards):
             if i >= len(items):
-                break
+                # items가 부족하면 초과 카드는 display:none으로 숨김
+                card["style"] = "display:none"
+                continue
             svc = items[i]
             name_el = card.select_one('[data-hezo="service-name"]') or card.select_one("h3")
             desc_el = card.select_one('[data-hezo="service-desc"]') or card.select_one("p")
@@ -253,7 +255,8 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     if cards:
         for i, card in enumerate(cards):
             if i >= len(items):
-                break
+                card["style"] = "display:none"
+                continue
             svc = items[i]
             name_el = card.select_one("h3") or card.select_one("strong")
             desc_el = card.select_one("p")
@@ -267,7 +270,8 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     rows = soup.select(".ledger-row")
     for i, row in enumerate(rows):
         if i >= len(items):
-            break
+            row["style"] = "display:none"
+            continue
         svc = items[i]
         h3 = row.select_one("h3")
         p = row.select_one("p")
