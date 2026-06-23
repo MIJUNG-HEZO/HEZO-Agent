@@ -941,49 +941,12 @@ def _build_system_prompt(
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
     else:
         # 첫 번째 턴인 경우 (answered_slot이 empty) 템플릿 요구사항 안내 추가
-        if not answered_slot or answered_slot == "":
-            template_guidance = ""
-            try:
-                if template_id and "wine" in str(template_id):
-                    template_guidance = (
-                        "고객님께서 선택하신 와인샵 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                        "1) 와인샵 이름\n"
-                        "2) 판매하는 4개의 서로 다른 와인 (이름·종류·가격·특징)\n"
-                        "3) 연락처\n"
-                        "이 정보들로 고객님의 와인샵을 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
-                    )
-                elif template_id and "tax" in str(template_id):
-                    template_guidance = (
-                        "고객님께서 선택하신 세무회계 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                        "1) 사무소 이름\n"
-                        "2) 제공하는 3개의 서로 다른 세무 서비스\n"
-                        "3) 연락처\n"
-                        "이 정보들로 고객님의 세무사무소를 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
-                    )
-                elif template_id and "career" in str(template_id):
-                    template_guidance = (
-                        "고객님께서 선택하신 커리어 블로그 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                        "1) 블로그 운영자 정보 (경력, 직급 등)\n"
-                        "2) 포트폴리오 프로젝트 3개 이상\n"
-                        "3) 학습 활동 또는 개발 경험\n"
-                        "이 정보들로 고객님의 커리어와 경험을 가장 잘 표현하는 블로그를 만들 수 있도록 하겠습니다.\n\n"
-                    )
-            except Exception as e:
-                logger.warning("template_guidance 생성 오류: %s", e)
-
-            task_instruction = (
-                f"{template_guidance}"
-                f"이제 첫 번째 질문을 드리겠습니다.\n"
-                f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤, "
-                f"아래 [다음 질문]을 문자 그대로 전달하세요.\n"
-                f"[다음 질문]: {next_question}"
-            )
-        else:
-            task_instruction = (
-                f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤, "
-                f"아래 [다음 질문]을 문자 그대로 전달하세요.\n"
-                f"[다음 질문]: {next_question}"
-            )
+        # 임시 비활성화: template_guidance를 빈 문자열로 설정
+        task_instruction = (
+            f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤, "
+            f"아래 [다음 질문]을 문자 그대로 전달하세요.\n"
+            f"[다음 질문]: {next_question}"
+        )
 
     wiki_section = (
         f"\n[{domain_label} 도메인 지식 — P2 wiki]\n{wiki_content}\n"
