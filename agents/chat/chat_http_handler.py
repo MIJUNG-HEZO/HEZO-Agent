@@ -349,7 +349,18 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _category = str(session_attrs.get("category", "landing"))
         _domain_label = str(session_attrs.get("domain_label", ""))
         _template_id = str(session_attrs.get("selected_template", ""))
-        _known = metadata.get("known_answers", {})
+        _known = dict(metadata.get("known_answers", {}))
+
+        # ✅ 모든 slot의 companion을 수집해서 _known에 추가 (contract_final에 포함)
+        _companion_map = get_companion_map(_template_id)
+        for slot_key, companion_fields in _companion_map.items():
+            slot_value = _known.get(slot_key, "")
+            if slot_value:  # 해당 slot이 채워졌을 때만 companion 추출
+                extracted = _extract_companion_slots(
+                    answer=str(slot_value),
+                    companions=companion_fields,
+                )
+                _known.update(extracted)  # companion 결과를 _known에 병합
 
         _save_contract_final(
             site_id=_site_id,

@@ -59,9 +59,21 @@ def evaluate_supplement(known_answers: dict[str, Any], template_id: str = "") ->
 
     # ── template-specific 룰셋 분기 ──
     if "wine-market" in str(template_id):
-        # wine-market: wine_lineup 검사 (core_services 대신)
-        field = str(known_answers.get("wine_lineup") or "").strip()
-        field_name = "wine_lineup"
+        # wine-market: wine_items (companion 구조화 배열) 또는 wine_lineup 검사
+        # wine_items가 있으면 JSON 배열로 평가, 없으면 wine_lineup 문자열로 평가
+        wine_items_str = known_answers.get("wine_items")
+        if wine_items_str:
+            try:
+                import json
+                wine_items = json.loads(wine_items_str) if isinstance(wine_items_str, str) else wine_items_str
+                field = str(wine_items) if isinstance(wine_items, list) else str(wine_items_str or "").strip()
+                field_name = "wine_items"
+            except (json.JSONDecodeError, TypeError):
+                field = str(known_answers.get("wine_lineup") or "").strip()
+                field_name = "wine_lineup"
+        else:
+            field = str(known_answers.get("wine_lineup") or "").strip()
+            field_name = "wine_lineup"
     elif "tax-accounting" in str(template_id):
         # tax-accounting: tax_services 검사
         field = str(known_answers.get("tax_services") or "").strip()
