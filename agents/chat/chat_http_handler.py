@@ -943,30 +943,33 @@ def _build_system_prompt(
         # 첫 번째 턴인 경우 (answered_slot이 empty) 템플릿 요구사항 안내 추가
         if not answered_slot or answered_slot == "":
             template_guidance = ""
-            if "wine" in template_id:
-                template_guidance = (
-                    "고객님께서 선택하신 와인샵 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                    "1) 와인샵 이름\n"
-                    "2) 판매하는 4개의 서로 다른 와인 (이름·종류·가격·특징)\n"
-                    "3) 연락처\n"
-                    "이 정보들로 고객님의 와인샵을 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
-                )
-            elif "tax" in template_id:
-                template_guidance = (
-                    "고객님께서 선택하신 세무회계 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                    "1) 사무소 이름\n"
-                    "2) 제공하는 3개의 서로 다른 세무 서비스\n"
-                    "3) 연락처\n"
-                    "이 정보들로 고객님의 세무사무소를 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
-                )
-            elif "career" in template_id:
-                template_guidance = (
-                    "고객님께서 선택하신 커리어 블로그 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
-                    "1) 블로그 운영자 정보 (경력, 직급 등)\n"
-                    "2) 포트폴리오 프로젝트 3개 이상\n"
-                    "3) 학습 활동 또는 개발 경험\n"
-                    "이 정보들로 고객님의 커리어와 경험을 가장 잘 표현하는 블로그를 만들 수 있도록 하겠습니다.\n\n"
-                )
+            try:
+                if template_id and "wine" in str(template_id):
+                    template_guidance = (
+                        "고객님께서 선택하신 와인샵 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
+                        "1) 와인샵 이름\n"
+                        "2) 판매하는 4개의 서로 다른 와인 (이름·종류·가격·특징)\n"
+                        "3) 연락처\n"
+                        "이 정보들로 고객님의 와인샵을 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
+                    )
+                elif template_id and "tax" in str(template_id):
+                    template_guidance = (
+                        "고객님께서 선택하신 세무회계 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
+                        "1) 사무소 이름\n"
+                        "2) 제공하는 3개의 서로 다른 세무 서비스\n"
+                        "3) 연락처\n"
+                        "이 정보들로 고객님의 세무사무소를 가장 잘 표현하는 홈페이지를 만들 수 있도록 하겠습니다.\n\n"
+                    )
+                elif template_id and "career" in str(template_id):
+                    template_guidance = (
+                        "고객님께서 선택하신 커리어 블로그 템플릿은 다음과 같은 정보를 필수로 포함하고 있습니다:\n"
+                        "1) 블로그 운영자 정보 (경력, 직급 등)\n"
+                        "2) 포트폴리오 프로젝트 3개 이상\n"
+                        "3) 학습 활동 또는 개발 경험\n"
+                        "이 정보들로 고객님의 커리어와 경험을 가장 잘 표현하는 블로그를 만들 수 있도록 하겠습니다.\n\n"
+                    )
+            except Exception as e:
+                logger.warning("template_guidance 생성 오류: %s", e)
 
             task_instruction = (
                 f"{template_guidance}"
