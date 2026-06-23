@@ -30,6 +30,7 @@ from agents.generation.guardrails.content_guardrail import (
     GuardrailViolation,
     check_guardrails,
 )
+from agents.generation.template_spec import get_partial_spec
 from agents.generation.tools.contract_loader import load_contract
 from agents.generation.tools.feedback_loader import load_feedback
 from agents.generation.tools.render_spec_saver import save_render_spec
@@ -260,21 +261,357 @@ llms_txt/llms-full_txt: 비용·가격 정보 불필요. 커리어 성장 기록
   ## 핵심 페이지에 포트폴리오·이력서·면접 관련 섹션 링크 포함.
 """
 
+# =============================================================================
+# Option A: Partial render_spec 완성 전용 시스템 프롬프트
+# =============================================================================
+
+_SYSTEM_PROMPT_PARTIAL = """당신은 HEZO의 partial render_spec 완성 전문가입니다.
+
+주어진 partial_render_spec의 null 필드(창의적 콘텐츠)만 완성하세요.
+
+## 중요 규칙 (반드시 준수)
+
+### ✅ 해야 할 것
+- null 필드만 완성하세요 (값이 null인 필드).
+- 창의적 콘텐츠만 생성: SEO (title, description), H1, FAQ (질문/답변), QuickAnswer, 설명, 시간.
+- 각 필드의 타입과 형식을 유지하세요.
+  - title: 문자열
+  - h2_list: 문자열 배열
+  - items: 객체 배열
+  - FAQ.items: {q: 문자열, a: 문자열} 배열
+
+### ❌ 하지 말 것
+- null이 아닌 필드는 절대 수정하지 마세요.
+- Services.items 수정 금지: name, label, price, desc 변경 금지.
+- Contact 정보 수정 금지: phone, kakao, hours 변경 금지.
+- JSON-LD 비즈니스 데이터 수정 금지: name, address, telephone, jobTitle 변경 금지.
+- 와인명, 가격, 지역, 저자명 등 비즈니스 데이터를 재파싱하지 마세요.
+
+## 출력 형식
+순수 JSON만 출력하세요. 마크다운 코드 블록(```json)이나 설명 텍스트를 포함하지 마세요.
+
+## 템플릿별 창의적 콘텐츠 생성 지침
+
+### 🍷 wine-market (와인샵)
+- Hero.h1: 와인의 특징을 창의적으로 표현 (50자 이내).
+- Hero.subtext: 와인의 페어링을 감정적으로 설명.
+- Services.items[].desc: 각 와인에 대한 창의적 설명 (기존 파싱된 데이터와 일관성 유지).
+- FAQ: 와인 관련 질문 (5-7개): 와인 선택 기준, 보관법, 페어링 추천, 배송 범위, 가격대 비교, 선물 포장 등.
+- SEO title: "{업체명} 와인샵 | {지역} | 와인 추천" 패턴.
+- QuickAnswer: 와인샵의 특징 한 줄 (50-120자).
+
+### 📊 tax-accounting (세무회계사무소)
+- Hero.h1: 세무 전문성과 신뢰 표현 (업체명 제외, 50자 이내).
+- Services.items[].desc: 각 서비스에 대한 창의적 설명 (기존 파싱된 이름과 일관성 유지).
+- FAQ: 세무 관련 질문 (5-7개): 기장 비용, 부가세 신고 주기, 절세 팁, 법인 vs 개인, 초기 상담 방법 등.
+- SEO title: "{지역} 세무사무소 | 개인사업자·스타트업 전문" 패턴.
+- QuickAnswer: 세무사무소의 강점 한 줄.
+
+### 👨‍💼 career-notebook (커리어 블로그)
+- Hero.h1: "{career_level} {career_field}의 커리어 기록" 형식 (author_name, career_field, career_level은 이미 매핑됨, 수정 금지).
+- Services.items[].desc: 각 프로젝트의 성과 설명 (기존 파싱된 이름과 일관성 유지).
+- FAQ: 커리어 관련 질문 (5-7개): 면접 준비, 이력서 작성, 포트폴리오 구성, 이직 타이밍, 기술 학습 등.
+- SEO title: "{author_name}의 커리어 블로그 | {career_field}" 패턴.
+- QuickAnswer: 블로그의 목적 한 줄.
+
+## 데이터 일관성 유지
+- 같은 정보는 모든 필드에서 일관되게 표현하세요.
+  - Hero의 와인명 = Services.items[0]의 이름 (같은 와인 언급).
+  - FAQ의 지역명 = JSON-LD address와 동일.
+  - QuickAnswer의 업체명/저자명 = JSON-LD name과 동일.
+"""
+
+# =============================================================================
+# Option A: 파싱 함수들 (구조화된 필드 구성)
+# =============================================================================
+
+
+def _parse_wine_lineup(wine_lineup_str: str) -> list[dict]:
+    """
+    wine_lineup 문자열을 Services.items 배열로 파싱
+
+    입력 형식: "와인1/종류/가격/설명, 와인2/종류/가격/설명, ..."
+    예: "이탈리아 키안티/레드/55,000원/스테이크와 어울림, 프랑스 샤르도네/화이트/48,000원/..."
+
+    출력:
+        [
+            {"name": "이탈리아 키안티", "label": "Red", "price": "₩55,000", "desc": "스테이크와 어울림"},
+            ...
+        ]
+    """
+    items = []
+    if not wine_lineup_str or not wine_lineup_str.strip():
+        return items
+
+    for item_str in wine_lineup_str.split(","):
+        item_str = item_str.strip()
+        if not item_str:
+            continue
+
+        parts = [p.strip() for p in item_str.split("/")]
+        if len(parts) < 4:
+            logger.warning(f"Skipping malformed wine item: {item_str}")
+            continue
+
+        name, wine_type, price_str, desc = parts[0], parts[1], parts[2], parts[3]
+
+        # wine_type 정규화 (레드/빨강/Red/Bordeaux → Red)
+        wine_type_lower = wine_type.lower()
+        if "레드" in wine_type_lower or "빨강" in wine_type_lower or wine_type_lower == "red":
+            normalized_type = "Red"
+        elif "화이트" in wine_type_lower or "하양" in wine_type_lower or wine_type_lower == "white":
+            normalized_type = "White"
+        elif "스파클링" in wine_type_lower or "샴페인" in wine_type_lower or wine_type_lower == "sparkling":
+            normalized_type = "Sparkling"
+        elif "로제" in wine_type_lower or wine_type_lower == "rosé":
+            normalized_type = "Rosé"
+        else:
+            normalized_type = wine_type  # 그대로 사용
+
+        # 가격 정규화 (55,000원 / 55000원 / ₩55,000 → ₩55,000)
+        price_normalized = price_str.replace("원", "").replace("₩", "").strip()
+        # 숫자만 추출
+        price_digits = re.sub(r"[^0-9]", "", price_normalized)
+        if price_digits:
+            # 3자리마다 쉼표 추가
+            price_with_comma = "{:,}".format(int(price_digits))
+            price_final = f"₩{price_with_comma}"
+        else:
+            price_final = price_str
+
+        items.append({
+            "name": name,
+            "label": normalized_type,
+            "price": price_final,
+            "desc": desc,
+        })
+
+    return items[:4]  # 최대 4개
+
+
+def _parse_tax_services(tax_services_str: str) -> list[dict]:
+    """
+    tax_services 문자열을 Services.items 배열로 파싱
+
+    입력 형식: "서비스1, 서비스2, 서비스3"
+    예: "월 기장대리, 부가세·종소세 신고, 절세 컨설팅"
+
+    출력:
+        [
+            {"name": "월 기장대리", "desc": "개인사업자를 위한...", "label": "MONTHLY"},
+            ...
+        ]
+    """
+    items = []
+    if not tax_services_str or not tax_services_str.strip():
+        return items
+
+    service_names = [s.strip() for s in tax_services_str.split(",") if s.strip()]
+
+    for service_name in service_names[:3]:  # 최대 3개
+        # 서비스 종류 판단 (label 지정)
+        service_lower = service_name.lower()
+        if "기장" in service_lower or "정산" in service_lower:
+            label = "MONTHLY"
+        elif "신고" in service_lower or "신청" in service_lower:
+            label = "FILING"
+        elif "절세" in service_lower or "상담" in service_lower or "컨설팅" in service_lower:
+            label = "ADVISORY"
+        else:
+            label = "STARTER"
+
+        items.append({
+            "name": service_name,
+            "desc": None,  # LLM이 생성
+            "label": label,
+        })
+
+    return items
+
+
+def _parse_portfolio_projects(portfolio_str: str) -> list[dict]:
+    """
+    portfolio_projects 문자열을 Services.items 배열로 파싱
+
+    입력 형식: "프로젝트1, 프로젝트2, 프로젝트3"
+    예: "React 앱 리팩토링으로 로딩 40% 개선, 사내 디자인시스템 구축, 오픈소스 PR"
+
+    출력:
+        [
+            {"name": "React 앱 리팩토링...", "desc": None, "label": "Case Study"},
+            ...
+        ]
+    """
+    items = []
+    if not portfolio_str or not portfolio_str.strip():
+        return items
+
+    project_names = [p.strip() for p in portfolio_str.split(",") if p.strip()]
+
+    for project_name in project_names[:3]:  # 최대 3개
+        # 프로젝트 라벨 판단
+        project_lower = project_name.lower()
+        if "오픈" in project_lower or "기여" in project_lower:
+            label = "Portfolio"
+        elif "이력서" in project_lower or "경력" in project_lower:
+            label = "Resume"
+        else:
+            label = "Case Study"
+
+        items.append({
+            "name": project_name[:50],  # 제목 50자 이내
+            "desc": None,  # LLM이 생성
+            "label": label,
+        })
+
+    return items
+
+
+def _build_partial_render_spec(contract: dict) -> dict | None:
+    """
+    structured_companions + slots → partial_render_spec 구성
+
+    LLM은 None 필드(창의적 콘텐츠)만 완성.
+    """
+    template_id = contract.get("template", {}).get("template_id")
+    slots = contract.get("slots", {})
+    companions = contract.get("structured_companions", {})
+
+    # 템플릿별 partial_spec 가져오기
+    partial = get_partial_spec(template_id)
+    if not partial:
+        logger.warning(f"No partial spec for {template_id}, using default")
+        return None
+
+    # ────────────────────────────────────────────────────────────────────────
+    # wine-market: Services.items + Contact 구성
+    # ────────────────────────────────────────────────────────────────────────
+    if "wine-market" in (template_id or ""):
+        wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
+
+        # Services.items 설정
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Services":
+                block["items"] = wine_items
+
+        # Contact 설정
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Contact":
+                block["phone"] = slots.get("phone", "")
+                block["kakao"] = companions.get("kakao_channel", "")
+
+        # JSON-LD 설정
+        if "json_ld" in partial:
+            partial["json_ld"]["name"] = slots.get("business_name", "")
+            partial["json_ld"]["address"]["addressLocality"] = companions.get("business_region", "")
+            partial["json_ld"]["telephone"] = slots.get("phone", "")
+
+    # ────────────────────────────────────────────────────────────────────────
+    # tax-accounting: Services.items + success_case + Contact 구성
+    # ────────────────────────────────────────────────────────────────────────
+    elif "tax-accounting" in (template_id or ""):
+        tax_items = _parse_tax_services(slots.get("tax_services", ""))
+
+        # success_case를 마지막 항목에 추가
+        if companions.get("success_case") and tax_items:
+            tax_items[-1]["desc"] = f"[실제 사례] {companions['success_case']}"
+
+        # Services.items 설정
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Services":
+                block["items"] = tax_items
+
+        # Contact 설정
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Contact":
+                block["phone"] = slots.get("phone", "")
+                block["kakao"] = companions.get("kakao_channel", "")
+
+        # JSON-LD 설정
+        if "json_ld" in partial:
+            partial["json_ld"]["name"] = slots.get("business_name", "")
+            partial["json_ld"]["address"]["addressLocality"] = companions.get("business_region", "")
+            partial["json_ld"]["telephone"] = slots.get("phone", "")
+
+    # ────────────────────────────────────────────────────────────────────────
+    # career-notebook: Services.items + JSON-LD Person 구성
+    # ────────────────────────────────────────────────────────────────────────
+    elif "career-notebook" in (template_id or ""):
+        portfolio_items = _parse_portfolio_projects(slots.get("portfolio_projects", ""))
+
+        # Services.items 설정
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Services":
+                block["items"] = portfolio_items
+
+        # JSON-LD Person 설정
+        if "json_ld" in partial and "author" in partial["json_ld"]:
+            author_name = companions.get("author_name", "")
+            career_field = companions.get("career_field", "")
+            partial["json_ld"]["author"]["name"] = author_name
+            partial["json_ld"]["author"]["jobTitle"] = career_field
+            partial["json_ld"]["name"] = f"{author_name}의 커리어 블로그"
+
+    return partial
+
 
 def call_claude(contract: dict, crawl_snapshot: dict | None, issues_hint: list[str] | None = None) -> dict:
-    """Claude Sonnet 호출 → render_spec dict 반환"""
-    user_content = f"Contract JSON:\n{json.dumps(contract, ensure_ascii=False, indent=2)}"
-    if crawl_snapshot:
-        snap_str = json.dumps(crawl_snapshot, ensure_ascii=False)[:4000]
-        user_content += f"\n\nCrawl Snapshot (참고용):\n{snap_str}"
-    if issues_hint:
-        user_content += f"\n\n이전 생성에서 발견된 이슈 — 이 부분을 개선하세요:\n" + "\n".join(f"- {i}" for i in issues_hint)
+    """
+    Option A: Partial render_spec 완성 방식
 
+    1. structured_companions + wine_lineup 파싱 → partial_render_spec 구성
+    2. partial_render_spec를 user_content에 명시
+    3. LLM은 None 필드만 완성 (비즈니스 데이터 보호)
+    """
+    template_id = contract.get("template", {}).get("template_id", "")
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Step 1: partial_render_spec 구성
+    # ────────────────────────────────────────────────────────────────────────
+    partial_spec = _build_partial_render_spec(contract)
+    if not partial_spec:
+        logger.warning(f"Could not build partial spec for {template_id}, falling back to full generation")
+        # fallback: 기본 방식 (structured_companions 명시)
+        user_content = f"Contract JSON:\n{json.dumps(contract, ensure_ascii=False, indent=2)}"
+        max_tokens = 8192
+    else:
+        # ────────────────────────────────────────────────────────────────────
+        # Step 2: user_content 구성 (partial_spec 명시)
+        # ────────────────────────────────────────────────────────────────────
+        user_content = f"""Partial render_spec (다음 필드는 이미 구성됨, 수정하지 마세요):
+{json.dumps(partial_spec, ensure_ascii=False, indent=2)}
+
+Contract (참고용):
+{json.dumps(contract, ensure_ascii=False, indent=2)}
+
+당신의 작업:
+1. 위 partial_render_spec의 null 필드만 완성하세요.
+2. null이 아닌 필드는 절대 수정하지 마세요.
+3. 창의적 콘텐츠만 생성하세요 (SEO, FAQ, H1, QuickAnswer, 시간, 설명).
+
+중요:
+- Services.items: 이미 구성됨 (수정 금지) — 와인명, 가격, 라벨 변경 금지
+- Contact 정보: 이미 구성됨 (수정 금지) — 전화, 카카오 채널 변경 금지
+- JSON-LD 비즈니스 데이터: 이미 구성됨 (수정 금지) — 업체명, 주소, 전화 변경 금지
+"""
+        if crawl_snapshot:
+            snap_str = json.dumps(crawl_snapshot, ensure_ascii=False)[:2000]
+            user_content += f"\n\nCrawl Snapshot (참고용):\n{snap_str}"
+
+        if issues_hint:
+            user_content += "\n\n이전 생성에서 발견된 이슈 — 이 부분을 개선하세요:\n"
+            user_content += "\n".join(f"- {i}" for i in issues_hint)
+
+        max_tokens = 4096  # 일부만 생성하므로 충분
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Step 3: LLM 호출
+    # ────────────────────────────────────────────────────────────────────────
     bedrock = get_bedrock()
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 8192,
-        "system": _SYSTEM_PROMPT,
+        "max_tokens": max_tokens,
+        "system": _SYSTEM_PROMPT_PARTIAL,  # 신규 partial 전용 프롬프트
         "messages": [{"role": "user", "content": user_content}],
     })
 
@@ -291,14 +628,55 @@ def call_claude(contract: dict, crawl_snapshot: dict | None, issues_hint: list[s
         "generation", "sonnet",
         _usage.get("input_tokens", 0), _usage.get("output_tokens", 0), ms=elapsed,
     )
-    logger.info("Claude 호출 완료: %.0f ms", elapsed)
+    logger.info("Claude 호출 완료 (partial_spec 완성): %.0f ms", elapsed)
 
     text = result["content"][0]["text"].strip()
     m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
     if m:
         text = m.group(1)
 
-    return json.loads(text)
+    # ────────────────────────────────────────────────────────────────────────
+    # Step 4: 응답 파싱 + partial_spec 병합
+    # ────────────────────────────────────────────────────────────────────────
+    completed = json.loads(text)
+
+    if partial_spec:
+        # LLM 응답을 partial_spec에 병합 (null 필드만 채움)
+        render_spec = _merge_partial_spec(partial_spec, completed)
+    else:
+        render_spec = completed
+
+    return render_spec
+
+
+def _merge_partial_spec(partial: dict, completed: dict) -> dict:
+    """
+    partial_spec + LLM 응답 → 최종 render_spec 병합
+
+    LLM은 null 필드만 생성했으므로, 두 dict를 깊게 병합
+    """
+    import copy
+
+    result = copy.deepcopy(partial)
+
+    # 재귀적으로 null 필드를 completed에서 가져옴
+    def merge_recursive(target, source):
+        if isinstance(target, dict) and isinstance(source, dict):
+            for key in source:
+                if key in target:
+                    if target[key] is None:
+                        target[key] = source[key]
+                    elif isinstance(target[key], (dict, list)):
+                        merge_recursive(target[key], source[key])
+                else:
+                    target[key] = source[key]
+        elif isinstance(target, list) and isinstance(source, list):
+            for i, item in enumerate(source):
+                if i < len(target) and target[i] is None:
+                    target[i] = item
+
+    merge_recursive(result, completed)
+    return result
 
 
 # =============================================================================
