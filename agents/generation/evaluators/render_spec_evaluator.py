@@ -107,7 +107,7 @@ def evaluate_render_spec(
                 score -= 5
             else:
                 faq_page = next(j for j in jsonld if j.get("@type") == "FAQPage")
-                entities = faq_page.get("mainEntity", [])
+                entities = faq_page.get("mainEntity") or []
                 if len(entities) < _FAQ_MIN:
                     issues.append(
                         f"FAQPage.mainEntity {len(entities)}개 (최소 {_FAQ_MIN}개 필요)"
@@ -138,7 +138,7 @@ def evaluate_render_spec(
             score -= 5
         else:
             faq_block = next(b for b in blocks if b.get("type") == "FAQ")
-            faq_items = faq_block.get("items", [])
+            faq_items = faq_block.get("items") or []
             if len(faq_items) < _FAQ_MIN:
                 issues.append(
                     f"FAQ 블록 items {len(faq_items)}개 (최소 {_FAQ_MIN}개 필요)"
