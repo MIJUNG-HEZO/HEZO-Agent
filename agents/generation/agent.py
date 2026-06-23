@@ -487,7 +487,19 @@ def _build_partial_render_spec(contract: dict) -> dict | None:
     # wine-market: Services.items + Contact 구성
     # ────────────────────────────────────────────────────────────────────────
     if "wine-market" in (template_id or ""):
-        wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
+        # Haiku companion에서 wine_items (구조화 배열)가 있으면 사용
+        # 없으면 wine_lineup 문자열을 파싱
+        wine_items_str = companions.get("wine_items")
+        if wine_items_str:
+            try:
+                wine_items = json.loads(wine_items_str) if isinstance(wine_items_str, str) else wine_items_str
+                if not isinstance(wine_items, list):
+                    wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.warning("wine_items JSON 파싱 실패, wine_lineup 파싱으로 폴백")
+                wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
+        else:
+            wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
 
         # Services.items 설정
         for block in partial["pages"][0]["blocks"]:
