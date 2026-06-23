@@ -381,6 +381,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             domain_label=_domain_label,
             category=_category,
             known_answers=_known,
+            template_id=_template_id,
         )
 
     return metadata

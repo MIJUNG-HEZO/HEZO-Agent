@@ -47,48 +47,64 @@ class SupplementCheckResult:
 
 
 # ── 룰셋 평가 ──────────────────────────────────────────────────────────────────
-def evaluate_supplement(known_answers: dict[str, Any]) -> SupplementCheckResult:
+def evaluate_supplement(known_answers: dict[str, Any], template_id: str = "") -> SupplementCheckResult:
     """
-    MUST(R1~R4) + QUALITY(Q1~Q4) 룰셋 평가.
+    MUST(R1~R4) + QUALITY(Q1~Q4) 룰셋 평가 (template-specific).
 
     통과 조건: MUST 전부 ✅ AND Q 2개 이상
     반환: passed=True 면 저장, False 면 버림.
     """
-    core   = str(known_answers.get("core_services")    or "").strip()
-    target = str(known_answers.get("target_audience")  or "").strip()
-    region = str(known_answers.get("business_region")  or "").strip()
-
     reasons: list[str] = []
+    q = 0
+
+    # ── template-specific 룰셋 분기 ──
+    if "wine-market" in str(template_id):
+        # wine-market: wine_lineup 검사 (core_services 대신)
+        field = str(known_answers.get("wine_lineup") or "").strip()
+        field_name = "wine_lineup"
+    elif "tax-accounting" in str(template_id):
+        # tax-accounting: tax_services 검사
+        field = str(known_answers.get("tax_services") or "").strip()
+        field_name = "tax_services"
+    elif "career-notebook" in str(template_id):
+        # career-notebook: author_info 검사
+        field = str(known_answers.get("author_info") or "").strip()
+        field_name = "author_info"
+    else:
+        # generic: core_services 검사
+        field = str(known_answers.get("core_services") or "").strip()
+        field_name = "core_services"
+
+    target = str(known_answers.get("target_audience") or "").strip()
+    region = str(known_answers.get("business_region") or "").strip()
 
     # ── MUST ──────────────────────────────────────────────────────────────────
-    # R1: core_services 15자 이상
-    if len(core) < 15:
-        reasons.append(f"R1_fail: core_services {len(core)}자 < 15자")
+    # R1: 메인 필드 15자 이상
+    if len(field) < 15:
+        reasons.append(f"R1_fail: {field_name} {len(field)}자 < 15자")
         return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # R2: 블랙리스트 패턴
-    core_lower = core.lower()
+    field_lower = field.lower()
     for bl in _BLACKLIST:
-        if bl.lower() in core_lower:
+        if bl.lower() in field_lower:
             reasons.append(f"R2_fail: 블랙리스트 패턴 '{bl}' 감지")
             return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # R3: 한국어 포함
-    if not _KOREAN_RE.search(core):
+    if not _KOREAN_RE.search(field):
         reasons.append("R3_fail: 한국어 없음")
         return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # R4: 반복 문자 패턴
-    if _REPEAT_RE.search(core):
+    if _REPEAT_RE.search(field):
         reasons.append("R4_fail: 반복 문자 패턴 감지")
         return SupplementCheckResult(False, 0, 0.0, reasons)
 
     # ── QUALITY ───────────────────────────────────────────────────────────────
-    q = 0
-
-    if len(core) >= 25:
+    if len(field) >= 25:
         q += 1
-        reasons.append("Q1_pass: core_services 25자 이상")
+        reasons.append(f"Q1_pass: {field_name} 25자 이상")
 
     if len(target) >= 5:
         q += 1
@@ -99,7 +115,7 @@ def evaluate_supplement(known_answers: dict[str, Any]) -> SupplementCheckResult:
         reasons.append("Q3_pass: business_region 존재")
 
     for verb in _SERVICE_VERBS:
-        if verb in core:
+        if verb in field:
             q += 1
             reasons.append(f"Q4_pass: 서비스 동사 '{verb}' 포함")
             break
@@ -204,16 +220,17 @@ def try_submit_p2_supplement(
     domain_label: str,
     category: str,
     known_answers: dict[str, Any],
+    template_id: str = "",
 ) -> None:
     """룰셋 평가 → 통과 시 staging 저장, 실패 시 버림."""
     if not domain or not category:
         logger.debug("P2 보강 A 건너뜀: domain 또는 category 없음")
         return
 
-    result = evaluate_supplement(known_answers)
+    result = evaluate_supplement(known_answers, template_id=template_id)
     logger.info(
-        "P2 보강 A 룰셋 평가 site=%s domain=%s passed=%s Q=%d confidence=%s reasons=%s",
-        site_id, domain, result.passed, result.quality_score,
+        "P2 보강 A 룰셋 평가 site=%s domain=%s template=%s passed=%s Q=%d confidence=%s reasons=%s",
+        site_id, domain, template_id, result.passed, result.quality_score,
         result.confidence, result.reasons,
     )
 
