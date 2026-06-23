@@ -673,8 +673,11 @@ def _save_contract_final(
         logger.warning("contract_final 저장 건너뜀: site_id 없음")
         return
 
-    # ✅ 데이터 품질 검증 (플레이스홀더 + 형식)
+    # ✅ 데이터 정규화 및 검증
     business_name = str(known_answers.get("business_name", "")).strip()
+    # 따옴표 제거 (사용자가 따옴표 포함해서 입력한 경우)
+    business_name = business_name.strip('"\'')
+
     placeholders = {"업체명", "테스트", "해줘", "test", "aaa", "임시", "예시"}
     if any(p in business_name.lower() for p in placeholders):
         logger.warning("contract_final 저장 건너뜀: business_name이 플레이스홀더 - %s", business_name)
@@ -685,6 +688,10 @@ def _save_contract_final(
         if not ("/" in wine_lineup and "," in wine_lineup):
             logger.warning("contract_final 저장 건너뜀: wine_lineup 형식 오류 - %s", wine_lineup)
             return
+
+    # 정규화된 business_name을 known_answers에 반영
+    known_answers = dict(known_answers)
+    known_answers["business_name"] = business_name
 
     slot_status = {}
     slots = {}
