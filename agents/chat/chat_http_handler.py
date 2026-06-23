@@ -679,6 +679,15 @@ def _save_contract_final(
             if val:
                 evidence[key] = {"source": "user", "confirmed": True}
 
+    # generation_ready = P4 생성 진입 게이트. 필수 슬롯이 모두 채워졌을 때만 true.
+    # (preview_ready는 P3 프리뷰 영역이라 P1 contract에서 관리하지 않음)
+    missing_required = [
+        key
+        for key, meta in slot_registry.items()
+        if meta.get("required", True) and slot_status.get(key) != "filled"
+    ]
+    generation_ready = not missing_required
+
     contract = {
         "schema_version": "1.0.0",
         "ids": {"site_id": site_id, "user_id": user_id},
@@ -686,9 +695,18 @@ def _save_contract_final(
         "slots": slots,
         "slot_status": slot_status,
         "evidence": evidence,
-        "gates": {"preview_ready": True, "generation_ready": True},
+        "gates": {
+            "generation_ready": generation_ready,
+            "missing_required": missing_required,
+        },
         "meta": {"domain": domain, "domain_label": domain_label},
     }
+
+    if not generation_ready:
+        logger.warning(
+            "contract_final generation_ready=false site=%s missing_required=%s",
+            site_id, missing_required,
+        )
 
     try:
         import boto3  # noqa: PLC0415
