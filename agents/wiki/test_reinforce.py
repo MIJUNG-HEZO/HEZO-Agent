@@ -129,12 +129,11 @@ def test_p1_wins():
     check("pending 삭제됨", st["deleted"] == "pending/x.md")
 
 
-def test_low_score_kept():
-    # P1(0.77) < 80%*기존저장(0.98)=0.784 → 점수 80% 미달 → 기존 유지
+def test_gate_pass_commits():
+    # 게이트 통과(MID도 0.70+·사실근거≥3) + 비축소 → 채택 (stored 점수 비교 없음, 게이트가 잣대)
     st = _setup(P1_MD)
-    out = reinforce("pending/x.md", llm=SeqLLM(MID), index=FakeIndex("v0", confidence=0.98))
-    check(f"P1 점수 80% 미달 → kept_existing (stage={out['stage']})", (not out["adopted"]) and out["stage"] == "kept_existing")
-    check("저장 안 함", st["saved_md"] is None and st["save_calls"] == 0)
+    out = reinforce("pending/x.md", llm=SeqLLM(MID), index=FakeIndex("v0"))
+    check(f"게이트 통과+비축소 → committed (stage={out['stage']})", out["adopted"] and out["stage"] == "committed")
 
 
 def test_shrink_guard():
@@ -203,7 +202,7 @@ def test_handler_extract_key():
 
 
 if __name__ == "__main__":
-    for fn in [test_parse, test_p1_wins, test_low_score_kept, test_shrink_guard, test_p1_gate_fail,
+    for fn in [test_parse, test_p1_wins, test_gate_pass_commits, test_shrink_guard, test_p1_gate_fail,
                test_no_existing_adopts_p1, test_cas_conflict_then_retry, test_precheck_reject,
                test_identical_reject, test_bad_domain, test_handler_extract_key]:
         print(f"\n[{fn.__name__}]")
