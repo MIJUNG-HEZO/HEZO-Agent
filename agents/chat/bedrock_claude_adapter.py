@@ -228,6 +228,7 @@ def _validate_invocation_input(invocation_input: ClaudeInvocationInput) -> str |
         "contract_enrichment",
         "assistant_reply",
         "intent_classification",
+        "slot_extraction",
     }:
         return "use_case_invalid"
     if not isinstance(invocation_input.system_prompt, str) or not invocation_input.system_prompt.strip():

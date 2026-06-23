@@ -53,7 +53,10 @@ DEFAULT_DOMAIN = "tax_accounting"
 DEFAULT_DOMAIN_LABEL = "세무/회계"
 DEFAULT_TEMPLATE = "landing/13-tax-accounting"
 
-_HAIKU_MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
+_HAIKU_MODEL_ID = os.environ.get(
+    "HEZO_BEDROCK_HAIKU_MODEL_ID",
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+)
 _WIKI_BUCKET = os.environ.get("HEZO_P2_MARKDOWNS_BUCKET", "hezo-wiki")
 _ARTIFACTS_BUCKET = os.environ.get("ARTIFACTS_BUCKET", "hezo-artifacts")
 
