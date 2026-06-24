@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -249,3 +250,18 @@ def try_submit_p2_supplement(
         )
     except Exception as exc:
         logger.error("P2 보강 S3 저장 실패 site=%s domain=%s: %s", site_id, domain_us, exc)
+
+
+def submit_p2_supplement_async(**kwargs: Any) -> None:
+    """위키 보강(Claude 장문 생성, ~1~2분)을 데몬 스레드로 분리 실행한다.
+
+    내부 보강 작업이므로 사용자 응답 경로(chat_turn)를 막지 않도록 fire-and-forget.
+    AgentCore는 long-running uvicorn 서버라 응답 반환 후에도 스레드가 완료된다.
+    """
+    def _run() -> None:
+        try:
+            try_submit_p2_supplement(**kwargs)
+        except Exception as exc:  # noqa: BLE001 — 보강 실패가 채팅에 영향 주지 않도록
+            logger.error("P2 보강 비동기 실행 실패: %s", exc)
+
+    threading.Thread(target=_run, name="p2-supplement", daemon=True).start()
