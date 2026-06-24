@@ -25,7 +25,7 @@ from chat_intent_guard import (
     ClaudeChatIntentClassifier,
     StaticChatIntentClassifier,
 )
-from chat_p2_supplement import try_submit_p2_supplement
+from chat_p2_supplement import submit_p2_supplement_async
 from chat_session_start import ChatSessionStartInput, start_chat_session
 from chat_state_store import (
     Boto3ChatStateStore,
@@ -386,8 +386,9 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
             messages=list(all_messages),
         )
 
-        # P2 wiki 보강 A: 룰셋 게이트 통과 시 staging 저장
-        try_submit_p2_supplement(
+        # P2 wiki 보강: 위키 LLM 보강(장문, ~1~2분)은 비동기로 분리해
+        # 사용자 응답 경로를 막지 않는다. (fire-and-forget)
+        submit_p2_supplement_async(
             site_id=_site_id,
             domain=domain,
             domain_label=_domain_label,
