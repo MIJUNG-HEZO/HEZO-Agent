@@ -17,6 +17,8 @@ _WINE_MARKET_PARTIAL_SPEC = {
     "pages": [
         {
             "path": "/",
+            "title_h1": None,  # LLM이 생성 — Hero block h1과 동일한 값
+            "h2_list": None,   # LLM이 생성 — FAQ 질문형 H2 5개 이상
             "blocks": [
                 {
                     "type": "Hero",
@@ -79,6 +81,8 @@ _TAX_ACCOUNTING_PARTIAL_SPEC = {
     "pages": [
         {
             "path": "/",
+            "title_h1": None,  # LLM이 생성 — Hero block h1과 동일한 값
+            "h2_list": None,   # LLM이 생성 — FAQ 질문형 H2 5개 이상
             "blocks": [
                 {
                     "type": "Hero",
@@ -140,6 +144,8 @@ _CAREER_NOTEBOOK_PARTIAL_SPEC = {
     "pages": [
         {
             "path": "/",
+            "title_h1": None,  # LLM이 생성 — Hero block h1과 동일한 값
+            "h2_list": None,   # LLM이 생성 — FAQ 질문형 H2 5개 이상
             "blocks": [
                 {
                     "type": "Hero",
