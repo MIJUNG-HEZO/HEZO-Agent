@@ -14,6 +14,7 @@ ClaudeUseCase = Literal[
     "assistant_reply",
     "intent_classification",
     "slot_extraction",
+    "wiki_enrichment",
 ]
 InvocationStatus = Literal["succeeded", "failed"]
 
@@ -167,10 +168,14 @@ class Boto3BedrockClaudeInvoker:
         profile_name = os.environ.get("AWS_PROFILE")
         if profile_name:
             session_kwargs["profile_name"] = profile_name
+        from botocore.config import Config  # noqa: PLC0415
+
         session = boto3.Session(**session_kwargs)
         self._client = session.client(
             "bedrock-runtime",
             region_name=region_name or os.environ.get("AWS_REGION"),
+            # 위키 보강 등 장문 생성은 기본 60s read timeout을 초과할 수 있어 여유를 둔다.
+            config=Config(read_timeout=300, connect_timeout=10, retries={"max_attempts": 2}),
         )
 
     def invoke(self, invocation_input: ClaudeInvocationInput) -> ClaudeInvocationResult:
@@ -229,6 +234,7 @@ def _validate_invocation_input(invocation_input: ClaudeInvocationInput) -> str |
         "assistant_reply",
         "intent_classification",
         "slot_extraction",
+        "wiki_enrichment",
     }:
         return "use_case_invalid"
     if not isinstance(invocation_input.system_prompt, str) or not invocation_input.system_prompt.strip():
