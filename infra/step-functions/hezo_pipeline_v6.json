@@ -200,8 +200,8 @@
             "Detail": {
               "site_id.$": "$.site_id",
               "execution_name.$": "$$.Execution.Name",
-              "template_category.$": "$.contract.parsed.template.category",
-              "template_type.$": "$.contract.parsed.template.slug"
+              "template_category.$": "$.contract.parsed.template.template_category",
+              "template_type.$": "$.contract.parsed.template.template_id"
             }
           }
         ]
