@@ -50,7 +50,7 @@ def evaluate_render_spec(
         page = pages[0]
 
         # ── 2. H1 ─────────────────────────────────────────────────────────
-        h1 = page.get("title_h1", "")
+        h1 = page.get("title_h1") or ""
         if not h1:
             issues.append("pages[0].title_h1 없음")
             score -= 10
@@ -59,7 +59,7 @@ def evaluate_render_spec(
             score -= 5
 
         # ── 3. h2_list ────────────────────────────────────────────────────
-        h2_list = page.get("h2_list", [])
+        h2_list = page.get("h2_list") or []
         if len(h2_list) < _H2_MIN:
             issues.append(f"h2_list {len(h2_list)}개 (최소 {_H2_MIN}개 필요)")
             score -= 5
@@ -90,13 +90,13 @@ def evaluate_render_spec(
             issues.append("seo.canonical이 https://로 시작하지 않음")
             score -= 3
 
-        keywords = seo.get("target_keywords", [])
+        keywords = seo.get("target_keywords") or []
         if len(keywords) < _KEYWORDS_MIN:
             issues.append(f"target_keywords {len(keywords)}개 (최소 {_KEYWORDS_MIN}개 필요)")
             score -= 3
 
         # ── 5. JSON-LD ────────────────────────────────────────────────────
-        jsonld = page.get("jsonld", [])
+        jsonld = page.get("jsonld") or []
         if not jsonld:
             issues.append("JSON-LD 없음")
             score -= 10
@@ -115,7 +115,7 @@ def evaluate_render_spec(
                     score -= 10
 
         # ── 6. blocks ────────────────────────────────────────────────────
-        blocks = page.get("blocks", [])
+        blocks = page.get("blocks") or []
         block_types = [b.get("type") for b in blocks]
 
         if "QuickAnswer" not in block_types:
