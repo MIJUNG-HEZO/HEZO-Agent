@@ -505,10 +505,26 @@ def _build_partial_render_spec(contract: dict) -> dict | None:
         else:
             wine_items = _parse_wine_lineup(slots.get("wine_lineup", ""))
 
+        # Services.items: desc = "{label} | {pairing}" 포맷으로 합치기
+        wine_items_display = [
+            {**item, "desc": f"{item['label']} | {item['desc']}" if item.get("label") else item.get("desc", "")}
+            for item in wine_items
+        ]
+
+        # Hero + title_h1 결정론적 설정 (LLM 할루시네이션 차단)
+        first_wine = wine_items[0] if wine_items else {}
+        for block in partial["pages"][0]["blocks"]:
+            if block.get("type") == "Hero":
+                block["h1"] = first_wine.get("name", slots.get("business_name", ""))
+                block["featured_price"] = first_wine.get("price", "")
+                block["subheadline"] = first_wine.get("desc", "")
+                break
+        partial["pages"][0]["title_h1"] = first_wine.get("name", slots.get("business_name", ""))
+
         # Services.items 설정
         for block in partial["pages"][0]["blocks"]:
             if block.get("type") == "Services":
-                block["items"] = wine_items
+                block["items"] = wine_items_display
 
         # Contact 설정
         for block in partial["pages"][0]["blocks"]:

@@ -22,8 +22,10 @@ _WINE_MARKET_PARTIAL_SPEC = {
             "blocks": [
                 {
                     "type": "Hero",
-                    "h1": None,  # LLM이 창의적으로 생성 (featured_wine 참고 가능)
-                    "subtext": None,  # LLM이 페어링 설명으로 생성
+                    "h1": None,          # _build_partial_render_spec에서 첫 번째 와인명으로 설정
+                    "subheadline": None, # _build_partial_render_spec에서 첫 번째 와인 설명으로 설정
+                    "featured_price": None,  # _build_partial_render_spec에서 첫 번째 와인 가격으로 설정
+                    "subtext": None,     # LLM이 부제목으로 생성
                     "cta_text": "와인 추천 받기",  # 고정 (변경 금지)
                     "cta_href": "#contact",  # 고정
                 },
