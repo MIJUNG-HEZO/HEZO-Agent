@@ -69,8 +69,8 @@ def run(site_id: str, mode: str = "publish") -> dict:
     is_preview = (mode == "preview")
     logger.info("P3 빌드 워커 시작 — site_id=%s, mode=%s", site_id, mode)
 
-    # 1. render_spec 로드
-    loaded = load_render_spec(site_id)
+    # 1. render_spec 로드 (preview/배포 경로 분리)
+    loaded = load_render_spec(site_id, is_preview=is_preview)
     render_spec = loaded["render_spec"]
     template_category = loaded["template_category"]
     template_id = render_spec.get("template_id", "")

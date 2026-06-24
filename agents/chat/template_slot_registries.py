@@ -46,6 +46,17 @@ _WINE_MARKET_COMPANION_MAP: dict[str, dict[str, str]] = {
             "(예: '이탈리아 키안티 ₩55,000 스테이크 페어링', "
             "추천을 특정할 수 없으면 wine_lineup 첫 번째 항목 사용)"
         ),
+        "wine_items": (
+            "wine_lineup을 파싱해서 JSON 배열로 변환해야 한다. 매우 중요! "
+            "각 와인은 슬래시(/)로 구분된 4개 필드: name/label/price/desc "
+            "예시: '이탈리아 키안티/레드/55,000원/스테이크 페어링' → "
+            "{\"name\": \"이탈리아 키안티\", \"label\": \"Red\", \"price\": \"₩55,000\", \"desc\": \"스테이크 페어링\"} "
+            "label은 반드시 Red|White|Sparkling|Rosé 중 하나. "
+            "price는 ₩로 시작하고 쉼표 포함 (예: ₩55,000). "
+            "wine_lineup이 여러 와인을 쉼표로 구분하면 모두 배열로 포함. "
+            "반환 형식: JSON 배열. 예: [{...}, {...}, {...}, {...}] "
+            "형식이 완전히 틀리면 null."
+        ),
     },
     "phone": {
         "kakao_channel": "카카오 채널 ID (@로 시작, 없으면 null)",

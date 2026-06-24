@@ -303,6 +303,7 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
                 next_stage=str(metadata.get("next_stage", result.next_stage)),
                 intent_guard=result.intent_guard.to_dict() if result.intent_guard else None,
                 wiki_content=wiki_content,
+                template_id=template_id,
             ),
             session_id=session_id,
             site_id=str(session_attrs.get("site_id", "site_001")),
@@ -348,7 +349,18 @@ def _run_chat_turn(session_id: str, session_attrs: dict[str, Any]) -> dict[str, 
         _category = str(session_attrs.get("category", "landing"))
         _domain_label = str(session_attrs.get("domain_label", ""))
         _template_id = str(session_attrs.get("selected_template", ""))
-        _known = metadata.get("known_answers", {})
+        _known = dict(metadata.get("known_answers", {}))
+
+        # ✅ 모든 slot의 companion을 수집해서 _known에 추가 (contract_final에 포함)
+        _companion_map = get_companion_map(_template_id)
+        for slot_key, companion_fields in _companion_map.items():
+            slot_value = _known.get(slot_key, "")
+            if slot_value:  # 해당 slot이 채워졌을 때만 companion 추출
+                extracted = _extract_companion_slots(
+                    answer=str(slot_value),
+                    companions=companion_fields,
+                )
+                _known.update(extracted)  # companion 결과를 _known에 병합
 
         _save_contract_final(
             site_id=_site_id,
@@ -662,6 +674,26 @@ def _save_contract_final(
         logger.warning("contract_final 저장 건너뜀: site_id 없음")
         return
 
+    # ✅ 데이터 정규화 및 검증
+    business_name = str(known_answers.get("business_name", "")).strip()
+    # 따옴표 제거 (사용자가 따옴표 포함해서 입력한 경우)
+    business_name = business_name.strip('"\'')
+
+    placeholders = {"업체명", "테스트", "해줘", "test", "aaa", "임시", "예시"}
+    if any(p in business_name.lower() for p in placeholders):
+        logger.warning("contract_final 저장 건너뜀: business_name이 플레이스홀더 - %s", business_name)
+        return
+
+    if "wine" in template_id:
+        wine_lineup = str(known_answers.get("wine_lineup", "")).strip()
+        if not ("/" in wine_lineup and "," in wine_lineup):
+            logger.warning("contract_final 저장 건너뜀: wine_lineup 형식 오류 - %s", wine_lineup)
+            return
+
+    # 정규화된 business_name을 known_answers에 반영
+    known_answers = dict(known_answers)
+    known_answers["business_name"] = business_name
+
     slot_status = {}
     slots = {}
     evidence = {}
@@ -903,6 +935,7 @@ def _build_system_prompt(
     next_stage: str,
     intent_guard: dict[str, Any] | None,
     wiki_content: str = "",
+    template_id: str = "",
 ) -> str:
     """P1 어시스턴트 Claude 시스템 프롬프트 생성 (3-Turn Progressive)."""
     ALL_LABELS = {**{k: v["label"] for k, v in slot_registry.items()}, **ALL_COMPANION_LABELS}
@@ -939,6 +972,8 @@ def _build_system_prompt(
     elif next_stage == "retry_answer":
         task_instruction = f"답변을 다시 받아야 합니다. 같은 내용을 다시 질문해주세요.\n질문: {next_question}"
     else:
+        # 첫 번째 턴인 경우 (answered_slot이 empty) 템플릿 요구사항 안내 추가
+        # 임시 비활성화: template_guidance를 빈 문자열로 설정
         task_instruction = (
             f"사용자의 답변을 1문장으로 자연스럽게 인정한 뒤, "
             f"아래 [다음 질문]을 문자 그대로 전달하세요.\n"
@@ -951,12 +986,45 @@ def _build_system_prompt(
         else ""
     )
 
+    # Template-specific 요구사항 안내
+    template_requirement = ""
+    if "wine" in template_id:
+        template_requirement = (
+            "\n[이 템플릿의 필수 요구사항]\n"
+            "홈페이지 품질을 위해 다음 정보가 반드시 필요합니다:\n"
+            "- wine_lineup: 정확히 4가지 와인을 '이름/종류/가격/특징' 형식으로 입력해주세요.\n"
+            "  예시: '이탈리아 키안티/레드/55,000원/스테이크와 어울림, 프랑스 샤르도네/화이트/48,000원/버터 향, ...'\n"
+            "  ※ 반드시 슬래시(/)와 쉼표(,)를 사용해야 합니다.\n"
+            "- featured_wine: 대표 추천 와인 1개 (wine_lineup 중에서 선택)\n"
+            "- business_name: 실제 와인샵 이름 (테스트 입력 제외)\n"
+            "고객님께서 요청하신 정보가 위 기준에 맞도록 정중하게 안내해주시기 바랍니다."
+        )
+    elif "tax" in template_id:
+        template_requirement = (
+            "\n[이 템플릿의 필수 요구사항]\n"
+            "홈페이지 품질을 위해 다음 정보가 반드시 필요합니다:\n"
+            "- tax_services: 반드시 3개의 서로 다른 세무 서비스\n"
+            "- target_clients: 주요 고객층 (개인사업자, 법인 등)\n"
+            "- success_case: 실제 절세 사례 1개\n"
+            "고객님께서 요청하신 정보가 위 기준에 맞도록 정중하게 안내해주시기 바랍니다."
+        )
+    elif "career" in template_id:
+        template_requirement = (
+            "\n[이 템플릿의 필수 요구사항]\n"
+            "홈페이지 품질을 위해 다음 정보가 반드시 필요합니다:\n"
+            "- author_info: 블로그 작성자의 경력 소개 (직급, 경력년수, 주요 성과)\n"
+            "- portfolio_projects: 3개 이상의 포트폴리오 프로젝트\n"
+            "- learning_activities: 학습 활동 또는 개발 경험\n"
+            "고객님께서 요청하신 정보가 위 기준에 맞도록 정중하게 안내해주시기 바랍니다."
+        )
+
     return f"""당신은 HEZO 홈페이지 제작 어시스턴트입니다.
 총 3번의 대화로 홈페이지 제작에 필요한 정보를 수집합니다.
 
 [고객 업종]
 {domain_label}
-{wiki_section}
+{wiki_section}{template_requirement}
+
 [수집된 정보]
 {filled_summary}
 
@@ -970,7 +1038,19 @@ def _build_system_prompt(
 1. [다음 질문] 문장을 수정하거나 도메인 예시를 추가하지 마세요. 그대로 전달하세요.
 2. 200자 이내로 간결하게 답변하세요.
 3. [수집된 정보]에 있는 항목은 절대 다시 묻지 마세요.
-4. [아직 필요한 정보]가 "없음"이면 완료 안내만 하고 추가 질문하지 마세요."""
+4. [아직 필요한 정보]가 "없음"이면 완료 안내만 하고 추가 질문하지 마세요.
+5. business_name을 받으면:
+   - "업체명", "테스트", "해줘", "test", "aaa" 같은 플레이스홀더는 REJECT하세요.
+   - 실제 사업 이름만 허용하세요.
+   - 거부 메시지: "죄송합니다. 실제 와인샵/세무사무소/블로그 이름을 알려주시겠어요?
+     테스트 입력이 아닌 정확한 이름을 부탁드립니다. (예: '케이브보틀', '한빛세무', '김동균의 커리어 기록')"
+   - 거부 후 같은 질문을 다시 하세요 (재입력 유도).
+6. 와인 템플릿에서 wine_lineup을 받으면:
+   - 각 와인이 '이름/종류/가격/특징' 형식인지 검증하세요.
+   - 슬래시(/)와 쉼표(,)가 없으면 REJECT하세요.
+   - 거부 메시지: "죄송합니다. 와인 정보를 정확한 형식으로 다시 알려주시겠어요?
+     이름/종류/가격/특징 형식으로 (예: '피노누아/레드/55,000원/스테이크 페어링')"
+   - 거부 후 같은 질문을 다시 하세요 (재입력 유도)."""
 
 
 def _seed_mock_p2_markdown(session_attrs: dict[str, Any]) -> bool:

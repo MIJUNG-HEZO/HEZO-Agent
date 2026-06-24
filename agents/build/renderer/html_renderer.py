@@ -233,10 +233,16 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     if hezo_cards:
         for i, card in enumerate(hezo_cards):
             if i >= len(items):
-                break
+                # items가 부족하면 초과 카드는 display:none으로 숨김
+                card["style"] = "display:none"
+                continue
             svc = items[i]
-            name_el = card.select_one('[data-hezo="service-name"]') or card.select_one("h3")
-            desc_el = card.select_one('[data-hezo="service-desc"]') or card.select_one("p")
+            # CSS 셀렉터 대신 find(attrs=...) 사용 — 다중 p 요소(eyebrow+desc) 환경에서 확실히 동작
+            name_el = card.find(attrs={"data-hezo": "service-name"}) or card.find("h3")
+            desc_el = card.find(attrs={"data-hezo": "service-desc"}) or next(
+                (p for p in card.find_all("p") if "eyebrow" not in (p.get("class") or [])),
+                None,
+            )
             if name_el:
                 name_el.string = svc.get("name", "")
             if desc_el:
@@ -253,7 +259,8 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     if cards:
         for i, card in enumerate(cards):
             if i >= len(items):
-                break
+                card["style"] = "display:none"
+                continue
             svc = items[i]
             name_el = card.select_one("h3") or card.select_one("strong")
             desc_el = card.select_one("p")
@@ -267,7 +274,8 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
     rows = soup.select(".ledger-row")
     for i, row in enumerate(rows):
         if i >= len(items):
-            break
+            row["style"] = "display:none"
+            continue
         svc = items[i]
         h3 = row.select_one("h3")
         p = row.select_one("p")
@@ -384,6 +392,18 @@ def render(template_html: str, render_spec: dict, is_preview: bool = False) -> s
     h1_text = hero.get("h1") or page.get("title_h1", "")
     if h1_text:
         _inject_h1(soup, h1_text)
+
+    # 3b. Hero subheadline + featured price (wine-market 등 hero 카드용)
+    if subheadline := hero.get("subheadline"):
+        sub_el = soup.find(attrs={"data-hezo": "hero-subheadline"})
+        if sub_el:
+            sub_el.string = subheadline
+    if featured_price := hero.get("featured_price"):
+        hero_sec = soup.find("section", class_=lambda c: c and "hero" in c)
+        if hero_sec:
+            price_el = hero_sec.select_one("strong.price") or hero_sec.select_one(".price")
+            if price_el:
+                price_el.string = featured_price
 
     # 4. 브랜드명
     if brand_name:
