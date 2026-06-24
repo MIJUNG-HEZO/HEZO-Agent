@@ -701,8 +701,13 @@ def llm_self_eval(render_spec: dict, contract: dict) -> dict:
     반환: {score: 0~100, weak_sections: [...], reason: str}
     """
     slots = contract.get("slots", {})
-    business_type = slots.get("business_type", "")
-    region = slots.get("address", "")
+    # P1 contract_final 스키마 기준: 업종은 meta.domain_label, 지역은 business_region 슬롯.
+    # (이전 business_type/address 키는 P1이 생성하지 않아 빈 값이 되던 버그 수정)
+    business_type = (
+        contract.get("meta", {}).get("domain_label")
+        or slots.get("business_type", "")
+    )
+    region = slots.get("business_region") or slots.get("address", "")
 
     page = render_spec.get("pages", [{}])[0]
     faq_items: list[dict] = []
@@ -779,9 +784,13 @@ def regenerate_weak_sections(
     import copy
     patched = copy.deepcopy(render_spec)
     slots = contract.get("slots", {})
-    business_type = slots.get("business_type", "")
+    # P1 contract_final 스키마: 업종=meta.domain_label, 지역=business_region 슬롯
+    business_type = (
+        contract.get("meta", {}).get("domain_label")
+        or slots.get("business_type", "")
+    )
     business_name = slots.get("business_name", "")
-    region = slots.get("address", "")
+    region = slots.get("business_region") or slots.get("address", "")
 
     page = patched.get("pages", [{}])[0]
 
