@@ -1,0 +1,15 @@
+# terraform.tfvars.example
+# 실제 값은 terraform.tfvars 에 저장 (gitignore됨)
+# 사용법: cp terraform.tfvars.example terraform.tfvars 후 값 채우기
+
+# VPC 리소스 (기본값 사용 시 아래 항목 불필요 — exam-vpc 기준)
+# vpc_id               = "vpc-00eb14011f2d736d5"
+# public_subnet_a      = "subnet-0a3b49fab26108dfa"
+# private_web_subnet_a = "subnet-002d6dbec4b8049c5"
+# ...
+
+# RDS 비밀번호 — 반드시 입력 (기본값 없음)
+db_password = "CHANGE_ME_STRONG_PASSWORD_HERE"
+
+# 선택: AgentCore VPC Endpoint 비활성화 시
+# enable_bedrock_agentcore_endpoint = false
