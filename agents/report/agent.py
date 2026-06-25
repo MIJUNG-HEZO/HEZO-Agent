@@ -38,7 +38,6 @@ from agents.report.tools.geo_file_checker import check_geo_files
 from agents.report.tools.bot_crawl_analyzer import analyze_bot_visits
 from agents.report.tools.google_index_checker import check_google_indexing
 from agents.report.tools.performance_checker import check_performance
-from agents.report.tools.geo_structure_scorer import score_geo_structure
 from agents.report.tools.action_generator import generate_action_items
 from agents.report.tools.report_renderer import render_html_report
 from libs.telemetry import init_telemetry, record_llm_usage
@@ -158,8 +157,8 @@ def _save_scores_to_dynamodb(site_id: str, report: dict, html_key: str) -> None:
                 "overall_score": {"N": str(report["overall_score"])},
                 "delta": {"N": str(report.get("delta", 0))},
                 "geo_file_score": {"N": str(report["geo_file_check"].get("summary_score", 0))},
-                "geo_structure_score": {"N": str(report["geo_structure"].get("score", 0))},
                 "performance_grade": {"S": report["performance"].get("performance_grade", "F")},
+                "ssl_days_remaining": {"N": str(report["performance"].get("ssl_days_remaining") or 0)},
                 "indexing_status": {"S": report["indexing"].get("indexing_status", "unknown")},
                 "action_items": {"S": json.dumps(report["action_items"], ensure_ascii=False)},
                 "report_html_key": {"S": html_key},
@@ -263,35 +262,40 @@ def run_report(site_id: str) -> dict:
     logger.info("도메인: %s, 발행 %d일 경과", domain_url, days_since_publish)
 
     # ── 5단계 측정 ────────────────────────────────────────────────────────────
-    logger.info("[1/5] GEO 파일 접근성 체크")
+    logger.info("[1/4] GEO 파일 접근성 체크")
     geo_file_check = check_geo_files(domain_url)
 
-    logger.info("[2/5] AI 봇 크롤 감지")
+    logger.info("[2/4] AI 봇 크롤 감지")
     bot_visits = analyze_bot_visits(cf_distribution_id)
 
-    logger.info("[3/5] 구글 인덱싱 상태 추정")
+    logger.info("[3/4] 구글 인덱싱 상태 추정")
     indexing = check_google_indexing(domain_url, days_since_publish)
 
-    logger.info("[4/5] 사이트 성능 측정")
+    logger.info("[4/4] 사이트 성능 측정 (SSL 포함)")
     performance = check_performance(domain_url)
 
-    logger.info("[5/5] GEO 구조 점수 산출")
-    geo_structure = score_geo_structure(domain_url)
-
     # ── 종합 점수 (가중 평균) ─────────────────────────────────────────────────
+    # geo_structure 제외 (검증 에이전트 통과 사이트는 항상 고점 → 자기참조 지표 무의미)
+    # bot: Googlebot 대신 AI 봇(GPTBot/ClaudeBot/PerplexityBot/Yeti) 기준
     geo_file_score = geo_file_check.get("summary_score", 0)
-    geo_struct_score = geo_structure.get("score", 0)
     perf_score = {"A": 100, "B": 75, "C": 50, "F": 20}.get(
         performance.get("performance_grade", "F"), 50
     )
     index_score = indexing.get("indexing_likelihood_pct", 0)
-    bot_score = 100 if bot_visits.get("visits", {}).get("Googlebot", 0) > 0 else 30
+
+    visits = bot_visits.get("visits", {})
+    ai_bot_visits = sum(visits.get(b, 0) for b in ["GPTBot", "ClaudeBot", "PerplexityBot", "Yeti"])
+    if ai_bot_visits > 0:
+        bot_score = 100
+    elif visits.get("Googlebot", 0) > 0:
+        bot_score = 60
+    else:
+        bot_score = 20
 
     overall_score = round(
-        geo_file_score * 0.30 +
-        geo_struct_score * 0.30 +
-        perf_score * 0.20 +
-        index_score * 0.10 +
+        geo_file_score * 0.40 +
+        perf_score * 0.30 +
+        index_score * 0.20 +
         bot_score * 0.10
     )
     delta = overall_score - prev_score if prev_score is not None else 0
@@ -299,7 +303,7 @@ def run_report(site_id: str) -> dict:
     # ── 액션 아이템 ───────────────────────────────────────────────────────────
     logger.info("액션 아이템 생성 (Claude Haiku)")
     action_items = generate_action_items(
-        geo_file_check, bot_visits, indexing, performance, geo_structure
+        geo_file_check, bot_visits, indexing, performance
     )
 
     # ── 리포트 조립 ───────────────────────────────────────────────────────────
@@ -314,7 +318,6 @@ def run_report(site_id: str) -> dict:
         "bot_visits": bot_visits,
         "indexing": indexing,
         "performance": performance,
-        "geo_structure": geo_structure,
         "action_items": action_items,
     }
 

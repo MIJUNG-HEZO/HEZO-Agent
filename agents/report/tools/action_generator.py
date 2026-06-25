@@ -34,12 +34,11 @@ def _build_summary(
     bot_visits: dict,
     indexing: dict,
     performance: dict,
-    geo_score: dict,
 ) -> str:
-    bot_summary = ", ".join(
-        f"{bot}:{count}회" for bot, count in bot_visits.get("visits", {}).items()
-    )
-    issues = geo_score.get("issues", [])
+    visits = bot_visits.get("visits", {})
+    ai_bots = ["GPTBot", "ClaudeBot", "PerplexityBot", "Yeti"]
+    bot_summary = ", ".join(f"{b}:{visits.get(b, 0)}회" for b in ai_bots + ["Googlebot"])
+
     geo_file_issues = []
     if not geo_file.get("llms_txt", {}).get("ok"):
         geo_file_issues.append("llms.txt 접근 불가")
@@ -53,15 +52,22 @@ def _build_summary(
     if not geo_file.get("jsonld", {}).get("has_faq_page"):
         geo_file_issues.append("JSON-LD FAQPage 스키마 없음")
 
+    ssl_days = performance.get("ssl_days_remaining")
+    if ssl_days is None:
+        ssl_status = "확인 불가"
+    elif ssl_days <= 30:
+        ssl_status = f"⚠️ {ssl_days}일 남음 (갱신 필요)"
+    elif ssl_days <= 90:
+        ssl_status = f"주의 — {ssl_days}일 남음"
+    else:
+        ssl_status = f"정상 ({ssl_days}일 남음)"
+
     return f"""[사이트 현황 리포트]
-GEO 구조 점수: {geo_score.get('score', 0)}/100
 GEO 파일 점수: {geo_file.get('summary_score', 0)}/100
-AI 봇 방문 (7일): {bot_summary or '정보 없음 (로그 미설정)'}
+AI 봇 방문 (7일): {bot_summary if bot_visits.get('configured') else '정보 없음 (CloudFront 로그 미설정)'}
 구글 인덱싱: {indexing.get('indexing_status', 'unknown')} ({indexing.get('days_since_publish', 0)}일 경과, {indexing.get('indexing_likelihood_pct', 0)}% 추정)
 사이트 성능: 응답 {performance.get('response_ms', 0)}ms, 모바일 점수 {performance.get('mobile_score', 'N/A')}, 등급 {performance.get('performance_grade', 'N/A')}
-
-GEO 구조 문제:
-{chr(10).join(f'- {i}' for i in issues) or '- 없음'}
+SSL 인증서: {ssl_status}
 
 GEO 파일 문제:
 {chr(10).join(f'- {i}' for i in geo_file_issues) or '- 없음'}""".strip()
@@ -72,10 +78,9 @@ def generate_action_items(
     bot_visits: dict,
     indexing: dict,
     performance: dict,
-    geo_score: dict,
 ) -> list[dict[str, str]]:
     """Claude Haiku로 우선순위별 개선 액션 3~5개 생성"""
-    summary = _build_summary(geo_file, bot_visits, indexing, performance, geo_score)
+    summary = _build_summary(geo_file, bot_visits, indexing, performance)
 
     prompt = f"""다음은 AI 최적화 홈페이지의 현황 리포트입니다.
 

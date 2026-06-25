@@ -1,13 +1,17 @@
 """
-사이트 응답속도 + Google PageSpeed Insights API 성능 측정.
+사이트 응답속도 + Google PageSpeed Insights API 성능 측정 + SSL 만료일 체크.
 PageSpeed API는 키 없이도 호출 가능 (일 25회 제한, 키 있으면 일 25000회).
 """
 from __future__ import annotations
 
 import logging
 import os
+import socket
+import ssl
 import time
+from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -68,6 +72,29 @@ def _extract_cls(data: dict) -> float | None:
         return None
 
 
+def _check_ssl(domain_url: str) -> dict:
+    try:
+        parsed = urlparse(domain_url)
+        hostname = parsed.hostname
+        if not hostname or parsed.scheme != "https":
+            return {"ssl_ok": False, "ssl_days_remaining": None, "ssl_expires": None}
+        ctx = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=10) as raw_sock:
+            with ctx.wrap_socket(raw_sock, server_hostname=hostname) as sock:
+                cert = sock.getpeercert()
+        expire_str = cert["notAfter"]  # "Dec 31 23:59:59 2026 GMT"
+        expire_dt = datetime.strptime(expire_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+        days_remaining = (expire_dt - datetime.now(timezone.utc)).days
+        return {
+            "ssl_ok": True,
+            "ssl_days_remaining": days_remaining,
+            "ssl_expires": expire_dt.strftime("%Y-%m-%d"),
+        }
+    except Exception as exc:
+        logger.warning("SSL 체크 실패: %s", exc)
+        return {"ssl_ok": False, "ssl_days_remaining": None, "ssl_expires": None}
+
+
 def _grade(mobile_score: int | None, response_ms: int) -> str:
     score = mobile_score or 0
     if score >= 90 and response_ms <= 500:
@@ -85,6 +112,7 @@ def check_performance(domain_url: str) -> dict[str, Any]:
     logger.info("성능 체크 시작: %s", domain_url)
 
     is_up, status_code, response_ms = _measure_response_time(domain_url)
+    ssl_info = _check_ssl(domain_url)
 
     mobile_data = _get_pagespeed(domain_url, "mobile") if is_up else None
     desktop_data = _get_pagespeed(domain_url, "desktop") if is_up else None
@@ -103,7 +131,10 @@ def check_performance(domain_url: str) -> dict[str, Any]:
         "lcp_ms": lcp_ms,
         "cls": cls,
         "performance_grade": _grade(mobile_score, response_ms),
+        "ssl_ok": ssl_info["ssl_ok"],
+        "ssl_days_remaining": ssl_info["ssl_days_remaining"],
+        "ssl_expires": ssl_info["ssl_expires"],
     }
-    logger.info("성능 체크 완료: grade=%s, mobile=%s, response=%dms",
-                result["performance_grade"], mobile_score, response_ms)
+    logger.info("성능 체크 완료: grade=%s, mobile=%s, response=%dms, ssl_days=%s",
+                result["performance_grade"], mobile_score, response_ms, ssl_info["ssl_days_remaining"])
     return result
