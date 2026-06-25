@@ -1,0 +1,19 @@
+# Terraform state — 절대 커밋 금지 (비밀번호·ARN 등 민감 정보 포함)
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+tfplan
+*.tfplan
+crash.log
+
+# tfvars에는 실제 비밀번호·ARN이 들어가므로 커밋 금지
+# .tfvars.example 만 허용
+*.tfvars
+!*.tfvars.example
+
+# 오버라이드 파일 (로컬 전용)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
