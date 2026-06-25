@@ -3,6 +3,8 @@
 .terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
+tfplan
+*.tfplan
 crash.log
 
 # tfvars에는 실제 비밀번호·ARN이 들어가므로 커밋 금지
