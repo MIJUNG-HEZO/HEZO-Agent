@@ -399,3 +399,10 @@ temp/
 # Local agent/runtime state
 .langgraph_api/
 .langgraph/
+
+# Terraform — state files contain plaintext secrets (RDS password, etc.)
+*.tfstate
+*.tfstate.backup
+tfplan
+.terraform/
+.terraform.lock.hcl
