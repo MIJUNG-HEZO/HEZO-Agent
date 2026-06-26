@@ -5,6 +5,8 @@
   - Claude (Bedrock, 항상 사용)
   - ChatGPT / OpenAI (OPENAI_API_KEY 환경변수 필요)
   - Perplexity (PERPLEXITY_API_KEY 환경변수 필요)
+  - Naver Web Search (NAVER_CLIENT_ID + NAVER_CLIENT_SECRET 환경변수 필요)
+    → Naver Cue는 공개 API 미제공. Web Search 결과에 사이트 URL 포함 여부로 대리 측정.
 
 API 키 없는 LLM은 건너뛰고 결과에서 null 처리.
 """
@@ -17,6 +19,7 @@ import os
 import re
 import time
 from typing import Any
+from urllib.parse import quote_plus
 
 import boto3
 
@@ -28,6 +31,8 @@ REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2")
 MODEL_ID_HAIKU = os.environ.get("MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
+NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
+NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 
 _bedrock: Any = None
 
@@ -127,49 +132,82 @@ async def _query_perplexity_async(query: str) -> str | None:
         return None
 
 
+# ── Naver Web Search ──────────────────────────────────────────────────────────
+
+async def _query_naver_async(query: str, site_url: str) -> str | None:
+    """Naver Web Search API로 질의 후 site_url 도메인이 결과에 있으면 cited 응답 반환.
+
+    Naver Cue는 공개 API가 없어 Web Search 결과로 대리 측정한다.
+    검색 결과 상위 10개 link에 사이트 도메인이 포함되면 "cited"로 간주.
+    """
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return None
+    try:
+        import httpx
+        encoded = quote_plus(query)
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://openapi.naver.com/v1/search/webkr.json?query={encoded}&display=10",
+                headers={
+                    "X-Naver-Client-Id": NAVER_CLIENT_ID,
+                    "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+                },
+            )
+            data = resp.json()
+            links = " ".join(item.get("link", "") for item in data.get("items", []))
+            return links  # _check_citation이 domain 포함 여부를 확인
+    except Exception as exc:
+        logger.warning("Naver 검색 실패: %s", exc)
+        return None
+
+
 # ── 통합 실행 ─────────────────────────────────────────────────────────────────
 
-async def _run_all_async(queries: list[str]) -> dict[str, list[str | None]]:
-    results: dict[str, list[str | None]] = {"claude": [], "chatgpt": [], "perplexity": []}
+async def _run_all_async(queries: list[str], site_url: str) -> dict[str, list[str | None]]:
+    results: dict[str, list[str | None]] = {
+        "claude": [], "chatgpt": [], "perplexity": [], "naver": []
+    }
 
     for query in queries:
-        # Claude는 동기 클라이언트, 비동기로 래핑
-        claude_resp = await asyncio.to_thread(_query_claude, query, "")
-        openai_resp = await _query_openai_async(query)
-        perplexity_resp = await _query_perplexity_async(query)
-
+        claude_resp, openai_resp, perplexity_resp, naver_resp = await asyncio.gather(
+            asyncio.to_thread(_query_claude, query, ""),
+            _query_openai_async(query),
+            _query_perplexity_async(query),
+            _query_naver_async(query, site_url),
+        )
         results["claude"].append(claude_resp)
         results["chatgpt"].append(openai_resp)
         results["perplexity"].append(perplexity_resp)
+        results["naver"].append(naver_resp)
 
     return results
 
 
 def run_benchmark(queries: list[str], site_url: str, business_name: str) -> dict:
-    """
-    멀티 LLM 병렬 쿼리 실행 후 인용률 집계.
-    반환: {llm_name: {citation_rate, responses}}
+    """멀티 LLM 병렬 쿼리 실행 후 인용률 집계.
+
+    반환: {llm_name: {citation_rate, cited_count, total_queries, skipped}}
+    citation_rate: 0.0~1.0 (null = API 키 없어 스킵)
     """
     logger.info("멀티 LLM 벤치마크 시작: %d 질의, site=%s", len(queries), site_url)
 
-    raw = asyncio.run(_run_all_async(queries))
+    raw = asyncio.run(_run_all_async(queries, site_url))
 
     scores: dict[str, Any] = {}
     for llm_name, responses in raw.items():
         valid = [r for r in responses if r is not None]
         if not valid:
-            scores[llm_name] = {"citation_rate": None, "skipped": True}
+            scores[llm_name] = {"citation_rate": None, "cited_count": 0, "total_queries": 0, "skipped": True}
             continue
 
         cited = sum(1 for r in valid if _check_citation(r, site_url, business_name))
+        rate = round(cited / len(valid), 2)
         scores[llm_name] = {
-            "citation_rate": round(cited / len(valid), 2),
+            "citation_rate": rate,
             "cited_count": cited,
             "total_queries": len(valid),
             "skipped": False,
-            "responses": valid,  # wiki_updater.detect_stale_wiki 신선도 판단용
         }
-        logger.info("LLM=%s 인용률: %.0f%% (%d/%d)",
-                    llm_name, scores[llm_name]["citation_rate"] * 100, cited, len(valid))
+        logger.info("LLM=%s 인용률: %.0f%% (%d/%d)", llm_name, rate * 100, cited, len(valid))
 
     return scores
