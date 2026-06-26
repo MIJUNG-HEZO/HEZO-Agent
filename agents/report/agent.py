@@ -39,6 +39,7 @@ from agents.report.tools.bot_crawl_analyzer import analyze_bot_visits
 from agents.report.tools.google_index_checker import check_google_indexing
 from agents.report.tools.performance_checker import check_performance
 from agents.report.tools.action_generator import generate_action_items
+from agents.report.tools.llm_querier import run_benchmark
 from agents.report.tools.report_renderer import render_html_report
 from libs.telemetry import init_telemetry, record_llm_usage
 
@@ -184,21 +185,20 @@ def _save_html_to_s3(site_id: str, html: str) -> str:
 
 
 # =============================================================================
-# 추후 구현 — LLM 인용률 측정 (v1.1~)
-# 인용률은 신규 사이트 6개월+ 후 의미 있으므로 보존만 하고 미사용
+# LLM 인용률 측정 (v1.1 — 활성화)
 # =============================================================================
 
-def _legacy_generate_queries(content: dict) -> list[str]:
-    """업종·지역 기반 실제 AI 검색 질의 3~5개 생성 (추후 구현)"""
+def _generate_queries(content: dict) -> list[str]:
+    """업종·지역 기반 실제 AI 검색 질의 5개 생성 (Claude Haiku)."""
     slots = content["contract"].get("slots", {})
     business_type = slots.get("business_type", "")
     region = slots.get("address", "")
     business_name = slots.get("business_name", "")
 
     prompt = f"""'{business_name}'({region} {business_type}) 사업체에 관해
-사용자가 ChatGPT/Claude/Perplexity에 실제로 물어볼 법한 검색 질의 5개를 생성하세요.
-조건: 지역명 포함, 구체적 질문 (비용/절차/비교), 실제 사용자 검색 패턴 반영
-다음 JSON 배열만 출력: ["질의1", "질의2", "질의3", "질의4", "질의5"]"""
+사용자가 ChatGPT/Claude/Perplexity/네이버에 실제로 물어볼 법한 검색 질의 5개를 생성하세요.
+조건: 지역명 포함, 구체적 질문(비용/절차/비교/추천), 실제 사용자 검색 패턴 반영
+다음 JSON 배열만 출력 (한국어): ["질의1", "질의2", "질의3", "질의4", "질의5"]"""
 
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
@@ -220,25 +220,40 @@ def _legacy_generate_queries(content: dict) -> list[str]:
     text = result["content"][0]["text"].strip()
     try:
         m = re.search(r"\[[\s\S]+\]", text)
-        return json.loads(m.group() if m else text)
+        queries = json.loads(m.group() if m else text)
+        logger.info("질의 생성 완료: %d개 — %s", len(queries), queries[:2])
+        return queries
     except (json.JSONDecodeError, AttributeError):
-        return [f"{business_type} {region} 추천", f"{business_type} 비용", f"{business_name} 서비스"]
+        logger.warning("질의 파싱 실패, 폴백 사용")
+        return [
+            f"{region} {business_type} 추천",
+            f"{business_name} 서비스 비용",
+            f"{region} {business_type} 후기",
+            f"{business_name} 예약 방법",
+            f"{business_type} {region} 비교",
+        ]
 
 
-def _legacy_save_citation_scores(site_id: str, scores: dict, queries: list[str]) -> None:
-    """LLM 인용률 시계열 저장 (추후 구현)"""
+def _save_citation_scores(site_id: str, scores: dict, queries: list[str]) -> None:
+    """LLM 인용률 DDB 저장 — CITATION#{date} SK."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    item: dict = {
+        "pk": {"S": f"SITE#{site_id}"},
+        "sk": {"S": f"CITATION#{today}"},
+        "query_set": {"S": json.dumps(queries, ensure_ascii=False)},
+        "query_count": {"N": str(len(queries))},
+        "recorded_at": {"S": datetime.now(timezone.utc).isoformat() + "Z"},
+    }
+    for llm_name, data in scores.items():
+        rate = data.get("citation_rate")
+        if rate is not None:
+            item[f"{llm_name}_citation_rate"] = {"N": str(rate)}
+            item[f"{llm_name}_cited_count"] = {"N": str(data.get("cited_count", 0))}
+            item[f"{llm_name}_total_queries"] = {"N": str(data.get("total_queries", 0))}
+
     try:
-        _get_dynamodb().put_item(
-            TableName=DYNAMODB_TABLE,
-            Item={
-                "pk": {"S": f"SITE#{site_id}"},
-                "sk": {"S": f"CITATION#{today}"},
-                "scores": {"S": json.dumps(scores, ensure_ascii=False)},
-                "query_set": {"S": json.dumps(queries, ensure_ascii=False)},
-                "recorded_at": {"S": datetime.now(timezone.utc).isoformat() + "Z"},
-            },
-        )
+        _get_dynamodb().put_item(TableName=DYNAMODB_TABLE, Item=item)
+        logger.info("인용률 저장 완료: SITE#%s CITATION#%s", site_id, today)
     except Exception as exc:
         logger.warning("인용률 저장 실패: %s", exc)
 
@@ -273,6 +288,15 @@ def run_report(site_id: str) -> dict:
 
     logger.info("[4/4] 사이트 성능 측정 (SSL 포함)")
     performance = check_performance(domain_url)
+
+    logger.info("[5/5] LLM 인용률 실측 (ChatGPT/Claude/Perplexity/Naver)")
+    citation_scores: dict = {}
+    queries: list[str] = []
+    try:
+        queries = _generate_queries(content)
+        citation_scores = run_benchmark(queries, domain_url, business_name)
+    except Exception as exc:
+        logger.warning("인용률 측정 실패 (비차단): %s", exc)
 
     # ── 종합 점수 (가중 평균) ─────────────────────────────────────────────────
     # geo_structure 제외 (검증 에이전트 통과 사이트는 항상 고점 → 자기참조 지표 무의미)
@@ -319,6 +343,7 @@ def run_report(site_id: str) -> dict:
         "indexing": indexing,
         "performance": performance,
         "action_items": action_items,
+        "citation_scores": citation_scores,
     }
 
     # ── 저장 ──────────────────────────────────────────────────────────────────
@@ -326,6 +351,8 @@ def run_report(site_id: str) -> dict:
     html = render_html_report(report)
     html_key = _save_html_to_s3(site_id, html)
     _save_scores_to_dynamodb(site_id, report, html_key)
+    if citation_scores:
+        _save_citation_scores(site_id, citation_scores, queries)
 
     logger.info("리포트 완료 — site_id=%s, score=%d, delta=%+d", site_id, overall_score, delta)
     return {
