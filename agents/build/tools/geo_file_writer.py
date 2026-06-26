@@ -81,9 +81,20 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         logger.info("sitemap.xml 저장: s3://%s/%s", SITE_BUCKET, key)
 
     if robots_rules := supp.get("robots_rules", []):
-        # Yeti(Naver Cue 크롤러)가 없으면 자동 추가
-        if not any("Yeti" in r for r in robots_rules):
-            robots_rules = list(robots_rules) + ["", "User-agent: Yeti", "Allow: /"]
+        # AI 봇 크롤러 자동 추가 (없을 때만)
+        _ai_bots = [
+            ("GPTBot", "OpenAI ChatGPT"),
+            ("ClaudeBot", "Anthropic Claude"),
+            ("PerplexityBot", "Perplexity"),
+            ("Yeti", "Naver Cue"),
+            ("Googlebot", "Google"),
+        ]
+        for bot_name, _ in _ai_bots:
+            if not any(bot_name in r for r in robots_rules):
+                robots_rules = list(robots_rules) + ["", f"User-agent: {bot_name}", "Allow: /"]
+        # Sitemap 항목 자동 추가
+        if not any("Sitemap:" in r for r in robots_rules):
+            robots_rules = list(robots_rules) + [f"\nSitemap: {base_url}/sitemap.xml"]
         key = f"{prefix}/robots.txt"
         write_text(SITE_BUCKET, key, "\n".join(robots_rules))
         saved.append(key)
