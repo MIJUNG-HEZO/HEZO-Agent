@@ -13,6 +13,7 @@ API 키 없는 LLM은 건너뛰고 결과에서 null 처리.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
@@ -191,7 +192,8 @@ def run_benchmark(queries: list[str], site_url: str, business_name: str) -> dict
     """
     logger.info("멀티 LLM 벤치마크 시작: %d 질의, site=%s", len(queries), site_url)
 
-    raw = asyncio.run(_run_all_async(queries, site_url))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        raw = pool.submit(asyncio.run, _run_all_async(queries, site_url)).result()
 
     scores: dict[str, Any] = {}
     for llm_name, responses in raw.items():
