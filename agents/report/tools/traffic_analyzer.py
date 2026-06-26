@@ -49,7 +49,7 @@ def _list_log_keys(distribution_id: str, since_date: datetime) -> list[str]:
         return [
             obj["Key"]
             for obj in resp.get("Contents", [])
-            if obj["LastModified"].replace(tzinfo=timezone.utc) >= since_date
+            if obj["LastModified"].astimezone(timezone.utc) >= since_date
         ]
     except ClientError as exc:
         code = exc.response["Error"]["Code"]

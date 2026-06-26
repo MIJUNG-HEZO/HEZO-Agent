@@ -3,8 +3,6 @@ import gzip
 import io
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agents.report.tools.traffic_analyzer import (
     _parse_referrer_visits,
     analyze_traffic,
@@ -41,33 +39,13 @@ def test_parse_referrer_visits_excludes_bots():
     mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: gz_bytes)}
 
     with patch("agents.report.tools.traffic_analyzer._get_s3", return_value=mock_s3):
-        pairs = _parse_referrer_visits.__wrapped__("fake-key") if hasattr(_parse_referrer_visits, "__wrapped__") else None
-
-    # 직접 호출 가능한 형태로 테스트
-    pairs = []
-    import gzip as gz_mod
-    raw = gz_bytes
-    raw = gz_mod.decompress(raw)
-    lines = raw.decode("utf-8", errors="ignore").splitlines()
-    import re
-    BOT_PATTERN = re.compile(r"bot|crawler|spider|slurp", re.IGNORECASE)
-    for line in lines:
-        if line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) > 10:
-            referer = parts[9]
-            ua = parts[10]
-            if BOT_PATTERN.search(ua):
-                continue
-            pairs.append((referer, ua))
+        pairs = _parse_referrer_visits("DIST/log.gz")
 
     referrers = [r for r, _ in pairs]
-    assert "https://perplexity.ai/search?q=test" in referrers   # 실사용자 포함
-    assert "https://chatgpt.com/c/abc123" in referrers           # 실사용자 포함
-    # PerplexityBot UA → 제외 → perplexity.ai 레퍼러가 1개만 있어야 함
+    assert "https://perplexity.ai/search?q=test" in referrers   # real user included
+    assert "https://chatgpt.com/c/abc123" in referrers           # real user included
     perplexity_refs = [r for r in referrers if "perplexity.ai" in r]
-    assert len(perplexity_refs) == 1
+    assert len(perplexity_refs) == 1   # PerplexityBot UA excluded, only 1 real user
 
 
 def test_analyze_traffic_no_distribution_id():
