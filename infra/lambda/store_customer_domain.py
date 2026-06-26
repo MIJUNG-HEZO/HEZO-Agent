@@ -31,8 +31,8 @@ def lambda_handler(event, context):
 
     ddb = boto3.client("dynamodb", region_name=_REGION)
 
-    update_expr = "SET domain_url = :u"
-    expr_values: dict = {":u": {"S": domain_url}}
+    update_expr = "SET domain_url = :u, publish_status = :s"
+    expr_values: dict = {":u": {"S": domain_url}, ":s": {"S": "published"}}
 
     if cf_dist_id:
         update_expr += ", cloudfront_distribution_id = :cf"
