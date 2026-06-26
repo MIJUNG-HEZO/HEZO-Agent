@@ -13,6 +13,21 @@
       },
       "ResultSelector": { "out.$": "$.Payload" },
       "ResultPath": "$.prep",
+      "Next": "MarkProvisioning",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "IaCFailed", "ResultPath": "$.error" } ]
+    },
+
+    "MarkProvisioning": {
+      "Type": "Task",
+      "Comment": "IaC 시작 — DynamoDB publish_status=provisioning (프론트 Stage 3 표시용).",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "hezo_pipeline_state",
+        "Key": { "site_id": { "S.$": "$.prep.out.site_id" } },
+        "UpdateExpression": "SET publish_status = :s",
+        "ExpressionAttributeValues": { ":s": { "S": "provisioning" } }
+      },
+      "ResultPath": null,
       "Next": "CreateCustomerStack",
       "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "IaCFailed", "ResultPath": "$.error" } ]
     },
@@ -72,7 +87,7 @@
             { "Variable": "$.stack_outputs.Stacks[0].StackStatus", "StringEquals": "CREATE_COMPLETE" },
             { "Variable": "$.stack_outputs.Stacks[0].StackStatus", "StringEquals": "UPDATE_COMPLETE" }
           ],
-          "Next": "IaCSuccess"
+          "Next": "StoreDomain"
         },
         {
           "Or": [
@@ -84,6 +99,22 @@
         }
       ],
       "Default": "IaCFailed"
+    },
+
+    "StoreDomain": {
+      "Type": "Task",
+      "Comment": "CFN DomainUrl → DynamoDB domain_url 저장. 프론트가 domain_url 확인 후 발급 완료 화면 전환.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "hezo-store-customer-domain",
+        "Payload": {
+          "site_id.$": "$.prep.out.site_id",
+          "outputs.$": "$.stack_outputs.Stacks[0].Outputs"
+        }
+      },
+      "ResultPath": null,
+      "Next": "IaCSuccess",
+      "Catch": [ { "ErrorEquals": ["States.ALL"], "Next": "IaCFailed", "ResultPath": "$.error" } ]
     },
 
     "IaCSuccess": { "Type": "Succeed" },

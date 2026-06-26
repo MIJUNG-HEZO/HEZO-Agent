@@ -115,9 +115,9 @@ def _get_cf_distribution_id(site_id: str) -> str:
         resp = _get_dynamodb().get_item(
             TableName=PIPELINE_STATE_TABLE,
             Key={"site_id": {"S": site_id}},
-            ProjectionExpression="cf_distribution_id",
+            ProjectionExpression="cloudfront_distribution_id",
         )
-        return resp.get("Item", {}).get("cf_distribution_id", {}).get("S", "")
+        return resp.get("Item", {}).get("cloudfront_distribution_id", {}).get("S", "")
     except Exception:
         return ""
 
