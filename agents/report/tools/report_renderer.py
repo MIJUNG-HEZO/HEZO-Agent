@@ -55,16 +55,41 @@ _TEMPLATE = """<!DOCTYPE html>
 </div>
 
 <div class="card">
-  <h2>AI 봇 방문 현황 (최근 7일)</h2>
+  <h2>GEO 가시성 (최근 7일)</h2>
+
+  <div style="font-size:13px; font-weight:600; margin-bottom:8px; color:#444;">봇 크롤 (수집 여부)</div>
   {% if not bot_visits.configured %}
-  <div class="warn">⚠ CloudFront 로그 미설정 — 봇 방문 추적이 활성화되지 않았습니다</div>
+  <div class="warn">⚠ CloudFront 로그 미설정 — 봇 방문 추적 비활성</div>
   {% else %}
-  {% for bot, count in bot_visits.visits.items() %}
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+    {% for bot, count in bot_visits.visits.items() %}
+    <span style="font-size:13px;">
+      <span class="{{ 'ok' if count > 0 else 'warn' }}">{{ '✅' if count > 0 else '…' }}</span>
+      {{ bot }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="font-size:13px; font-weight:600; margin-bottom:8px; color:#444;">실제 AI 유입</div>
+  {% if not traffic_visits.configured %}
+  <div class="warn">⚠ CloudFront 로그 미설정 — 트래픽 추적 비활성</div>
+  {% else %}
+  {% for platform, count in traffic_visits.visits.items() %}
   <div class="bot-row">
-    <span>{% if count > 0 %}✓{% else %}…{% endif %} {{ bot }}</span>
-    <span>{{ count }}회 방문{% if bot_visits.last_visit_dates[bot] %} (마지막: {{ bot_visits.last_visit_dates[bot] }}){% endif %}</span>
+    <span>{{ platform }}</span>
+    <span>{{ count }}명</span>
   </div>
   {% endfor %}
+  <div class="bot-row" style="font-weight:600; border-top: 2px solid #e5e7eb; margin-top:4px;">
+    <span>합계</span>
+    <span>{{ traffic_visits.total_ai_traffic }}명</span>
+  </div>
+  {% if days_since_publish < 30 %}
+  <div style="font-size:12px; color:#999; margin-top:8px;">
+    ※ 발행 {{ days_since_publish }}일 경과 — 30일 이후 실측 반영 (현재 유예 기간)
+  </div>
+  {% endif %}
   {% endif %}
 </div>
 
@@ -142,6 +167,13 @@ def render_html_report(report_data: dict) -> str:
         overall_score=report_data.get("overall_score", 0),
         delta=report_data.get("delta", 0),
         bot_visits=report_data.get("bot_visits", {}),
+        traffic_visits=report_data.get("traffic_visits", {
+            "configured": False,
+            "visits": {"Perplexity": 0, "ChatGPT": 0, "Claude": 0, "Copilot": 0},
+            "total_ai_traffic": 0,
+            "period_days": 7,
+        }),
+        days_since_publish=report_data.get("days_since_publish", 0),
         geo_file=report_data.get("geo_file_check", {}),
         indexing=report_data.get("indexing", {}),
         performance=report_data.get("performance", {}),

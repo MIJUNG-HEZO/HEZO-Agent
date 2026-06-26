@@ -36,6 +36,7 @@ from agents.report.tools.site_fetcher import fetch_site_content
 from agents.report.tools.report_saver import save_report
 from agents.report.tools.geo_file_checker import check_geo_files
 from agents.report.tools.bot_crawl_analyzer import analyze_bot_visits
+from agents.report.tools.traffic_analyzer import analyze_traffic
 from agents.report.tools.google_index_checker import check_google_indexing
 from agents.report.tools.performance_checker import check_performance
 from agents.report.tools.action_generator import generate_action_items
@@ -283,6 +284,9 @@ def run_report(site_id: str) -> dict:
     logger.info("[2/4] AI 봇 크롤 감지")
     bot_visits = analyze_bot_visits(cf_distribution_id)
 
+    logger.info("[2.5/4] AI 플랫폼 트래픽 유입 감지")
+    traffic_visits = analyze_traffic(cf_distribution_id)
+
     logger.info("[3/4] 구글 인덱싱 상태 추정")
     indexing = check_google_indexing(domain_url, days_since_publish)
 
@@ -316,11 +320,22 @@ def run_report(site_id: str) -> dict:
     else:
         bot_score = 20
 
+    ai_traffic_total = traffic_visits.get("total_ai_traffic", 0)
+    if days_since_publish < 30:
+        traffic_score = 50
+    elif ai_traffic_total >= 5:
+        traffic_score = 100
+    elif ai_traffic_total >= 1:
+        traffic_score = 50 + ai_traffic_total * 10
+    else:
+        traffic_score = 0
+
     overall_score = round(
         geo_file_score * 0.40 +
-        perf_score * 0.30 +
-        index_score * 0.20 +
-        bot_score * 0.10
+        perf_score     * 0.30 +
+        index_score    * 0.20 +
+        bot_score      * 0.05 +
+        traffic_score  * 0.05
     )
     delta = overall_score - prev_score if prev_score is not None else 0
 
@@ -340,6 +355,8 @@ def run_report(site_id: str) -> dict:
         "delta": delta,
         "geo_file_check": geo_file_check,
         "bot_visits": bot_visits,
+        "traffic_visits": traffic_visits,
+        "days_since_publish": days_since_publish,
         "indexing": indexing,
         "performance": performance,
         "action_items": action_items,
