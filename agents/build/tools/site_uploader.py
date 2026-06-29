@@ -64,11 +64,11 @@ def upload_preview(site_id: str, html: str, css_needed: list[str]) -> dict:
 
 def upload_site(site_id: str, html: str, css_needed: list[str]) -> dict:
     """
-    최종 빌드 HTML + CSS → hezo-sites/sites/{id}/dist/ 업로드.
+    최종 빌드 HTML + CSS → hezo-sites/{id}/ 업로드.
     반환: { uploaded_files, dist_prefix, site_bucket }
     """
     site_id = validate_site_id(site_id)
-    prefix = f"sites/{site_id}/dist"
+    prefix = site_id
     uploaded = _upload_html_and_css(SITE_BUCKET, prefix, html, css_needed)
     return {
         "uploaded_files": uploaded,
