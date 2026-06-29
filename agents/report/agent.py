@@ -282,7 +282,7 @@ def run_report(site_id: str) -> dict:
     geo_file_check = check_geo_files(domain_url)
 
     logger.info("[2/4] AI 봇 크롤 감지")
-    bot_visits = analyze_bot_visits(cf_distribution_id)
+    bot_visits = analyze_bot_visits(cf_distribution_id, site_id=site_id)
 
     logger.info("[2.5/4] AI 플랫폼 트래픽 유입 감지")
     traffic_visits = analyze_traffic(cf_distribution_id)

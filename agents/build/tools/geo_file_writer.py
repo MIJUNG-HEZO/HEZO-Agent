@@ -5,11 +5,41 @@
 from __future__ import annotations
 
 import logging
+import re
 from urllib.parse import urlparse
 
 from agents.shared.s3_utils import SITE_BUCKET, validate_site_id, write_text
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_llms_txt(content: str, base_url: str) -> str:
+    """llms.txt에 ## 핵심 페이지 섹션이 없으면 자동 추가 (llmstxt.org 표준)."""
+    if "## 핵심 페이지" in content or "## Core Pages" in content:
+        return content
+    core_pages = (
+        "\n\n## 핵심 페이지\n"
+        f"- [홈]({base_url}/)\n"
+        f"- [전체 정보]({base_url}/llms-full.txt)\n"
+    )
+    return content.rstrip() + core_pages
+
+
+def _patch_llms_full_txt(content: str) -> str:
+    """llms-full.txt에 Q:/A: FAQ 포맷이 없으면 불릿 포인트를 변환해서 추가."""
+    if re.search(r"^Q:", content, re.MULTILINE):
+        return content
+    # ## FAQ 섹션의 불릿 포인트 추출 → Q:/A: 변환
+    faq_section = re.search(r"##\s+FAQ[^\n]*\n(.*?)(?=\n##|\Z)", content, re.DOTALL)
+    if not faq_section:
+        return content
+    bullets = re.findall(r"^[-*]\s+(.+)", faq_section.group(1), re.MULTILINE)
+    if not bullets:
+        return content
+    qa_lines = ["\n\n## FAQ"]
+    for bullet in bullets:
+        qa_lines.append(f"\nQ: {bullet.rstrip('.')}\nA: {bullet.rstrip('.')}")
+    return content + "\n".join(qa_lines)
 
 
 def _build_sitemap_xml(sitemap_pages: list[dict], base_url: str) -> str:
@@ -57,12 +87,14 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
     saved: list[str] = []
 
     if llms_txt := supp.get("llms_txt", ""):
+        llms_txt = _patch_llms_txt(llms_txt, base_url)
         key = f"{prefix}/llms.txt"
         write_text(SITE_BUCKET, key, llms_txt)
         saved.append(key)
         logger.info("llms.txt 저장: s3://%s/%s", SITE_BUCKET, key)
 
     if llms_full := supp.get("llms_full_txt", ""):
+        llms_full = _patch_llms_full_txt(llms_full)
         key = f"{prefix}/llms-full.txt"
         write_text(SITE_BUCKET, key, llms_full)
         saved.append(key)
