@@ -53,7 +53,7 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         base_url = f"https://{site_id}.doodo.cloud"
         logger.warning("canonical URL 파싱 실패 — fallback 사용: %s", base_url)
 
-    prefix = f"sites/{site_id}/dist"
+    prefix = site_id
     saved: list[str] = []
 
     if llms_txt := supp.get("llms_txt", ""):
@@ -68,7 +68,11 @@ def write_geo_files(site_id: str, render_spec: dict) -> list[str]:
         saved.append(key)
         logger.info("llms-full.txt 저장: s3://%s/%s", SITE_BUCKET, key)
 
-    if sitemap_pages := supp.get("sitemap_pages", []):
+    # sitemap_pages가 없으면 루트 + llms-full.txt 기본 구성으로 폴백
+    sitemap_pages = supp.get("sitemap_pages") or [
+        {"path": "/", "priority": 1.0, "changefreq": "weekly"},
+    ]
+    if sitemap_pages := sitemap_pages:
         # llms-full.txt가 sitemap에 없으면 자동 추가
         if not any(p.get("path") == "/llms-full.txt" for p in sitemap_pages):
             sitemap_pages = list(sitemap_pages) + [
