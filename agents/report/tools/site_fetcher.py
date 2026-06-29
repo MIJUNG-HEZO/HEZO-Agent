@@ -21,7 +21,7 @@ from agents.validation.tools.wiki_parser import parse_wiki_md
 logger = logging.getLogger(__name__)
 
 REGION = os.environ.get("AWS_DEFAULT_REGION", "ap-northeast-2")
-PIPELINE_STATE_TABLE = os.environ.get("PIPELINE_STATE_TABLE", "pipeline_state")
+PIPELINE_STATE_TABLE = os.environ.get("PIPELINE_STATE_TABLE", "hezo_pipeline_state")
 
 _dynamodb: Any = None
 
@@ -47,7 +47,7 @@ def _load_domain_url(site_id: str) -> str:
             return url
     except Exception as exc:
         logger.warning("DynamoDB domain_url 조회 실패: %s", exc)
-    fallback = f"https://{site_id}.hezo.io"
+    fallback = f"https://{site_id}.doodo.cloud"
     logger.info("domain_url fallback 사용: %s", fallback)
     return fallback
 
@@ -81,12 +81,13 @@ def fetch_site_content(site_id: str) -> dict[str, Any]:
     """
     site_id = validate_site_id(site_id)
     s3 = get_s3()
-    prefix = f"sites/{site_id}"
+    artifacts_prefix = f"sites/{site_id}"  # hezo-artifacts/sites/{site_id}/
+    site_prefix = site_id                   # hezo-sites/{site_id}/
 
     # llms.txt 로드 (AI 크롤러 관점의 콘텐츠)
     llms_txt = ""
     try:
-        resp = s3.get_object(Bucket=SITE_BUCKET, Key=f"{prefix}/llms.txt")
+        resp = s3.get_object(Bucket=SITE_BUCKET, Key=f"{site_prefix}/llms.txt")
         llms_txt = resp["Body"].read().decode("utf-8")
         logger.info("llms.txt 로드: %d chars", len(llms_txt))
     except ClientError as exc:
@@ -94,8 +95,8 @@ def fetch_site_content(site_id: str) -> dict[str, Any]:
             raise
         logger.warning("llms.txt 없음 — render_spec fallback 사용")
 
-    render_spec = read_json(ARTIFACTS_BUCKET, f"{prefix}/render_spec.json")
-    contract = read_json(ARTIFACTS_BUCKET, f"{prefix}/contract_final.json")
+    render_spec = read_json(ARTIFACTS_BUCKET, f"{artifacts_prefix}/render_spec.json")
+    contract = read_json(ARTIFACTS_BUCKET, f"{artifacts_prefix}/contract_final.json")
 
     # 도메인 URL (DynamoDB pipeline_state에서 실제 배포 URL 조회)
     domain_url = _load_domain_url(site_id)
