@@ -163,7 +163,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
-          CidrIp: '0.0.0.0/0'
+          SourcePrefixListId: 'pl-22a6434b'  # CloudFront origin-facing managed prefix list
       SecurityGroupEgress:
         - IpProtocol: '-1'
           CidrIp: '0.0.0.0/0'
