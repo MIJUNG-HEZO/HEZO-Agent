@@ -41,8 +41,9 @@ def _get_s3():
     return _s3
 
 
-def _list_log_keys(distribution_id: str, since_date: datetime) -> list[str]:
-    prefix = f"{distribution_id}/"
+def _list_log_keys(site_id: str, since_date: datetime) -> list[str]:
+    # 로그 prefix = site_id (customer-infra.yaml Logging.Prefix: ${SiteId}/)
+    prefix = f"{site_id}/"
     try:
         resp = _get_s3().list_objects_v2(Bucket=CF_LOG_BUCKET, Prefix=prefix)
         keys = []
@@ -78,10 +79,11 @@ def _parse_log_file(key: str) -> list[str]:
         return []
 
 
-def analyze_bot_visits(cf_distribution_id: str) -> dict[str, Any]:
+def analyze_bot_visits(cf_distribution_id: str, site_id: str = "") -> dict[str, Any]:
     """
     지난 7일간 AI 봇 방문 횟수 집계.
-    cf_distribution_id 예: "E20FCOEPMP0R4A"
+    cf_distribution_id: CloudFront distribution ID (configured 판단용)
+    site_id: 로그 prefix 키 (customer-infra.yaml Prefix=${SiteId}/)
     """
     if not cf_distribution_id:
         return {
@@ -91,8 +93,9 @@ def analyze_bot_visits(cf_distribution_id: str) -> dict[str, Any]:
             "period_days": 7,
         }
 
+    log_prefix_key = site_id or cf_distribution_id
     since = datetime.now(timezone.utc) - timedelta(days=7)
-    log_keys = _list_log_keys(cf_distribution_id, since)
+    log_keys = _list_log_keys(log_prefix_key, since)
 
     if not log_keys:
         logger.info("CloudFront 로그 없음 (미설정 또는 기간 내 로그 없음): dist=%s", cf_distribution_id)
