@@ -67,8 +67,8 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
     category = contract.get("template", {}).get("template_category", "landing")
     wiki_snapshot = _load_wiki_snapshot(s3, category, domain)
 
-    # dist/index.html 로드
-    html_key = f"{prefix}/dist/index.html"
+    # index.html 로드 — SITE_BUCKET 경로: {site_id}/index.html (sites/ 접두사 없음)
+    html_key = f"{site_id}/index.html"
     html_content = ""
     try:
         resp = s3.get_object(Bucket=SITE_BUCKET, Key=html_key)
@@ -77,13 +77,13 @@ def fetch_artifacts(site_id: str) -> dict[str, Any]:
     except ClientError as exc:
         if exc.response["Error"]["Code"] not in ("NoSuchKey", "404"):
             raise
-        logger.warning("dist/index.html 없음 — 빌드 산출물 미존재 가능")
+        logger.warning("index.html 없음 — 빌드 산출물 미존재 가능")
 
-    # dist/ 파일 목록
+    # 파일 목록 — SITE_BUCKET 경로: {site_id}/
     file_list: list[str] = []
     try:
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=SITE_BUCKET, Prefix=f"{prefix}/"):
+        for page in paginator.paginate(Bucket=SITE_BUCKET, Prefix=f"{site_id}/"):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
                 file_list.append(key.split("/")[-1])
