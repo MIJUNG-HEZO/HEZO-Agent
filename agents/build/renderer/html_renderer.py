@@ -244,9 +244,9 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
                 None,
             )
             if name_el:
-                name_el.string = svc.get("name", "")
+                name_el.string = svc.get("name") or ""
             if desc_el:
-                desc_el.string = svc.get("desc", "")
+                desc_el.string = svc.get("desc") or ""
             # 가격 필드가 있으면 .buy strong 에 주입 (wine-market 등 store 템플릿용)
             if price := svc.get("price"):
                 price_el = card.select_one(".buy strong") or card.select_one(".price")
@@ -265,9 +265,9 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
             name_el = card.select_one("h3") or card.select_one("strong")
             desc_el = card.select_one("p")
             if name_el:
-                name_el.string = svc.get("name", "")
+                name_el.string = svc.get("name") or ""
             if desc_el:
-                desc_el.string = svc.get("desc", "")
+                desc_el.string = svc.get("desc") or ""
         return
 
     # ledger-row 기반 (세무 템플릿 등)
@@ -281,9 +281,9 @@ def _inject_services(soup: BeautifulSoup, items: list[dict]) -> None:
         p = row.select_one("p")
         span = row.select_one("span")
         if h3:
-            h3.string = svc.get("name", "")
+            h3.string = svc.get("name") or ""
         if p:
-            p.string = svc.get("desc", "")
+            p.string = svc.get("desc") or ""
         if span and svc.get("label"):
             span.string = svc["label"]
 
@@ -302,9 +302,9 @@ def _inject_faq(soup: BeautifulSoup, items: list[dict]) -> None:
         a_els = faq_section.select(".faq-a, .answer, dd, .faq-content")
         for i, item in enumerate(items):
             if i < len(q_els):
-                q_els[i].string = item.get("q", "")
+                q_els[i].string = item.get("q") or ""
             if i < len(a_els):
-                a_els[i].string = item.get("a", "")
+                a_els[i].string = item.get("a") or ""
         return
 
     # FAQ 섹션 없으면 숨겨진 FAQ 블록 추가 (AI 크롤러용, JSON-LD와 일치)
@@ -321,9 +321,9 @@ def _inject_faq(soup: BeautifulSoup, items: list[dict]) -> None:
     for item in items:
         dl = soup.new_tag("dl")
         dt = soup.new_tag("dt")
-        dt.string = item.get("q", "")
+        dt.string = item.get("q") or ""
         dd = soup.new_tag("dd")
-        dd.string = item.get("a", "")
+        dd.string = item.get("a") or ""
         dl.append(dt)
         dl.append(dd)
         faq_div.append(dl)
