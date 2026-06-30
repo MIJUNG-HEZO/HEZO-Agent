@@ -406,3 +406,6 @@ temp/
 tfplan
 .terraform/
 .terraform.lock.hcl
+
+# Lambda deployment packages
+infra/lambda/*.zip
