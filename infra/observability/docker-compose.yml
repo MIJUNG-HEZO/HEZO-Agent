@@ -1,0 +1,88 @@
+version: "3.8"
+
+networks:
+  obs:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  loki_data:
+  tempo_data:
+  grafana_data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: hezo-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-remote-write-receiver
+      - --web.listen-address=0.0.0.0:9090
+    networks: [obs]
+
+  cloudwatch-exporter:
+    image: prom/cloudwatch-exporter:v0.16.0
+    container_name: hezo-cw-exporter
+    restart: unless-stopped
+    ports:
+      - "9106:9106"
+    volumes:
+      - ./cloudwatch-exporter.yml:/config/config.yml:ro
+    environment:
+      - AWS_DEFAULT_REGION=ap-northeast-2
+    networks: [obs]
+
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: hezo-loki
+    restart: unless-stopped
+    user: "0"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/config.yml
+    networks: [obs]
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: hezo-tempo
+    restart: unless-stopped
+    user: "0"
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./tempo-config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/tmp/tempo
+    command: -config.file=/etc/tempo/config.yml
+    networks: [obs]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: hezo-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SERVER_ROOT_URL=http://%(domain)s:3000
+      - GF_LOG_LEVEL=warn
+    networks: [obs]
+    depends_on: [prometheus, loki, tempo]

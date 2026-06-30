@@ -1,0 +1,44 @@
+# hezo-backend ECS Task 전용 ADOT Collector
+# 기존 infra/adot/config.yaml (에이전트 파이프라인 → CloudWatch)과 별도
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 10s
+  resource:
+    attributes:
+      - key: service.name
+        value: hezo-backend
+        action: upsert
+      - key: environment
+        value: production
+        action: upsert
+
+exporters:
+  prometheusremotewrite:
+    endpoint: "http://${OBS_EC2_PRIVATE_IP}:9091/api/v1/write"
+    tls:
+      insecure: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  otlp/tempo:
+    endpoint: "${OBS_EC2_PRIVATE_IP}:4317"
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [prometheusremotewrite]
+    traces:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlp/tempo]

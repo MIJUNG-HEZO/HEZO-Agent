@@ -1,0 +1,128 @@
+{
+  "uid": "customer-infra",
+  "title": "고객사 EC2 인프라",
+  "tags": ["hezo", "customer"],
+  "timezone": "Asia/Seoul",
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "site_id",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "query": "label_values(node_cpu_seconds_total, site_id)",
+        "label": "사이트",
+        "hide": 0,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "CPU 사용률",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "100 - (avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\", site_id=\"$site_id\"}[5m])) * 100)",
+          "legendFormat": "CPU %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100, "min": 0,
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 70},
+            {"color": "red", "value": 90}
+          ]}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "메모리 사용률",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "100 - (node_memory_MemAvailable_bytes{site_id=\"$site_id\"} / node_memory_MemTotal_bytes{site_id=\"$site_id\"} * 100)",
+          "legendFormat": "메모리 %"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100, "min": 0}}
+    },
+    {
+      "id": 3,
+      "title": "디스크 사용률",
+      "type": "gauge",
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{site_id=\"$site_id\", mountpoint=\"/\"} / node_filesystem_size_bytes{site_id=\"$site_id\", mountpoint=\"/\"} * 100)",
+          "legendFormat": "디스크 %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100, "min": 0,
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 75},
+            {"color": "red", "value": 90}
+          ]}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "네트워크 수신/송신",
+      "type": "timeseries",
+      "gridPos": {"x": 8, "y": 8, "w": 16, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total{site_id=\"$site_id\", device!=\"lo\"}[5m])",
+          "legendFormat": "수신 ({{device}})"
+        },
+        {
+          "expr": "rate(node_network_transmit_bytes_total{site_id=\"$site_id\", device!=\"lo\"}[5m])",
+          "legendFormat": "송신 ({{device}})"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "Bps"}}
+    },
+    {
+      "id": 5,
+      "title": "시스템 로그",
+      "type": "logs",
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 10},
+      "datasource": {"type": "loki"},
+      "targets": [
+        {
+          "expr": "{site_id=\"$site_id\"} |= ``",
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "API 트레이스",
+      "type": "traces",
+      "gridPos": {"x": 0, "y": 26, "w": 24, "h": 10},
+      "datasource": {"type": "tempo"},
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{resource.service.instance.id=\"$site_id\"} | duration > 200ms",
+          "legendFormat": ""
+        }
+      ]
+    }
+  ]
+}
