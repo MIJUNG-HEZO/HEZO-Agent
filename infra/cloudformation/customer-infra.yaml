@@ -58,6 +58,11 @@ Parameters:
     Default: 'Hezo1234!'
     Description: MariaDB hezo 사용자 비밀번호 (EC2 로컬 전용, 외부 노출 없음)
 
+  ObsEC2PrivateIP:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /hezo/obs/ec2-private-ip
+    Description: 관측 EC2 프라이빗 IP (Loki/Tempo 엔드포인트)
+
   EC2InstanceType:
     Type: String
     Default: t3.micro
@@ -164,6 +169,11 @@ Resources:
           FromPort: 8080
           ToPort: 8080
           SourcePrefixListId: 'pl-22a6434b'  # CloudFront origin-facing managed prefix list
+        - IpProtocol: tcp
+          FromPort: 9100
+          ToPort: 9100
+          CidrIp: !Sub "${ObsEC2PrivateIP}/32"
+          Description: Prometheus node_exporter scrape from obs EC2
       SecurityGroupEgress:
         - IpProtocol: '-1'
           CidrIp: '0.0.0.0/0'
@@ -229,6 +239,10 @@ Resources:
           Value: !Sub hezo-customer-${SiteId}-ec2
         - Key: hezo:site-id
           Value: !Ref SiteId
+        - Key: hezo-monitored
+          Value: "true"
+        - Key: hezo-site-id
+          Value: !Ref SiteId
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -264,6 +278,83 @@ Resources:
 
           # hezo-customer-backend 컨테이너 실행
           docker pull ${EcrImage}
+          # ── Observability 에이전트 설치 ──────────────────────────────────────
+          OBS_IP="${ObsEC2PrivateIP}"
+
+          # 1) node_exporter (메트릭 — Prometheus pull :9100)
+          NODE_EXPORTER_VER="1.8.2"
+          curl -sLO "https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VER}/node_exporter-${NODE_EXPORTER_VER}.linux-amd64.tar.gz"
+          tar xf node_exporter-*.tar.gz
+          cp node_exporter-*/node_exporter /usr/local/bin/
+          rm -rf node_exporter-*
+
+          cat > /etc/systemd/system/node_exporter.service << 'SVCEOF'
+          [Unit]
+          Description=Prometheus node_exporter
+          After=network.target
+          [Service]
+          User=nobody
+          ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          SVCEOF
+          systemctl daemon-reload
+          systemctl enable node_exporter
+          systemctl start node_exporter
+
+          # 2) Promtail (로그 → Loki)
+          PROMTAIL_VER="3.1.0"
+          curl -sLO "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VER}/promtail-linux-amd64.zip"
+          dnf install -y unzip
+          unzip -q promtail-linux-amd64.zip
+          mv promtail-linux-amd64 /usr/local/bin/promtail
+          chmod +x /usr/local/bin/promtail
+          rm promtail-linux-amd64.zip
+
+          mkdir -p /etc/promtail
+          cat > /etc/promtail/config.yml << PROMEOF
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+          positions:
+            filename: /tmp/promtail-positions.yaml
+          clients:
+            - url: http://${ObsEC2PrivateIP}:3100/loki/api/v1/push
+          scrape_configs:
+            - job_name: docker-containers
+              static_configs:
+                - targets: [localhost]
+                  labels:
+                    site_id: "${SiteId}"
+                    job: docker
+                    __path__: /var/lib/docker/containers/*/*.log
+              pipeline_stages:
+                - docker: {}
+            - job_name: system
+              static_configs:
+                - targets: [localhost]
+                  labels:
+                    site_id: "${SiteId}"
+                    job: system
+                    __path__: /var/log/{messages,secure}
+          PROMEOF
+
+          cat > /etc/systemd/system/promtail.service << 'SVCEOF'
+          [Unit]
+          Description=Grafana Promtail log shipper
+          After=network.target
+          [Service]
+          User=root
+          ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          SVCEOF
+          systemctl daemon-reload
+          systemctl enable promtail
+          systemctl start promtail
+
           docker run -d \
             --name hezo-customer-backend \
             --restart unless-stopped \
@@ -277,6 +368,9 @@ Resources:
             -e DB_NAME="hezo_site" \
             -e DB_USER="hezo" \
             -e DB_PASSWORD="${DBPassword}" \
+            -e OTEL_EXPORTER_OTLP_ENDPOINT="http://${ObsEC2PrivateIP}:4317" \
+            -e OTEL_SERVICE_NAME="hezo-customer-backend" \
+            -e OTEL_RESOURCE_ATTRIBUTES="service.instance.id=${SiteId},site_id=${SiteId}" \
             ${EcrImage}
 
           echo "hezo-customer-backend setup complete"

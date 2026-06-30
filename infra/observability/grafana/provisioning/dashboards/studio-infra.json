@@ -1,0 +1,110 @@
+{
+  "uid": "studio-infra",
+  "title": "Studio 인프라 (ECS + RDS)",
+  "tags": ["hezo", "studio"],
+  "timezone": "Asia/Seoul",
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "hezo-backend ECS CPU",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "process_cpu_seconds_total{service=\"hezo-backend\"}",
+          "legendFormat": "hezo-backend CPU"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 2,
+      "title": "RDS CPU 사용률",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "aws_rds_cpuutilization_average{dbinstance_identifier=\"hezo-postgres\"}",
+          "legendFormat": "RDS CPU %"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent"}}
+    },
+    {
+      "id": 3,
+      "title": "RDS 연결 수",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "aws_rds_database_connections_average{dbinstance_identifier=\"hezo-postgres\"}",
+          "legendFormat": "연결 수"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "RDS 쓰기 레이턴시",
+      "type": "stat",
+      "gridPos": {"x": 8, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "aws_rds_write_latency_average{dbinstance_identifier=\"hezo-postgres\"} * 1000",
+          "legendFormat": "쓰기 레이턴시 ms"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 5,
+      "title": "RDS 여유 스토리지",
+      "type": "gauge",
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "aws_rds_free_storage_space_average{dbinstance_identifier=\"hezo-postgres\"}",
+          "legendFormat": "여유 스토리지"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "id": 6,
+      "title": "FastAPI 요청 레이턴시 (p99 / p50)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(http_server_duration_milliseconds_bucket{service=\"hezo-backend\"}[5m]))",
+          "legendFormat": "p99 레이턴시"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(http_server_duration_milliseconds_bucket{service=\"hezo-backend\"}[5m]))",
+          "legendFormat": "p50 레이턴시"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 7,
+      "title": "ECS 컨테이너 로그",
+      "type": "logs",
+      "gridPos": {"x": 0, "y": 22, "w": 24, "h": 10},
+      "datasource": {"type": "loki"},
+      "targets": [
+        {
+          "expr": "{service=\"hezo-backend\"} |= ``",
+          "legendFormat": ""
+        }
+      ]
+    }
+  ]
+}

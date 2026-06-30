@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    region: ap-northeast-2
+    project: hezo
+
+scrape_configs:
+  - job_name: hezo-customer-ec2
+    ec2_sd_configs:
+      - region: ap-northeast-2
+        port: 9100
+        filters:
+          - name: tag:hezo-monitored
+            values: ["true"]
+          - name: instance-state-name
+            values: ["running"]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_hezo_site_id]
+        target_label: site_id
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_instance_type]
+        target_label: instance_type
+
+  - job_name: hezo-rds
+    static_configs:
+      - targets: ["cloudwatch-exporter:9106"]
+        labels:
+          service: rds
+          db_instance: hezo-postgres
+
+  - job_name: hezo-obs-self
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
